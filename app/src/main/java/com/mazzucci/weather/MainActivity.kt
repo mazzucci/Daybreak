@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -31,11 +32,14 @@ sealed interface UiState {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                Surface(Modifier.fillMaxSize()) { WeatherScreen() }
-            }
-        }
+        setContent { WeatherTheme { WeatherScreen() } }
+    }
+}
+
+@Composable
+fun WeatherTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+        Surface(Modifier.fillMaxSize(), content = content)
     }
 }
 
@@ -72,6 +76,16 @@ fun WeatherScreen() {
         if (granted) refresh() else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
+    WeatherLayout(
+        state = state,
+        onRefresh = ::refresh,
+        onRequestPermission = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+    )
+}
+
+/** Stateless UI for a given [UiState]; kept separate so it can be rendered in screenshot tests. */
+@Composable
+fun WeatherLayout(state: UiState, onRefresh: () -> Unit, onRequestPermission: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -80,18 +94,18 @@ fun WeatherScreen() {
         when (val s = state) {
             UiState.Loading -> CircularProgressIndicator()
             UiState.NeedsPermission -> {
-                Text("Location permission is needed to show your local weather.")
+                Text("Location permission is needed to show your local weather.", textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
-                Button({ permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }) {
+                Button(onRequestPermission) {
                     Text("Grant permission")
                 }
             }
             is UiState.Failed -> {
-                Text(s.message, color = MaterialTheme.colorScheme.error)
+                Text(s.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
-                Button(::refresh) { Text("Try again") }
+                Button(onRefresh) { Text("Try again") }
             }
-            is UiState.Loaded -> WeatherContent(s, ::refresh)
+            is UiState.Loaded -> WeatherContent(s, onRefresh)
         }
     }
 }
