@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Caches Gradle dependencies and the wrapper. The Android SDK is preinstalled on ubuntu-latest.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests, screenshot verification and debug build
+        run: ./gradlew testDebugUnitTest verifyPaparazziDebug assembleDebug
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/paparazzi/
+            app/build/paparazzi/failures/
