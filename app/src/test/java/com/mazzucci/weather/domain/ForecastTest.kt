@@ -19,6 +19,33 @@ class ForecastTest {
         assertTrue(f.isNight(date.plusDays(1).atTime(6, 30)))
     }
 
+    @Test fun `polar night is always dark and midnight sun never is`() {
+        val base = TestData.forecast()
+        fun withSun(sunrise: LocalDateTime, sunset: LocalDateTime) =
+            base.copy(days = base.days.map { it.copy(sunrise = sunrise.with(it.date), sunset = sunset.with(it.date)) })
+        val polarNight = withSun(date.atTime(0, 0), date.atTime(0, 0))
+        assertEquals(Daylight.POLAR_NIGHT, polarNight.today.daylight)
+        assertTrue(polarNight.isNight(date.atTime(12, 0)))
+        val midnightSun = base.copy(days = base.days.map {
+            it.copy(sunrise = it.date.atStartOfDay(), sunset = it.date.plusDays(1).atStartOfDay())
+        })
+        assertEquals(Daylight.MIDNIGHT_SUN, midnightSun.today.daylight)
+        assertFalse(midnightSun.isNight(date.atTime(0, 30)))
+        assertFalse(midnightSun.isNight(date.atTime(23, 30)))
+    }
+
+    @Test fun `a sunset after midnight keeps the early hours light`() {
+        val base = TestData.forecast()
+        // Near the Arctic circle in early summer: the sun sets at 00:54 the next day and rises again at 02:10.
+        val f = base.copy(days = base.days.map {
+            it.copy(sunrise = it.date.atTime(2, 10), sunset = it.date.plusDays(1).atTime(0, 54))
+        })
+        val tomorrow = date.plusDays(1)
+        assertFalse(f.isNight(tomorrow.atTime(0, 30)))
+        assertTrue(f.isNight(tomorrow.atTime(1, 30)))
+        assertFalse(f.isNight(tomorrow.atTime(2, 30)))
+    }
+
     @Test fun `without sun times night is 8 pm to 6 am`() {
         val f = TestData.forecast().let { it.copy(days = it.days.map { d -> d.copy(sunrise = null, sunset = null) }) }
         assertTrue(f.isNight(date.atTime(5, 59)))

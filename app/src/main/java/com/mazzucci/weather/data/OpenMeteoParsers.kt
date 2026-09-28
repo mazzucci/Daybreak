@@ -107,13 +107,20 @@ private fun JSONArray.optIntOrZero(i: Int): Int = if (isNull(i)) 0 else getInt(i
 private fun JSONArray?.doubleOrNull(i: Int): Double? =
     if (this == null || i >= length() || isNull(i)) null else optDouble(i).takeIf { !it.isNaN() }
 
-/** Local time at [i] of an optional array. Open-Meteo sends 1970-01-01T00:00 or null when there's no sunrise. */
+/**
+ * Local time at [i] of an optional array; null if missing or unparseable. Polar days come through as real
+ * midnight values and are interpreted by [com.mazzucci.weather.domain.DaySummary.daylight].
+ */
 private fun JSONArray?.timeOrNull(i: Int): LocalDateTime? =
     if (this == null || i >= length() || isNull(i)) null
-    else runCatching { LocalDateTime.parse(getString(i)) }.getOrNull()?.takeIf { it.year > 1970 }
+    else runCatching { LocalDateTime.parse(getString(i)) }.getOrNull()
 
-private fun JSONObject.optBooleanFlag(key: String): Boolean? =
-    if (has(key) && !isNull(key)) optInt(key, 1) != 0 else null
+/** Open-Meteo's 0/1 is_day flag (a JSON boolean is accepted too); null if missing or anything else. */
+private fun JSONObject.optBooleanFlag(key: String): Boolean? = when (val v = opt(key)) {
+    is Boolean -> v
+    is Number -> v.toInt() != 0
+    else -> null
+}
 
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (has(key) && !isNull(key)) getString(key).ifBlank { null } else null

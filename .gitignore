@@ -3,3 +3,6 @@ build/
 local.properties
 *.iml
 .idea/
+
+# Claude Code agent worktrees
+.claude/worktrees/

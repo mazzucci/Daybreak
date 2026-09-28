@@ -128,6 +128,18 @@ class ScreenshotTest {
         )
     }
 
+    @Test fun weatherPolarNight() = snap("weather_polar_night", night = true, tall = true) {
+        // Polar night: one Daylight tile instead of sunrise and sunset.
+        val polar = rainyNight.copy(days = rainyNight.days.map { it.copy(sunrise = it.date.atStartOfDay(), sunset = it.date.atStartOfDay()) })
+        Weather(
+            weatherState(
+                PageContent.Loaded(polar, rainyNightSummary),
+                place = london, key = london.id,
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            )
+        )
+    }
+
     @Test fun weatherGemma() = snap("weather_gemma") {
         Weather(weatherState(PageContent.Loaded(forecast, gemmaSummary)))
     }

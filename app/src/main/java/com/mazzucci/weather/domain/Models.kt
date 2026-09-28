@@ -67,15 +67,22 @@ data class Forecast(
     fun isNight(hour: HourForecast): Boolean = hour.isDay?.not() ?: isNight(hour.time)
 
     /**
-     * Whether [time] falls outside that day's sunrise–sunset. Days without sun times (polar day/night, or a
-     * response missing the fields) fall back to a fixed 20:00–06:00 night.
+     * Whether [time] falls outside that day's sunrise–sunset, allowing for a previous day's sunset after midnight
+     * (high latitudes). Polar night is always night and midnight sun never is. Days without sun times (a response
+     * missing the fields) fall back to a fixed 20:00–06:00 night.
      */
     fun isNight(time: LocalDateTime): Boolean {
-        val day = days.firstOrNull { it.date == time.toLocalDate() }
-        val sunrise = day?.sunrise
-        val sunset = day?.sunset
-        return if (sunrise != null && sunset != null) time.isBefore(sunrise) || !time.isBefore(sunset)
-        else time.hour < 6 || time.hour >= 20
+        val date = time.toLocalDate()
+        val yesterday = days.firstOrNull { it.date == date.minusDays(1) }
+        val lateSunset = yesterday?.sunset?.takeIf { yesterday.daylight == Daylight.NORMAL }
+        if (lateSunset != null && time.isBefore(lateSunset)) return false
+        val day = days.firstOrNull { it.date == date }
+        return when (day?.daylight) {
+            Daylight.POLAR_NIGHT -> true
+            Daylight.MIDNIGHT_SUN -> false
+            Daylight.NORMAL -> time.isBefore(day.sunrise) || !time.isBefore(day.sunset)
+            Daylight.UNKNOWN, null -> time.hour < 6 || time.hour >= 20
+        }
     }
 }
 
@@ -109,7 +116,21 @@ data class DaySummary(
     val precipSumMm: Double? = null,
     /** Highest UV index of the day. */
     val uvIndexMax: Double? = null,
-)
+) {
+    /**
+     * How the sun behaves on [date]. Open-Meteo marks polar night with sunrise == sunset (both midnight) and
+     * midnight sun with a sunset 24 hours after sunrise, so the raw times mean nothing to show in those cases.
+     */
+    val daylight: Daylight
+        get() = when {
+            sunrise == null || sunset == null -> Daylight.UNKNOWN
+            !sunset.isAfter(sunrise) -> Daylight.POLAR_NIGHT
+            !sunset.isBefore(sunrise.plusHours(24)) -> Daylight.MIDNIGHT_SUN
+            else -> Daylight.NORMAL
+        }
+}
+
+enum class Daylight { NORMAL, POLAR_NIGHT, MIDNIGHT_SUN, UNKNOWN }
 
 data class HourForecast(
     val time: LocalDateTime,

@@ -38,12 +38,12 @@ fun formatHour(time: LocalDateTime, locale: Locale = Locale.getDefault()): Strin
 fun formatClock(time: LocalDateTime, locale: Locale = Locale.getDefault()): String =
     time.format(DateTimeFormatter.ofPattern("h:mm a", locale))
 
-/** "Today", then short weekday names ("Tue") for the multi-day list. */
-fun formatDayLabel(date: LocalDate, today: LocalDate, locale: Locale = Locale.getDefault()): String =
+/** "Today", then short weekday names ("Tue") for the multi-day list. English, like the rest of the UI. */
+fun formatDayLabel(date: LocalDate, today: LocalDate, locale: Locale = Locale.US): String =
     if (date == today) "Today" else date.format(DateTimeFormatter.ofPattern("EEE", locale))
 
 /** Full weekday name for accessibility labels ("Tuesday"). */
-fun formatDayName(date: LocalDate, today: LocalDate, locale: Locale = Locale.getDefault()): String =
+fun formatDayName(date: LocalDate, today: LocalDate, locale: Locale = Locale.US): String =
     if (date == today) "Today" else date.format(DateTimeFormatter.ofPattern("EEEE", locale))
 
 /** WHO UV index category for a (rounded) UV index. */

@@ -1,6 +1,7 @@
 package com.mazzucci.weather.data
 
 import com.mazzucci.weather.TestData.fixture
+import com.mazzucci.weather.domain.Daylight
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -109,7 +110,7 @@ class OpenMeteoParsersTest {
              "hourly":{"time":["2026-06-21T12:00"],"temperature_2m":[1],"precipitation_probability":[0],"weather_code":[3],
               "wind_speed_10m":[null],"wind_gusts_10m":[null],"is_day":[null]},
              "daily":{"time":["2026-06-21"],"temperature_2m_max":[2],"temperature_2m_min":[-1],
-              "precipitation_probability_max":[0],"weather_code":[3],"sunrise":[null],"sunset":["1970-01-01T00:00"],
+              "precipitation_probability_max":[0],"weather_code":[3],"sunrise":[null],"sunset":["not a time"],
               "wind_speed_10m_max":[null],"wind_gusts_10m_max":[null],"precipitation_sum":[null],"uv_index_max":[null]}}
         """.trimIndent()
         val f = parseForecast(json)
@@ -127,6 +128,22 @@ class OpenMeteoParsersTest {
             assertNull(gustKmh)
             assertNull(isDay)
         }
+    }
+
+    @Test fun `polar sun times come through as the API sends them`() {
+        // Shapes returned by the live API: polar night has sunrise == sunset, midnight sun a 24 h gap.
+        fun day(date: String, sunrise: String, sunset: String) = """
+            {"current":{"time":"${date}T12:00","temperature_2m":1,"apparent_temperature":0,
+              "relative_humidity_2m":90,"wind_speed_10m":3,"weather_code":3,"is_day":false},
+             "hourly":{"time":["${date}T12:00"],"temperature_2m":[1],"precipitation_probability":[0],"weather_code":[3]},
+             "daily":{"time":["$date"],"temperature_2m_max":[2],"temperature_2m_min":[-1],
+              "precipitation_probability_max":[0],"weather_code":[3],"sunrise":["$sunrise"],"sunset":["$sunset"]}}
+        """.trimIndent()
+        val night = parseForecast(day("2026-12-21", "2026-12-21T00:00", "2026-12-21T00:00"))
+        assertEquals(Daylight.POLAR_NIGHT, night.today.daylight)
+        assertEquals(false, night.current.isDay) // JSON booleans are accepted as well as 0/1
+        val sun = parseForecast(day("2026-06-21", "2026-06-21T00:00", "2026-06-22T00:00"))
+        assertEquals(Daylight.MIDNIGHT_SUN, sun.today.daylight)
     }
 
     @Test fun `parses geocoding results`() {

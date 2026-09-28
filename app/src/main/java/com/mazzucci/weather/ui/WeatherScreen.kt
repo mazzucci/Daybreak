@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
@@ -56,6 +59,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -69,6 +74,7 @@ import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.DaySummary
+import com.mazzucci.weather.domain.Daylight
 import com.mazzucci.weather.domain.describeUv
 import com.mazzucci.weather.domain.describeWeatherCode
 import com.mazzucci.weather.domain.formatClock
@@ -364,7 +370,7 @@ private fun SummaryBlock(summary: Narration) {
 private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
-    Row(Modifier.fillMaxWidth().padding(horizontal = PageMargin), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    TileRow {
         StatTile("Feels like", formatDegrees(cur.feelsLikeC, unit), Modifier.weight(1f))
         StatTile("Humidity", "${cur.humidity}%", Modifier.weight(1f))
         val gust = forecast.nextHours.firstOrNull()?.gustKmh
@@ -400,16 +406,37 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean) {
 /** Sunrise, sunset and UV for today; skipped when the forecast has none of them. */
 @Composable
 private fun SunAndUv(today: DaySummary, unit: TempUnit) {
-    val sunrise = today.sunrise
-    val sunset = today.sunset
+    val daylight = today.daylight
     val uv = today.uvIndexMax
-    if (sunrise == null && sunset == null && uv == null) return
+    if (daylight == Daylight.UNKNOWN && uv == null) return
     Spacer(Modifier.height(16.dp))
-    Row(Modifier.fillMaxWidth().padding(horizontal = PageMargin), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (sunrise != null) StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true)
-        if (sunset != null) StatTile("Sunset", formatClock(sunset), Modifier.weight(1f), compact = true)
+    TileRow {
+        when (daylight) {
+            Daylight.NORMAL -> {
+                val sunrise = today.sunrise!!
+                val sunset = today.sunset!!
+                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true)
+                StatTile(
+                    "Sunset", formatClock(sunset), Modifier.weight(1f), compact = true,
+                    detail = "next day".takeIf { sunset.toLocalDate() != today.date },
+                )
+            }
+            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night")
+            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun")
+            Daylight.UNKNOWN -> Unit
+        }
         if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv))
     }
+}
+
+/** A row of equal-height tiles, so a tile with a detail line doesn't stand taller than its neighbours. */
+@Composable
+private fun TileRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = PageMargin).height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        content = content,
+    )
 }
 
 /**
@@ -420,6 +447,11 @@ private fun SunAndUv(today: DaySummary, unit: TempUnit) {
 private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) {
     val palette = cardIconPalette()
     val rainColor = MaterialTheme.weatherColors.rain
+    // Column widths follow the font scale, so large text doesn't wrap "Today" or "-12°" mid-word.
+    val density = LocalDensity.current
+    val dayWidth = with(density) { 52.sp.toDp() }
+    val rainWidth = with(density) { 36.sp.toDp() }
+    val tempWidth = with(density) { 34.sp.toDp() }
     val weekLow = days.minOf { it.lowC }
     val weekHigh = days.maxOf { it.highC }
     Card(
@@ -445,15 +477,17 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                     Text(
                         formatDayLabel(day.date, today),
                         style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.width(56.dp),
+                        maxLines = 1,
+                        modifier = Modifier.width(dayWidth),
                     )
-                    WeatherIcon(day.code, night = false, palette, size = 26.dp)
+                    WeatherIcon(day.code, night = false, palette, size = 26.dp, contentDescription = null)
                     Text(
                         rain?.let { "$it%" }.orEmpty(),
                         style = MaterialTheme.typography.labelSmall,
                         color = rainColor,
                         textAlign = TextAlign.End,
-                        modifier = Modifier.width(40.dp),
+                        maxLines = 1,
+                        modifier = Modifier.width(rainWidth),
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -461,7 +495,8 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.End,
-                        modifier = Modifier.width(36.dp),
+                        maxLines = 1,
+                        modifier = Modifier.width(tempWidth),
                     )
                     Spacer(Modifier.width(8.dp))
                     RangeBar(day.lowC, day.highC, weekLow, weekHigh, Modifier.weight(1f))
@@ -469,7 +504,8 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                     Text(
                         formatDegrees(day.highC, unit),
                         style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.width(36.dp),
+                        maxLines = 1,
+                        modifier = Modifier.width(tempWidth),
                     )
                 }
             }
@@ -511,7 +547,7 @@ private fun StatTile(
     compact: Boolean = false,
 ) {
     Card(
-        modifier.semantics(mergeDescendants = true) {
+        modifier.fillMaxHeight().semantics(mergeDescendants = true) {
             contentDescription = listOfNotNull(label, value, detail).joinToString(" ")
         },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -522,10 +558,15 @@ private fun StatTile(
             Text(
                 value,
                 style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-                maxLines = 1,
+                textAlign = TextAlign.Center,
             )
             if (detail != null) {
-                Text(detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
