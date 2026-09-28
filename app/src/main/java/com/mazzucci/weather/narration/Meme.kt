@@ -129,11 +129,27 @@ object MemePrompt {
 
 /** Parses and checks a model caption. Anything odd is rejected and the template meme is used instead. */
 class MemeValidator(private val maxChars: Int = 48) {
+    /**
+     * The last valid TOP line followed by a valid BOTTOM line, so a model that first echoes the prompt's format
+     * and then answers still counts. Labels must be followed by text on the same line.
+     */
     fun parse(raw: String): Pair<String, String>? {
-        val top = LINE_TOP.find(raw)?.groupValues?.get(1)?.let(::clean)
-        val bottom = LINE_BOTTOM.find(raw)?.groupValues?.get(1)?.let(::clean)
-        if (top == null || bottom == null) return null
-        return (top to bottom).takeIf { isValidLine(top) && isValidLine(bottom) && !top.equals(bottom, ignoreCase = true) }
+        var top: String? = null
+        var result: Pair<String, String>? = null
+        raw.lines().forEach { line ->
+            LINE.matchEntire(line)?.let { m ->
+                val text = m.groupValues[2]
+                val valid = isValidLine(text)
+                if (m.groupValues[1].equals("top", ignoreCase = true)) {
+                    top = if (valid) clean(text) else null
+                } else {
+                    val t = top
+                    if (t != null && valid && !t.equals(clean(text), ignoreCase = true)) result = t to clean(text)
+                    top = null
+                }
+            }
+        }
+        return result
     }
 
     private fun clean(line: String) = line
@@ -141,18 +157,23 @@ class MemeValidator(private val maxChars: Int = 48) {
         .replace(Regex("\\s+"), " ")
         .trim()
 
-    private fun isValidLine(line: String): Boolean =
-        line.length in 2..maxChars &&
-            line.none { it.isDigit() } && // no numbers at all: nothing to get wrong
-            !line.contains('<') && !line.contains('{') && // leaked template tokens or JSON
-            !line.contains("http", ignoreCase = true) &&
-            BLOCKLIST.none { Regex("\\b$it\\b", RegexOption.IGNORE_CASE).containsMatchIn(line) }
+    /** Checked on the raw text, so "sh*t" is caught before the asterisk would be stripped. */
+    private fun isValidLine(raw: String): Boolean {
+        if (Regex("\\w[*_]+\\w").containsMatchIn(raw)) return false // censored swear words
+        val line = clean(raw)
+        return line.length in 2..maxChars &&
+            ALLOWED.matches(line) && // letters and plain punctuation only: no digits, emoji, tokens, URLs
+            !LABEL.containsMatchIn(line) &&
+            BLOCKLIST.none { it.containsMatchIn(line) }
+    }
 
     private companion object {
-        val LINE_TOP = Regex("(?im)^\\s*top\\s*:\\s*(.+)$")
-        val LINE_BOTTOM = Regex("(?im)^\\s*bottom\\s*:\\s*(.+)$")
+        val LINE = Regex("(?i)^[ \t]*(top|bottom)[ \t]*:[ \t]*(\\S.*)$")
+        val LABEL = Regex("(?i)^(top|bottom)\\s*:")
+        val ALLOWED = Regex("^[\\p{L}\\p{M} '’.,!?:;&…–—-]+$")
         /** A last line of defence for a family-friendly card; the prompt asks for clean humour anyway. */
-        val BLOCKLIST = listOf("damn", "hell", "shit", "fuck\\w*", "crap", "ass", "bitch", "sexy", "kill", "die", "dead")
+        val BLOCKLIST = listOf("shit\\w*", "fuck\\w*", "ass(hole|holes|es)?", "damn\\w*", "bitch\\w*", "crap\\w*", "hell(ish)?", "sexy", "piss\\w*")
+            .map { Regex("\\b$it\\b", RegexOption.IGNORE_CASE) }
     }
 }
 

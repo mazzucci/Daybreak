@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import com.mazzucci.weather.domain.formatBothUnits
@@ -423,7 +424,7 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, mem
         Text(
             "Today's weather meme",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = PageMargin),
+            modifier = Modifier.padding(horizontal = PageMargin).semantics { heading() },
         )
         Spacer(Modifier.height(12.dp))
         MemeCard(meme, Modifier.padding(horizontal = PageMargin))

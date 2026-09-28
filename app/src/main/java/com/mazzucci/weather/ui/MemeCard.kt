@@ -20,8 +20,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,9 +48,8 @@ fun MemeCard(meme: Meme, modifier: Modifier = Modifier) {
                 .clip(shape)
                 .background(Brush.verticalGradient(memeGradient(meme.mood, MaterialTheme.isDark)))
                 .padding(horizontal = 16.dp, vertical = 14.dp)
-                .semantics(mergeDescendants = true) {
-                    contentDescription = "Weather meme: ${meme.top}. ${meme.bottom}."
-                },
+                // Replaces the children's semantics, so the outline layer isn't read out as a second caption.
+                .clearAndSetSemantics { contentDescription = "Weather meme: ${meme.top}. ${meme.bottom}." },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -82,11 +82,12 @@ private fun MemeText(text: String, modifier: Modifier = Modifier) {
         textAlign = TextAlign.Center,
     )
     val upper = text.uppercase()
+    val outline = with(LocalDensity.current) { 2.5.dp.toPx() }
     Box(modifier.fillMaxWidth()) {
         Text(
             upper,
             Modifier.fillMaxWidth(),
-            style = style.copy(color = Color.Black, drawStyle = Stroke(width = 7f, join = StrokeJoin.Round)),
+            style = style.copy(color = Color.Black, drawStyle = Stroke(width = outline, join = StrokeJoin.Round)),
         )
         Text(upper, Modifier.fillMaxWidth(), style = style.copy(color = Color.White))
     }

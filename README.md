@@ -62,6 +62,7 @@ How it works:
 - The model runs on the CPU through MediaPipe LLM Inference (`com.google.mediapipe:tasks-genai`), with low temperature and a 30-second timeout. It's loaded on first use and kept in memory while the app runs.
 - The prompt is a short instruction plus the forecast as JSON, in your preferred unit ([`GemmaPrompt`](app/src/main/java/com/mazzucci/weather/narration/GemmaPrompt.kt)).
 - Gemma's reply is checked before it's shown ([`NarrationValidator`](app/src/main/java/com/mazzucci/weather/narration/NarrationValidator.kt)). Every temperature, percentage and other number must match the forecast data, and the reply must be at most 2 short sentences of plain text. If the check fails, or the model is missing, slow or errors out, the template summary stays.
+- The same engine writes the daily meme ([`Meme.kt`](app/src/main/java/com/mazzucci/weather/narration/Meme.kt)), with a playful temperature and a per-day seed. Its prompt describes the day in words only, and [`MemeValidator`](app/src/main/java/com/mazzucci/weather/narration/Meme.kt) accepts only a two-line `TOP:`/`BOTTOM:` caption with no digits, emoji or rude words. Gemma gets one try per place, day and mood; the result, or the hand-written template if it's rejected, is cached (`MemeRepository`) so the meme stays the same all day. Gemma's memes need both **Daily weather meme** and **Describe the weather with Gemma** switched on.
 - Expect a few seconds per summary on recent phones and longer on older ones. MediaPipe's native library makes the APK bigger, so it's built only for 64-bit ARM (phones) and x86_64 (emulators). It needs a 64-bit device.
 
 ## Code layout
@@ -70,11 +71,13 @@ How it works:
 app/src/main/java/com/mazzucci/weather/
   domain/     Place, Forecast, AppSettings; unit conversion and formatting; WMO code descriptions
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
-              saved places + settings repositories (SharedPreferences), device location
+              saved places, settings and daily meme repositories (SharedPreferences), device location
   narration/  WeatherNarrator: TemplateNarrator, GemmaNarrator (MediaPipe), GemmaPrompt,
-              NarrationValidator, ValidatingNarrator, GemmaModelStore (model download + import)
+              NarrationValidator, ValidatingNarrator, GemmaModelStore (model download + import),
+              Meme (mood, template captions, prompt, validator, MemeWriter)
   ui/         WeatherViewModel (StateFlow), stateless screens, WeatherApp (navigation, pickers),
-              Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs)
+              Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs),
+              MemeCard
 ```
 
 ## Build and test

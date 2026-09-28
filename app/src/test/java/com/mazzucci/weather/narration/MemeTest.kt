@@ -82,6 +82,28 @@ class MemeTest {
         assertEquals("Hello rain" to "Class cancelled", v.parse("TOP: Hello rain\nBOTTOM: Class cancelled"))
     }
 
+    @Test fun `validator closes the format holes`() {
+        val v = MemeValidator()
+        // An empty TOP must not swallow the BOTTOM label.
+        assertNull(v.parse("TOP:\nBOTTOM: Rain again"))
+        assertNull(v.parse("TOP: BOTTOM: Rain\nBOTTOM: again"))
+        // An echo of the prompt's format, then a real answer: the answer wins.
+        assertEquals("Wet socks" to "Again", v.parse("TOP: <top line>\nBOTTOM: <bottom line>\nTOP: Wet socks\nBOTTOM: Again"))
+        // Emoji and symbols are out; plain punctuation is fine.
+        assertNull(v.parse("TOP: Sunny ☀️\nBOTTOM: Nice"))
+        assertEquals("Wait…" to "It's raining — again!", v.parse("TOP: Wait…\nBOTTOM: It's raining — again!"))
+    }
+
+    @Test fun `blocklist catches variants but not ordinary idioms`() {
+        val v = MemeValidator()
+        listOf("Shitty weather", "Total asshole wind", "Hellish heat", "Damned rain", "Sh*t it rains").forEach {
+            assertNull(it, v.parse("TOP: $it\nBOTTOM: Yes"))
+        }
+        listOf("Dead heat", "Die-hard fans", "The wind will die down", "Assume rain").forEach {
+            assertEquals(it, it to "Yes", v.parse("TOP: $it\nBOTTOM: Yes"))
+        }
+    }
+
     @Test fun `writer uses the model's caption when it passes`() = runTest {
         var seen: Int? = null
         val writer = MemeWriter({ _, t, seed -> seen = seed; assertTrue(t > 0.5f); "TOP: Fog rolls in\nBOTTOM: Bridge has left" })

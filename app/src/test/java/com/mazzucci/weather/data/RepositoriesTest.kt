@@ -90,17 +90,27 @@ class SettingsRepositoryTest {
         assertEquals(AppSettings(), SettingsRepository(store).settings.value)
     }
 
-    @Test fun `memes are remembered per page for one day and one mood`() {
+    @Test fun `memes are remembered per page, day, place and mood`() {
         val store = InMemoryStore()
         val repo = MemeRepository(store)
         val date = LocalDate.of(2026, 9, 28)
-        val meme = Meme("Top", "Bottom", MemeMood.RAIN, NarrationSource.GEMMA)
-        repo.put("geo:1", date, meme)
-        assertEquals(meme, MemeRepository(store).get("geo:1", date, meme.mood))
-        assertNull(repo.get("geo:1", date.plusDays(1), meme.mood))
-        assertNull(repo.get("geo:1", date, MemeMood.SUN))
-        assertNull(repo.get("geo:2", date, meme.mood))
+        val rain = SavedMeme(Meme("Top", "Bottom", MemeMood.RAIN, NarrationSource.GEMMA), gemmaTried = true)
+        val sun = SavedMeme(Meme("Sun", "Fun", MemeMood.SUN, NarrationSource.TEMPLATE), gemmaTried = true)
+        repo.put("geo:1", date, "SF", rain)
+        repo.put("geo:1", date, "SF", sun) // a mood flip keeps both
+        assertEquals(rain, MemeRepository(store).get("geo:1", date, "SF", MemeMood.RAIN))
+        assertEquals(sun, repo.get("geo:1", date, "SF", MemeMood.SUN))
+        assertNull(repo.get("geo:1", date.plusDays(1), "SF", MemeMood.RAIN))
+        assertNull(repo.get("geo:1", date, "Seattle", MemeMood.RAIN))
+        assertNull(repo.get("geo:1", date, "SF", MemeMood.FOG))
+        assertNull(repo.get("geo:2", date, "SF", MemeMood.RAIN))
+
+        repo.put("geo:1", date.plusDays(1), "SF", rain) // a new day starts a fresh entry
+        assertNull(repo.get("geo:1", date, "SF", MemeMood.SUN))
+
+        repo.remove("geo:1")
+        assertNull(store.getString("meme:geo:1"))
         store.putString("meme:geo:3", "not json")
-        assertNull(repo.get("geo:3", date, meme.mood))
+        assertNull(repo.get("geo:3", date, "SF", MemeMood.RAIN))
     }
 }

@@ -123,7 +123,7 @@ fun SettingsScreen(
                         Spacer(Modifier.height(2.dp))
                         Text(
                             "A silly caption about each place's day, made on this phone with no internet. " +
-                                "Gemma writes a new one each day once it's set up.",
+                                "With Gemma set up and switched on below, it writes a fresh one each day.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
