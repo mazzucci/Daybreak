@@ -93,6 +93,7 @@ fun WeatherApp(vm: WeatherViewModel) {
             modelStatus = state.modelStatus,
             onUnitChange = vm::setPrimaryUnit,
             onGemmaEnabledChange = vm::setGemmaEnabled,
+            onMemesEnabledChange = vm::setMemesEnabled,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,
             onImportModel = { modelPicker.launch(arrayOf("*/*")) },

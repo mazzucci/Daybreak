@@ -26,7 +26,7 @@ import kotlin.coroutines.resumeWithException
  * Runs Gemma on the device with MediaPipe LLM Inference. Nothing leaves the phone.
  *
  * The engine (model weights, a few hundred MB) is loaded lazily on first use and kept for follow-up calls, then
- * released after [idleReleaseMs] without a narration, on [release] (e.g. when the model is removed) or on [close].
+ * released after [idleReleaseMs] without a generation, on [release] (e.g. when the model is removed) or on [close].
  * It's reloaded if the model file changes. One generation runs at a time.
  */
 class GemmaNarrator(
@@ -34,17 +34,21 @@ class GemmaNarrator(
     private val modelFile: () -> File?,
     private val timeoutMs: Long = 30_000,
     private val idleReleaseMs: Long = 5 * 60_000,
-) : WeatherNarrator, AutoCloseable {
+) : WeatherNarrator, TextGenerator, AutoCloseable {
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var idleJob: Job? = null
     private var engine: LlmInference? = null
     private var engineKey: String? = null
 
-    override suspend fun narrate(input: NarrationInput): String = mutex.withLock {
+    override suspend fun narrate(input: NarrationInput): String =
+        // Low temperature: we want a faithful restatement, not creativity.
+        generate(GemmaPrompt.build(input), temperature = 0.2f, seed = 1)
+
+    override suspend fun generate(prompt: String, temperature: Float, seed: Int): String = mutex.withLock {
         idleJob?.cancel()
         try {
-            generate(input)
+            generateLocked(prompt, temperature, seed)
         } finally {
             idleJob = scope.launch {
                 delay(idleReleaseMs)
@@ -65,11 +69,11 @@ class GemmaNarrator(
         }.invokeOnCompletion { scope.cancel() }
     }
 
-    private suspend fun generate(input: NarrationInput): String =
+    private suspend fun generateLocked(prompt: String, temperature: Float, seed: Int): String =
         withContext(Dispatchers.IO) {
-            val session = LlmInferenceSession.createFromOptions(engineFor(modelFile()), sessionOptions())
+            val session = LlmInferenceSession.createFromOptions(engineFor(modelFile()), sessionOptions(temperature, seed))
             try {
-                session.addQueryChunk(GemmaPrompt.build(input))
+                session.addQueryChunk(prompt)
                 // A timeout is an ordinary failure (fall back to the template), not a cancellation of the caller.
                 withTimeoutOrNull(timeoutMs) { session.awaitResponse() }
                     ?: throw IOException("Gemma took longer than ${timeoutMs / 1000}s")
@@ -103,10 +107,10 @@ class GemmaNarrator(
         engineKey = null
     }
 
-    private fun sessionOptions() = LlmInferenceSession.LlmInferenceSessionOptions.builder()
-        .setTemperature(0.2f) // Low: we want a faithful restatement, not creativity.
-        .setTopK(20)
-        .setRandomSeed(1)
+    private fun sessionOptions(temperature: Float, seed: Int) = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+        .setTemperature(temperature)
+        .setTopK(if (temperature > 0.5f) 40 else 20)
+        .setRandomSeed(seed)
         .setPromptTemplates(
             PromptTemplates.builder()
                 .setUserPrefix("<start_of_turn>user\n")

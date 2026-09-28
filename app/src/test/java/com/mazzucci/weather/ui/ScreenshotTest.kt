@@ -29,6 +29,12 @@ import com.mazzucci.weather.narration.ModelStatus
 import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
+import com.mazzucci.weather.narration.Meme
+import com.mazzucci.weather.narration.MemeMood
+import com.mazzucci.weather.narration.TemplateMemes
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import com.mazzucci.weather.narration.TemplateNarrator
 import org.junit.Rule
 import org.junit.Test
@@ -111,7 +117,7 @@ class ScreenshotTest {
         SettingsScreen(
             settings = AppSettings(),
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
@@ -127,13 +133,16 @@ class ScreenshotTest {
     }
 
     @Test fun weatherFullPage() = snap("weather_full_page", tall = true) {
-        Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
+        Weather(weatherState(PageContent.Loaded(forecast, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0))))
     }
 
     @Test fun weatherFullPageDark() = snap("weather_full_page_dark", night = true, tall = true) {
         Weather(
             weatherState(
-                PageContent.Loaded(rainyNight, rainyNightSummary),
+                PageContent.Loaded(
+                    rainyNight, rainyNightSummary,
+                    Meme("Me: I'll just run to the car", "London: bold of you", MemeMood.RAIN, NarrationSource.GEMMA),
+                ),
                 place = london, key = london.id,
                 settings = AppSettings(primaryUnit = TempUnit.C),
             )
@@ -172,6 +181,14 @@ class ScreenshotTest {
                 settings = AppSettings(primaryUnit = TempUnit.C),
             )
         )
+    }
+
+    @Test fun memeMoods() = snap("meme_moods", tall = true) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(MemeMood.HEAT, MemeMood.SNOW, MemeMood.STORM, MemeMood.FOG).forEach { mood ->
+                MemeCard(TemplateMemes.pick(mood, 1))
+            }
+        }
     }
 
     @Test fun weatherGemma() = snap("weather_gemma") {

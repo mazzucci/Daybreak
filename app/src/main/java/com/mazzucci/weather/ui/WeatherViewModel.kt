@@ -10,7 +10,11 @@ import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.data.MemeRepository
 import com.mazzucci.weather.narration.LocalModelManager
+import com.mazzucci.weather.narration.Meme
+import com.mazzucci.weather.narration.MemeWriter
+import com.mazzucci.weather.narration.memeMoodOf
 import com.mazzucci.weather.narration.ModelStatus
 import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
@@ -33,7 +37,8 @@ sealed interface PageContent {
     data object Loading : PageContent
     data object NeedsPermission : PageContent
     data class Failed(val message: String) : PageContent
-    data class Loaded(val forecast: Forecast, val summary: Narration) : PageContent
+    /** [meme] is null while memes are off (or until the first one is written). */
+    data class Loaded(val forecast: Forecast, val summary: Narration, val meme: Meme? = null) : PageContent
 }
 
 /**
@@ -66,6 +71,8 @@ class WeatherViewModel(
     /** Null when there's no LLM available at all (e.g. in tests or previews). */
     private val llm: ValidatingNarrator?,
     private val template: TemplateNarrator = TemplateNarrator(),
+    private val memeWriter: MemeWriter = MemeWriter(),
+    private val memes: MemeRepository? = null,
     private val searchDebounceMs: Long = 350,
 ) : ViewModel() {
 
@@ -168,21 +175,46 @@ class WeatherViewModel(
         showForecast(key, place, forecast)
     }
 
-    /** Shows [forecast] with the instant template summary, then swaps in Gemma's if it produces a valid one. */
+    /**
+     * Shows [forecast] with the instant template summary (and the day's meme), then swaps in Gemma's summary if it
+     * produces a valid one, then Gemma's meme if today's isn't written by Gemma yet.
+     */
     private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
         val settings = settingsRepo.settings.value
         val input = NarrationInput(place.name, forecast, settings.primaryUnit)
-        setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE)))
-        if (llm != null && settings.gemmaEnabled && model.status.value is ModelStatus.Installed) {
-            val narration = llm.narrate(input)
-            if (narration.source == NarrationSource.GEMMA) {
-                contents.update { map ->
-                    val loaded = map[key] as? PageContent.Loaded
-                    if (loaded?.forecast == forecast) map + (key to loaded.copy(summary = narration)) else map
-                }
+        val quickMeme = if (settings.memesEnabled) savedOrTemplateMeme(key, input) else null
+        setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
+        if (gemmaReady()) {
+            val narration = llm!!.narrate(input)
+            if (narration.source == NarrationSource.GEMMA) updateLoaded(key, forecast) { it.copy(summary = narration) }
+        }
+        if (quickMeme != null) upgradeMeme(key, input, quickMeme)
+    }
+
+    private fun gemmaReady(): Boolean =
+        llm != null && settingsRepo.settings.value.gemmaEnabled && model.status.value is ModelStatus.Installed
+
+    private fun savedOrTemplateMeme(key: String, input: NarrationInput): Meme =
+        memes?.get(key, input.forecast.today.date, memeMoodOf(input.forecast)) ?: memeWriter.template(input, key)
+
+    /** Asks Gemma for today's meme unless it already wrote one; remembers whatever the page ends up showing. */
+    private suspend fun upgradeMeme(key: String, input: NarrationInput, shown: Meme) {
+        val date = input.forecast.today.date
+        var meme = shown
+        if (shown.source != NarrationSource.GEMMA && memeWriter.canUseModel && gemmaReady()) {
+            memeWriter.fromModel(input, key)?.let { gemma ->
+                meme = gemma
+                updateLoaded(key, input.forecast) { it.copy(meme = gemma) }
             }
         }
+        memes?.put(key, date, meme)
     }
+
+    private fun updateLoaded(key: String, forecast: Forecast, change: (PageContent.Loaded) -> PageContent.Loaded) =
+        contents.update { map ->
+            val loaded = map[key] as? PageContent.Loaded
+            if (loaded?.forecast == forecast) map + (key to change(loaded)) else map
+        }
 
     /**
      * Rewrites the summary of every loaded page from its cached forecast, without touching the network. Used when
@@ -289,6 +321,13 @@ class WeatherViewModel(
             jobs.remove(CURRENT)?.cancel()
             contents.update { it - CURRENT }
             fetching.update { it - CURRENT }
+        }
+    }
+
+    fun setMemesEnabled(enabled: Boolean) {
+        settingsRepo.update { it.copy(memesEnabled = enabled) }
+        if (enabled) renarrateAll() else contents.update { map ->
+            map.mapValues { (_, c) -> if (c is PageContent.Loaded) c.copy(meme = null) else c }
         }
     }
 

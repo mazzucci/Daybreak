@@ -6,10 +6,15 @@ import com.mazzucci.weather.TestData.tokyo
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.narration.Meme
+import com.mazzucci.weather.narration.MemeMood
+import com.mazzucci.weather.narration.NarrationSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class SavedPlacesRepositoryTest {
     private val store = InMemoryStore()
@@ -83,5 +88,19 @@ class SettingsRepositoryTest {
     @Test fun `bad stored values fall back to defaults`() {
         val store = InMemoryStore(mapOf("primary_unit" to "K", "use_current_location" to "maybe"))
         assertEquals(AppSettings(), SettingsRepository(store).settings.value)
+    }
+
+    @Test fun `memes are remembered per page for one day and one mood`() {
+        val store = InMemoryStore()
+        val repo = MemeRepository(store)
+        val date = LocalDate.of(2026, 9, 28)
+        val meme = Meme("Top", "Bottom", MemeMood.RAIN, NarrationSource.GEMMA)
+        repo.put("geo:1", date, meme)
+        assertEquals(meme, MemeRepository(store).get("geo:1", date, meme.mood))
+        assertNull(repo.get("geo:1", date.plusDays(1), meme.mood))
+        assertNull(repo.get("geo:1", date, MemeMood.SUN))
+        assertNull(repo.get("geo:2", date, meme.mood))
+        store.putString("meme:geo:3", "not json")
+        assertNull(repo.get("geo:3", date, meme.mood))
     }
 }

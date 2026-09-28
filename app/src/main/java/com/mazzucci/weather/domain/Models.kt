@@ -153,4 +153,6 @@ data class AppSettings(
     val useCurrentLocation: Boolean = true,
     /** Whether to try the on-device Gemma model for the summary line (needs an imported model). */
     val gemmaEnabled: Boolean = true,
+    /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */
+    val memesEnabled: Boolean = true,
 )

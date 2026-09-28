@@ -7,6 +7,7 @@ A simple Android app that shows the weather for your current location and any pl
 - A one-line summary at the top, a large temperature in your preferred unit with the other unit alongside, today's high/low and rain chance, and the next 12 hours
 - Today's sunrise, sunset, UV index and wind gusts, plus a 7-day list with each day's range on a shared scale
 - Temperatures in both units: the primary one large, the other small alongside or underneath (current, feels-like, hourly strip and 7-day list); screen readers hear both
+- A daily weather meme per place, made entirely on the phone (no network): a hand-written caption for the day's mood, or a fresh one from Gemma once it's set up. Turn it off in Settings
 - Optional on-device AI summary written by [Gemma](https://ai.google.dev/gemma), run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
 - Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 8 days of hourly and daily data per place, including wind, gusts, sun times and UV
 - Uses Android's built-in location service (no Google Play Services required)
@@ -28,9 +29,9 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_search_search.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_places_places.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsNotInstalled_settings_not_installed.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsDownloading_settings_downloading.png" width="200"> |
 
-| Full page | Full page (dark, °C) |
-|:---:|:---:|
-| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPage_weather_full_page.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPageDark_weather_full_page_dark.png" width="200"> |
+| Full page | Full page (dark, °C) | Weather memes |
+|:---:|:---:|:---:|
+| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPage_weather_full_page.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPageDark_weather_full_page_dark.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_memeMoods_meme_moods.png" width="200"> |
 
 | Settings: installed | Settings: failed (dark) | Rainy night (dark) | App icon |
 |:---:|:---:|:---:|:---:|

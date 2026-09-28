@@ -76,6 +76,7 @@ fun SettingsScreen(
     modelStatus: ModelStatus,
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
+    onMemesEnabledChange: (Boolean) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -111,6 +112,28 @@ fun SettingsScreen(
                             ) { Text(if (unit == TempUnit.F) "°F first" else "°C first") }
                         }
                     }
+                }
+            }
+
+            SectionTitle("Fun")
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Daily weather meme", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "A silly caption about each place's day, made on this phone with no internet. " +
+                                "Gemma writes a new one each day once it's set up.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = settings.memesEnabled,
+                        onCheckedChange = onMemesEnabledChange,
+                        modifier = Modifier.semantics { contentDescription = "Daily weather meme" },
+                    )
                 }
             }
 
