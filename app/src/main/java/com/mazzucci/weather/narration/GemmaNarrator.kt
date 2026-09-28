@@ -98,7 +98,7 @@ class GemmaNarrator(
     }
 
     private fun release() {
-        engine?.close()
+        runCatching { engine?.close() } // never let a native close failure crash a background release
         engine = null
         engineKey = null
     }

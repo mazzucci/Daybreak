@@ -75,13 +75,15 @@ class GemmaModelStore private constructor(private val context: Context) : LocalM
 
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(1) +
+            // Backstop only; operations report their own failures. Unconditional so nothing can stay stuck "busy".
             CoroutineExceptionHandler { _, e -> _status.value = ModelStatus.Failed(e.message ?: "Something went wrong") }
     )
     private var generation = 0L // guarded by `this`
     private var job: Job? = null // guarded by `this`
 
     init {
-        scope.launch { resumePending(currentGeneration()) }
+        val gen = generation // read now: a cancel before the coroutine starts must supersede the resume
+        scope.launch { resumePending(gen) }
     }
 
     /** The model file if one is installed, else null. */
@@ -160,7 +162,8 @@ class GemmaModelStore private constructor(private val context: Context) : LocalM
     private suspend fun resumePending(gen: Long) {
         val id = pendingId()
         if (id == null) {
-            externalDir()?.let { File(it, PARTIAL_NAME).delete() } // leftover from a crash or process death
+            // Leftovers from a crash or process death during a download or import.
+            listOfNotNull(externalDir(), internalDir).forEach { File(it, PARTIAL_NAME).delete() }
             return
         }
         try {
@@ -209,6 +212,13 @@ class GemmaModelStore private constructor(private val context: Context) : LocalM
     private fun finish(gen: Long, id: Long, downloaded: File?, expectedSha256: String?, expectedSize: Long?) {
         setStatus(gen, ModelStatus.Verifying)
         val file = downloaded ?: externalDir()?.let { File(it, PARTIAL_NAME) }
+        if ((file == null || !file.isFile) && installedFile() != null) {
+            // Killed after installing but before forgetting the download: it's already done.
+            downloads.remove(id)
+            clearPending()
+            setStatus(gen, currentStatus())
+            return
+        }
         if (file == null || !file.isFile) throw ModelDownloadException("The downloaded file is missing. Please try again.")
         val ok = when {
             expectedSha256 != null -> sha256(file).equals(expectedSha256, ignoreCase = true)
@@ -257,7 +267,6 @@ class GemmaModelStore private constructor(private val context: Context) : LocalM
         externalDir()?.let { File(it, PARTIAL_NAME).delete() }
     }
 
-    private fun currentGeneration() = synchronized(this) { generation }
     private fun isCurrent(gen: Long) = synchronized(this) { gen == generation }
 
     private fun setStatus(gen: Long, status: ModelStatus) = synchronized(this) {
