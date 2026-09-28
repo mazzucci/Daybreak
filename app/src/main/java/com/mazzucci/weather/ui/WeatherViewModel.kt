@@ -118,8 +118,6 @@ class WeatherViewModel(
         else places.places.value.firstOrNull { it.id == key }?.let { load(key, it) }
     }
 
-    fun refreshAll() = uiState.value.pages.forEach { refresh(it.key) }
-
     /** Whether the app still needs the location permission (the one place this is checked). */
     fun needsLocationPermission(): Boolean = !location.hasPermission()
 
@@ -191,12 +189,16 @@ class WeatherViewModel(
      * something that only affects the wording changes (unit, Gemma on/off, model installed/removed).
      */
     private fun renarrateAll() {
-        val placeFor = places.places.value.associateBy { it.id } +
-            listOfNotNull(currentPlace.value?.let { CURRENT to it })
-        contents.value.forEach { (key, content) ->
-            val place = placeFor[key]
+        // Visible pages only, in page order, so the page the user is most likely looking at goes first (Gemma
+        // generates one summary at a time). Built from the sources rather than uiState, which updates asynchronously.
+        val visible = buildList {
+            if (settingsRepo.settings.value.useCurrentLocation) currentPlace.value?.let { add(CURRENT to it) }
+            places.places.value.forEach { add(it.id to it) }
+        }
+        visible.forEach { (key, place) ->
+            val content = contents.value[key]
             // A page that's still fetching will narrate with the new settings when its forecast arrives.
-            if (content is PageContent.Loaded && place != null && key !in fetching.value) {
+            if (content is PageContent.Loaded && key !in fetching.value) {
                 launchFor(key, fetch = false) { showForecast(key, place, content.forecast) }
             }
         }
@@ -280,7 +282,14 @@ class WeatherViewModel(
 
     fun setUseCurrentLocation(enabled: Boolean) {
         settingsRepo.update { it.copy(useCurrentLocation = enabled) }
-        if (enabled) refreshCurrentLocation()
+        if (enabled) {
+            refreshCurrentLocation()
+        } else {
+            // The page is gone; don't keep fetching or narrating for it.
+            jobs.remove(CURRENT)?.cancel()
+            contents.update { it - CURRENT }
+            fetching.update { it - CURRENT }
+        }
     }
 
     fun setGemmaEnabled(enabled: Boolean) {

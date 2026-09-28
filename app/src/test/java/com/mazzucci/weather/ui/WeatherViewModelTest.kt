@@ -83,7 +83,8 @@ class WeatherViewModelTest {
     private val store = InMemoryStore()
     private val places = SavedPlacesRepository(store)
     private var gemmaReply = "71° and cloudy, with rain by 6 PM."
-    private val llm = ValidatingNarrator({ gemmaReply }, TemplateNarrator(Locale.US))
+    private val gemmaPlaces = mutableListOf<String>()
+    private val llm = ValidatingNarrator({ input -> gemmaPlaces += input.placeName; gemmaReply }, TemplateNarrator(Locale.US))
 
     private fun TestScope.viewModel(
         settings: AppSettings = AppSettings(),
@@ -208,6 +209,21 @@ class WeatherViewModelTest {
         advanceUntilIdle()
         assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
         assertEquals(calls, api.forecastCalls)
+    }
+
+    @Test fun `hidden current-location page is dropped and not re-narrated`() = runTest(dispatcher) {
+        places.add(london)
+        val vm = viewModel(modelInstalled = true)
+        assertTrue(here.name in gemmaPlaces)
+
+        vm.setUseCurrentLocation(false)
+        advanceUntilIdle()
+        assertEquals(listOf(london.id), vm.pages.map { it.key })
+        gemmaPlaces.clear()
+
+        vm.setPrimaryUnit(TempUnit.C)
+        advanceUntilIdle()
+        assertEquals(listOf("London"), gemmaPlaces)
     }
 
     @Test fun `location permission is answered by the provider`() = runTest(dispatcher) {

@@ -13,12 +13,7 @@ import org.json.JSONObject
 
 /** The user's saved places, in display order, persisted as a JSON array. */
 class SavedPlacesRepository(private val store: KeyValueStore) {
-    private val _places = MutableStateFlow(load().also { loaded ->
-        // Places saved before ids were prefixed ("4409896" → "geo:4409896"); persist the migration once.
-        if (store.getString(KEY)?.let { raw -> loaded.isNotEmpty() && !raw.contains(Place.GEOCODING_PREFIX) } == true) {
-            store.putString(KEY, JSONArray(loaded.map { it.toJson() }).toString())
-        }
-    })
+    private val _places = MutableStateFlow(load())
     val places: StateFlow<List<Place>> = _places.asStateFlow()
 
     /** Adds [place] at the end. Returns false if it's already saved. */
@@ -47,7 +42,13 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         val raw = store.getString(KEY) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
-            (0 until array.length()).map { array.getJSONObject(it).toPlace() }
+            val stored = (0 until array.length()).map { array.getJSONObject(it) }
+            val places = stored.map { it.toPlace() }
+            // Places saved before ids were prefixed ("4409896" → "geo:4409896"): persist the migration once.
+            if (stored.zip(places).any { (json, place) -> json.getString("id") != place.id }) {
+                store.putString(KEY, JSONArray(places.map { it.toJson() }).toString())
+            }
+            places
         } catch (e: JSONException) {
             emptyList() // Corrupt data shouldn't brick the app; the user can re-add places.
         }

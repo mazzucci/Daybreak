@@ -7,6 +7,7 @@ import com.mazzucci.weather.domain.HourForecast
 import com.mazzucci.weather.domain.Place
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -44,6 +45,7 @@ fun parseForecast(json: String): Forecast {
 
     val daily = root.getJSONObject("daily")
     val dayDates = daily.getJSONArray("time")
+    if (dayDates.length() == 0) throw IOException("Weather service returned no daily forecast")
     val highs = daily.getJSONArray("temperature_2m_max")
     val lows = daily.getJSONArray("temperature_2m_min")
     val dayPrecip = daily.getJSONArray("precipitation_probability_max")

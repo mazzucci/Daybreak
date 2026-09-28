@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.TestData.fixture
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -55,6 +56,17 @@ class OpenMeteoParsersTest {
         val f = parseForecast(json)
         assertEquals(0, f.nextHours.single().precipChance)
         assertEquals(0, f.today.precipChance)
+    }
+
+    @Test fun `an empty daily forecast is a friendly error`() {
+        val json = fixture("forecast_sf.json").let { raw ->
+            val root = org.json.JSONObject(raw)
+            val daily = root.getJSONObject("daily")
+            daily.keys().asSequence().toList().forEach { daily.put(it, org.json.JSONArray()) }
+            root.toString()
+        }
+        val e = assertThrows(java.io.IOException::class.java) { parseForecast(json) }
+        assertEquals("Weather service returned no daily forecast", e.message)
     }
 
     @Test fun `parses geocoding results`() {

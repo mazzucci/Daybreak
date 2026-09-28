@@ -82,6 +82,22 @@ class NarrationValidatorTest {
         assertTrue(valid("Breezy at 9 today.")) // bare wind speed is fine
         assertTrue(valid("Winds around 14 km/h.", inputC))
         assertFalse(valid("Winds around 30 km/h.", inputC))
+        assertFalse(valid("Winds around 14 mph.")) // 14 is the km/h value; in mph it's 9
+        assertTrue(valid("Winds around 9 mph and 14 km/h."))
+    }
+
+    @Test fun `accepts common ways of writing units and ranges`() {
+        assertTrue(valid("Highs of 69–74° this afternoon.")) // both ends are forecast temperatures
+        assertFalse(valid("Highs of 70–74° this afternoon.")) // 70 isn't
+        assertTrue(valid("A 60-percent chance of rain by 6 PM."))
+        assertTrue(valid("Around 21 C now.", inputC))
+        assertTrue(valid("Around 71 degrees F now."))
+        assertFalse(valid("Around 71 C now.", inputC))
+    }
+
+    @Test fun `keeps the sign of a Unicode minus`() {
+        assertTrue(valid("A high of 24° today.", inputC))
+        assertFalse(valid("A high of \u221224° today.", inputC)) // −24° isn't the 24° high
     }
 
     @Test fun `rejects impossible times`() {

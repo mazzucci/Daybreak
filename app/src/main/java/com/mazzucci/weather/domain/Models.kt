@@ -69,7 +69,7 @@ data class DaySummary(
     val date: LocalDate,
     val highC: Double,
     val lowC: Double,
-    /** Highest hourly chance of precipitation today, 0–100. */
+    /** Highest hourly chance of precipitation on [date], 0–100. */
     val precipChance: Int,
     val code: Int,
 )
