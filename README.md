@@ -64,6 +64,8 @@ Requires JDK 17 and the Android SDK (`ANDROID_HOME` or `local.properties` pointi
 ./gradlew testDebugUnitTest verifyPaparazziDebug assembleDebug
 ```
 
+[GitHub Actions](.github/workflows/ci.yml) runs the same command on every pull request and push to `main`, and uploads the test reports and screenshot diffs if a test or screenshot check fails.
+
 The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the template narrator, LLM output validation, the repositories and the ViewModel (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
 
 ## License
