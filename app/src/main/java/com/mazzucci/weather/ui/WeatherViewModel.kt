@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 
 sealed interface PageContent {
     data object Loading : PageContent
@@ -35,8 +36,11 @@ sealed interface PageContent {
     data class Loaded(val forecast: Forecast, val summary: Narration) : PageContent
 }
 
-/** One swipeable page. [place] is null for the current-location page until the location is known. */
-data class PageUi(val key: String, val place: Place?, val content: PageContent)
+/**
+ * One swipeable page. [place] is null for the current-location page until the location is known.
+ * [refreshing] is true while a fetch is in flight for a page that already shows a forecast.
+ */
+data class PageUi(val key: String, val place: Place?, val content: PageContent, val refreshing: Boolean = false)
 
 data class SearchUi(
     val query: String = "",
@@ -66,6 +70,8 @@ class WeatherViewModel(
 ) : ViewModel() {
 
     private val contents = MutableStateFlow<Map<String, PageContent>>(emptyMap())
+    /** Keys whose forecast is being fetched right now; drives the pull-to-refresh indicator. */
+    private val fetching = MutableStateFlow<Set<String>>(emptySet())
     private val currentPlace = MutableStateFlow<Place?>(null)
     private val search = MutableStateFlow(SearchUi())
     private val jobs = mutableMapOf<String, Job>()
@@ -73,16 +79,16 @@ class WeatherViewModel(
 
     val uiState: StateFlow<WeatherUiState> = combine(
         combine(places.places, settingsRepo.settings, ::Pair),
-        contents,
+        combine(contents, fetching, ::Pair),
         currentPlace,
         search,
         model.status,
-    ) { (saved, settings), contents, current, search, modelStatus ->
+    ) { (saved, settings), (contents, fetching), current, search, modelStatus ->
         val pages = buildList {
             if (settings.useCurrentLocation) {
-                add(PageUi(CURRENT, current, contents[CURRENT] ?: PageContent.Loading))
+                add(PageUi(CURRENT, current, contents[CURRENT] ?: PageContent.Loading, CURRENT in fetching))
             }
-            saved.forEach { add(PageUi(it.id, it, contents[it.id] ?: PageContent.Loading)) }
+            saved.forEach { add(PageUi(it.id, it, contents[it.id] ?: PageContent.Loading, it.id in fetching)) }
         }
         WeatherUiState(pages, saved, settings, search, modelStatus)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, WeatherUiState())
@@ -94,6 +100,15 @@ class WeatherViewModel(
             }
         }
         if (settingsRepo.settings.value.useCurrentLocation) refreshCurrentLocation()
+        // A download can finish while the user is anywhere in the app; re-narrate as soon as the model lands.
+        viewModelScope.launch {
+            var wasInstalled = model.status.value is ModelStatus.Installed
+            model.status.collect { status ->
+                val installed = status is ModelStatus.Installed
+                if (installed && !wasInstalled) refreshAll()
+                wasInstalled = installed
+            }
+        }
     }
 
     // --- Pages ---------------------------------------------------------------------------------
@@ -140,6 +155,10 @@ class WeatherViewModel(
         } catch (e: Exception) {
             setContent(key, PageContent.Failed(e.message ?: "Couldn't load the weather"))
             return
+        } finally {
+            // The (possibly slow) Gemma step below isn't part of "refreshing". A cancelled fetch mustn't clear the
+            // flag its replacement just set, hence the job check.
+            if (jobs[key] === coroutineContext[Job]) fetching.update { it - key }
         }
         val settings = settingsRepo.settings.value
         val input = NarrationInput(place.name, forecast, settings.primaryUnit)
@@ -158,9 +177,15 @@ class WeatherViewModel(
 
     private fun launchFor(key: String, block: suspend () -> Unit) {
         jobs.remove(key)?.cancel()
+        fetching.update { it + key }
         val job = viewModelScope.launch { block() }
         jobs[key] = job
-        job.invokeOnCompletion { if (jobs[key] === job) jobs.remove(key) }
+        job.invokeOnCompletion {
+            if (jobs[key] === job) {
+                jobs.remove(key)
+                fetching.update { it - key }
+            }
+        }
     }
 
     private fun showLoadingIfEmpty(key: String) {
@@ -213,6 +238,7 @@ class WeatherViewModel(
         places.remove(id)
         jobs.remove(id)?.cancel()
         contents.update { it - id }
+        fetching.update { it - id }
     }
 
     fun movePlace(from: Int, to: Int) = places.move(from, to)
@@ -234,16 +260,25 @@ class WeatherViewModel(
         refreshAll()
     }
 
+    /** Starts downloading Gemma from Hugging Face; summaries switch over automatically once it's installed. */
+    fun downloadModel(hfToken: String) {
+        viewModelScope.launch { model.download(hfToken) }
+    }
+
+    fun cancelModelDownload() = model.cancelDownload()
+
     fun importModel(uri: String) {
-        viewModelScope.launch {
-            model.import(uri)
-            if (model.status.value is ModelStatus.Installed) refreshAll()
-        }
+        viewModelScope.launch { model.import(uri) }
     }
 
     fun removeModel() {
         model.remove()
+        llm?.releaseResources()
         refreshAll()
+    }
+
+    override fun onCleared() {
+        llm?.close()
     }
 
     companion object {

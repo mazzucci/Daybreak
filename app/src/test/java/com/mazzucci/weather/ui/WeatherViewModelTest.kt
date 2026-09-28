@@ -65,6 +65,12 @@ class WeatherViewModelTest {
 
     private class FakeModel(installed: Boolean) : LocalModelManager {
         override val status = MutableStateFlow(if (installed) ModelStatus.Installed(500L shl 20) else ModelStatus.NotInstalled)
+        var lastToken: String? = null
+        override suspend fun download(hfToken: String) {
+            lastToken = hfToken
+            status.value = ModelStatus.Downloading(0, 500L shl 20)
+        }
+        override fun cancelDownload() { status.value = ModelStatus.NotInstalled }
         override suspend fun import(uri: String) { status.value = ModelStatus.Installed(1) }
         override fun remove() { status.value = ModelStatus.NotInstalled }
     }
@@ -79,10 +85,11 @@ class WeatherViewModelTest {
     private fun TestScope.viewModel(
         settings: AppSettings = AppSettings(),
         modelInstalled: Boolean = false,
+        model: FakeModel = FakeModel(modelInstalled),
     ): WeatherViewModel {
         val repo = SettingsRepository(store, settings)
         return WeatherViewModel(
-            api, places, repo, location, FakeModel(modelInstalled), llm, TemplateNarrator(Locale.US),
+            api, places, repo, location, model, llm, TemplateNarrator(Locale.US),
         ).also { advanceUntilIdle() }
     }
 
@@ -247,6 +254,32 @@ class WeatherViewModelTest {
         vm.removeModel()
         advanceUntilIdle()
         assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+    }
+
+    @Test fun `a finished download switches summaries to Gemma without a manual refresh`() = runTest(dispatcher) {
+        places.add(london)
+        val model = FakeModel(installed = false)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), model = model)
+
+        vm.downloadModel("hf_token")
+        advanceUntilIdle()
+        assertEquals("hf_token", model.lastToken)
+        assertTrue(vm.uiState.value.modelStatus is ModelStatus.Downloading)
+        assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+
+        model.status.value = ModelStatus.Installed(500L shl 20) // DownloadManager reports completion later
+        advanceUntilIdle()
+        assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
+    }
+
+    @Test fun `cancelling a download returns to not installed`() = runTest(dispatcher) {
+        val model = FakeModel(installed = false)
+        val vm = viewModel(model = model)
+        vm.downloadModel("hf_token")
+        advanceUntilIdle()
+        vm.cancelModelDownload()
+        advanceUntilIdle()
+        assertEquals(ModelStatus.NotInstalled, vm.uiState.value.modelStatus)
     }
 
     private companion object {

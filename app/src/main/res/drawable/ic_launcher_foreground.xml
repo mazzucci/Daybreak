@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sun peeking over a cloud, the same mark as ui/WeatherIcons.kt BrandMark. Everything sits inside the
+  66dp safe zone (a circle of radius 33 around 54,54), so launchers can mask it to any shape.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Sun rays: 8 rounded strokes around the disc at (62, 44). -->
+    <group android:pivotX="62" android:pivotY="44">
+        <path android:strokeColor="#FFFFC46B" android:strokeWidth="3" android:strokeLineCap="round"
+            android:pathData="M62,27.5 L62,31.5 M62,56.5 L62,60.5 M45.5,44 L49.5,44 M74.5,44 L78.5,44" />
+        <path android:strokeColor="#FFFFC46B" android:strokeWidth="3" android:strokeLineCap="round"
+            android:pathData="M50.3,32.3 L53.2,35.2 M70.8,52.8 L73.7,55.7 M73.7,32.3 L70.8,35.2 M53.2,52.8 L50.3,55.7" />
+    </group>
+    <!-- Sun disc -->
+    <path android:fillColor="#FFFFC46B"
+        android:pathData="M62,44 m-8.5,0 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0" />
+    <!-- Cloud: flat rounded base plus two bumps, in white with a soft shadow line at the bottom. -->
+    <path android:fillColor="#FF0B3A7A" android:fillAlpha="0.25"
+        android:pathData="M35,64 h30 a7.5,7.5 0 0,1 0,15 h-30 a7.5,7.5 0 0,1 0,-15 z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M34,61 h32 a8,8 0 0,1 0,16 h-32 a8,8 0 0,1 0,-16 z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M56,60 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M43,63 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+</vector>

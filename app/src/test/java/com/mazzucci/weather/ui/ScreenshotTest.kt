@@ -1,10 +1,23 @@
 package com.mazzucci.weather.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.NightMode
+import com.mazzucci.weather.R
 import com.mazzucci.weather.TestData
 import com.mazzucci.weather.TestData.london
 import com.mazzucci.weather.TestData.sanFrancisco
@@ -38,22 +51,32 @@ class ScreenshotTest {
         "A mild, partly cloudy afternoon at 71°, but grab an umbrella: rain moves in around 6 PM.",
         NarrationSource.GEMMA,
     )
+    private val rainyNight = TestData.rainyNight()
+    private val rainyNightSummary = Narration(
+        TemplateNarrator(Locale.US).describe(NarrationInput(london.name, rainyNight, TempUnit.C)),
+        NarrationSource.TEMPLATE,
+    )
 
-    private fun weatherState(first: PageContent, place: Place? = sanFrancisco, key: String = sanFrancisco.id) =
-        WeatherUiState(
-            pages = listOf(
-                PageUi(key, place, first),
-                PageUi(london.id, london, PageContent.Loading),
-                PageUi(tokyo.id, tokyo, PageContent.Loading),
-            ),
-            savedPlaces = listOf(sanFrancisco, london, tokyo),
-        )
+    private fun weatherState(
+        first: PageContent,
+        place: Place? = sanFrancisco,
+        key: String = sanFrancisco.id,
+        settings: AppSettings = AppSettings(),
+    ) = WeatherUiState(
+        pages = listOf(
+            PageUi(key, place, first),
+            PageUi(london.id, london, PageContent.Loading),
+            PageUi(tokyo.id, tokyo, PageContent.Loading),
+        ),
+        savedPlaces = listOf(sanFrancisco, london, tokyo),
+        settings = settings,
+    )
 
     private fun snap(name: String, night: Boolean = false, content: @Composable () -> Unit) {
         paparazzi.unsafeUpdateConfig(
             DeviceConfig.PIXEL_5.copy(nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT)
         )
-        paparazzi.snapshot(name) { WeatherTheme(content) }
+        paparazzi.snapshot(name) { WeatherTheme(darkTheme = night, content = content) }
     }
 
     @Composable
@@ -61,9 +84,22 @@ class ScreenshotTest {
         WeatherPagerScreen(
             state = state,
             pagerState = rememberPagerState { state.pages.size },
-            onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenPlaces = {}, onOpenSettings = {},
+            onRefresh = {}, onRequestPermission = {}, onUseCurrentLocation = {},
+            onOpenSearch = {}, onOpenPlaces = {}, onOpenSettings = {},
         )
     }
+
+    @Composable
+    private fun Settings(status: ModelStatus) {
+        SettingsScreen(
+            settings = AppSettings(),
+            modelStatus = status,
+            onUnitChange = {}, onGemmaEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onImportModel = {}, onRemoveModel = {}, onBack = {},
+        )
+    }
+
+    // --- Weather page ---------------------------------------------------------------------------
 
     @Test fun weatherLight() = snap("weather_light") {
         Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
@@ -77,13 +113,60 @@ class ScreenshotTest {
         Weather(weatherState(PageContent.Loaded(forecast, gemmaSummary)))
     }
 
+    @Test fun weatherRainyNight() = snap("weather_rainy_night") {
+        Weather(
+            weatherState(
+                PageContent.Loaded(rainyNight, rainyNightSummary),
+                place = london, key = london.id,
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            )
+        )
+    }
+
+    @Test fun weatherRainyNightDark() = snap("weather_rainy_night_dark", night = true) {
+        Weather(
+            weatherState(
+                PageContent.Loaded(rainyNight, rainyNightSummary),
+                place = london, key = london.id,
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            )
+        )
+    }
+
+    /** Ten pages: the indicator collapses to a "1 / 10" label so the four action buttons always fit. */
+    @Test fun manyPages() = snap("many_pages") {
+        val extra = (1..7).map { i -> Place("extra$i", "Place $i", null, null, 0.0, 0.0) }
+        val base = weatherState(PageContent.Loaded(forecast, templateSummary))
+        Weather(
+            base.copy(
+                pages = base.pages + extra.map { PageUi(it.id, it, PageContent.Loading) },
+                savedPlaces = base.savedPlaces + extra,
+            )
+        )
+    }
+
+    @Test fun loading() = snap("loading") {
+        Weather(weatherState(PageContent.Loading))
+    }
+
     @Test fun permission() = snap("permission") {
         Weather(weatherState(PageContent.NeedsPermission, place = null, key = Place.CURRENT_LOCATION_ID))
     }
 
     @Test fun error() = snap("error") {
-        Weather(weatherState(PageContent.Failed("Couldn't get your location. Is location turned on?"), place = null, key = Place.CURRENT_LOCATION_ID))
+        Weather(
+            weatherState(
+                PageContent.Failed("Couldn't get your location. Is location turned on?"),
+                place = null, key = Place.CURRENT_LOCATION_ID,
+            )
+        )
     }
+
+    @Test fun empty() = snap("empty") {
+        Weather(WeatherUiState(settings = AppSettings(useCurrentLocation = false)))
+    }
+
+    // --- Other screens --------------------------------------------------------------------------
 
     @Test fun search() = snap("search") {
         SearchScreen(
@@ -109,11 +192,41 @@ class ScreenshotTest {
         )
     }
 
-    @Test fun settings() = snap("settings") {
-        SettingsScreen(
-            settings = AppSettings(),
-            modelStatus = ModelStatus.Installed(529L shl 20),
-            onUnitChange = {}, onGemmaEnabledChange = {}, onImportModel = {}, onRemoveModel = {}, onBack = {},
+    @Test fun settingsNotInstalled() = snap("settings_not_installed") {
+        Settings(ModelStatus.NotInstalled)
+    }
+
+    @Test fun settingsDownloading() = snap("settings_downloading") {
+        Settings(ModelStatus.Downloading(downloadedBytes = 212L shl 20, totalBytes = 529L shl 20))
+    }
+
+    @Test fun settingsPaused() = snap("settings_paused") {
+        Settings(
+            ModelStatus.Downloading(
+                downloadedBytes = 212L shl 20, totalBytes = 529L shl 20,
+                pausedReason = "Waiting for a network connection",
+            )
         )
+    }
+
+    @Test fun settingsFailed() = snap("settings_failed", night = true) {
+        Settings(ModelStatus.Failed("Your Hugging Face account doesn't have access yet. Open the model page, accept the Gemma license, then try again."))
+    }
+
+    @Test fun settingsInstalled() = snap("settings_installed") {
+        Settings(ModelStatus.Installed(529L shl 20))
+    }
+
+    /** The adaptive launcher icon, composited the way a circular launcher mask would show it. */
+    @Test fun appIcon() {
+        paparazzi.unsafeUpdateConfig(DeviceConfig.PIXEL_5.copy(screenWidth = 432, screenHeight = 432))
+        paparazzi.snapshot("app_icon") {
+            Box(Modifier.fillMaxSize().background(Color(0xFFF2F5F9)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(108.dp).clip(CircleShape)) {
+                    Image(painterResource(R.drawable.ic_launcher_background), contentDescription = null, Modifier.fillMaxSize())
+                    Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Weather", Modifier.fillMaxSize())
+                }
+            }
+        }
     }
 }

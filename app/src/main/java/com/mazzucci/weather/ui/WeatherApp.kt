@@ -31,16 +31,21 @@ fun WeatherApp(vm: WeatherViewModel) {
         ActivityResultContracts.RequestPermission(), vm::onLocationPermissionResult,
     )
     val requestPermission = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
+    val hasPermission = {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+    val enableCurrentLocation = {
+        vm.setUseCurrentLocation(true)
+        if (!hasPermission()) requestPermission()
+    }
     // .task files have no registered MIME type, so accept anything and validate the name on import.
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.importModel(it.toString()) }
     }
 
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        if (state.settings.useCurrentLocation && !granted) requestPermission()
+        if (state.settings.useCurrentLocation && !hasPermission()) requestPermission()
     }
     LaunchedEffect(screen, scrollTo, state.pages.size) {
         val target = scrollTo ?: return@LaunchedEffect
@@ -62,6 +67,7 @@ fun WeatherApp(vm: WeatherViewModel) {
             pagerState = pagerState,
             onRefresh = vm::refresh,
             onRequestPermission = requestPermission,
+            onUseCurrentLocation = enableCurrentLocation,
             onOpenSearch = { screen = Screen.Search },
             onOpenPlaces = { screen = Screen.Places },
             onOpenSettings = { screen = Screen.Settings },
@@ -83,11 +89,7 @@ fun WeatherApp(vm: WeatherViewModel) {
             places = state.savedPlaces,
             useCurrentLocation = state.settings.useCurrentLocation,
             onUseCurrentLocationChange = { enabled ->
-                vm.setUseCurrentLocation(enabled)
-                val granted = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-                if (enabled && !granted) requestPermission()
+                if (enabled) enableCurrentLocation() else vm.setUseCurrentLocation(false)
             },
             onMove = vm::movePlace,
             onRemove = { vm.removePlace(it.id) },
@@ -99,6 +101,8 @@ fun WeatherApp(vm: WeatherViewModel) {
             modelStatus = state.modelStatus,
             onUnitChange = vm::setPrimaryUnit,
             onGemmaEnabledChange = vm::setGemmaEnabled,
+            onDownloadModel = vm::downloadModel,
+            onCancelDownload = vm::cancelModelDownload,
             onImportModel = { modelPicker.launch(arrayOf("*/*")) },
             onRemoveModel = vm::removeModel,
             onBack = { screen = Screen.Weather },
