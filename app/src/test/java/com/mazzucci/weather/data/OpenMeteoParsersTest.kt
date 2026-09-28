@@ -3,8 +3,10 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.TestData.fixture
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 class OpenMeteoParsersTest {
@@ -28,6 +30,13 @@ class OpenMeteoParsersTest {
         assertEquals(13.0, f.nextHours.last().tempC, 0.001)
     }
 
+    @Test fun `keeps every day and hour returned`() {
+        val f = parseForecast(fixture("forecast_sf.json"))
+        assertEquals(listOf(LocalDate.of(2026, 9, 28), LocalDate.of(2026, 9, 29)), f.days.map { it.date })
+        assertEquals(48, f.hours.size)
+        assertEquals(26.7, f.days[1].highC, 0.001)
+    }
+
     @Test fun `today is the daily entry matching the current date`() {
         val f = parseForecast(fixture("forecast_sf.json"))
         assertEquals(21.8, f.today.highC, 0.001)
@@ -49,11 +58,22 @@ class OpenMeteoParsersTest {
         assertEquals(0, f.today.precipChance)
     }
 
+    @Test fun `an empty daily forecast is a friendly error`() {
+        val json = fixture("forecast_sf.json").let { raw ->
+            val root = org.json.JSONObject(raw)
+            val daily = root.getJSONObject("daily")
+            daily.keys().asSequence().toList().forEach { daily.put(it, org.json.JSONArray()) }
+            root.toString()
+        }
+        val e = assertThrows(java.io.IOException::class.java) { parseForecast(json) }
+        assertEquals("Weather service returned no daily forecast", e.message)
+    }
+
     @Test fun `parses geocoding results`() {
         val places = parseGeocoding(fixture("geocoding_springfield.json"))
         assertEquals(5, places.size)
         val first = places.first()
-        assertEquals("4409896", first.id)
+        assertEquals("geo:4409896", first.id)
         assertEquals("Springfield", first.name)
         assertEquals("Missouri", first.region)
         assertEquals("United States", first.country)

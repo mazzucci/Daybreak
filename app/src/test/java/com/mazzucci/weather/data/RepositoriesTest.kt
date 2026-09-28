@@ -49,10 +49,17 @@ class SavedPlacesRepositoryTest {
 
     @Test fun `persists all fields across instances`() {
         repo.add(sanFrancisco)
-        repo.add(Place("9", "Atlantis", latitude = 1.0, longitude = 2.0))
+        repo.add(Place("geo:9", "Atlantis", latitude = 1.0, longitude = 2.0))
         repo.move(1, 0)
         val reloaded = SavedPlacesRepository(store).places.value
-        assertEquals(listOf(Place("9", "Atlantis", latitude = 1.0, longitude = 2.0), sanFrancisco), reloaded)
+        assertEquals(listOf(Place("geo:9", "Atlantis", latitude = 1.0, longitude = 2.0), sanFrancisco), reloaded)
+    }
+
+    @Test fun `migrates ids saved before the geo prefix`() {
+        val old = """[{"id":"4409896","name":"Springfield","region":"Missouri","lat":37.2,"lon":-93.3}]"""
+        val store = InMemoryStore(mapOf("saved_places" to old))
+        assertEquals("geo:4409896", SavedPlacesRepository(store).places.value.single().id)
+        assertTrue(store.getString("saved_places")!!.contains("\"geo:4409896\""))
     }
 
     @Test fun `corrupt stored data loads as empty`() {

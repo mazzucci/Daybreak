@@ -42,7 +42,13 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         val raw = store.getString(KEY) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
-            (0 until array.length()).map { array.getJSONObject(it).toPlace() }
+            val stored = (0 until array.length()).map { array.getJSONObject(it) }
+            val places = stored.map { it.toPlace() }
+            // Places saved before ids were prefixed ("4409896" → "geo:4409896"): persist the migration once.
+            if (stored.zip(places).any { (json, place) -> json.getString("id") != place.id }) {
+                store.putString(KEY, JSONArray(places.map { it.toJson() }).toString())
+            }
+            places
         } catch (e: JSONException) {
             emptyList() // Corrupt data shouldn't brick the app; the user can re-add places.
         }
@@ -57,7 +63,7 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         .put("lon", longitude)
 
     private fun JSONObject.toPlace() = Place(
-        id = getString("id"),
+        id = getString("id").let { if (it.startsWith(Place.GEOCODING_PREFIX)) it else Place.GEOCODING_PREFIX + it },
         name = getString("name"),
         region = optString("region").ifBlank { null },
         country = optString("country").ifBlank { null },

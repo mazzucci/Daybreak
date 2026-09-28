@@ -7,15 +7,14 @@ import com.mazzucci.weather.domain.HourForecast
 import com.mazzucci.weather.domain.Place
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
-
-const val NEXT_HOURS = 12
 
 /**
  * Parses an Open-Meteo /v1/forecast response requested with `timezone=auto` and the
  * current/hourly/daily fields from [OpenMeteoApi.forecastUrl]. Times are the place's local time.
+ * All returned days and hours are kept; [Forecast] derives today and the next-hours window.
  */
 fun parseForecast(json: String): Forecast {
     val root = JSONObject(json)
@@ -35,32 +34,33 @@ fun parseForecast(json: String): Forecast {
     val hourTemps = hourly.getJSONArray("temperature_2m")
     val hourPrecip = hourly.getJSONArray("precipitation_probability")
     val hourCodes = hourly.getJSONArray("weather_code")
-    val thisHour = now.truncatedTo(ChronoUnit.HOURS)
-    val nextHours = (0 until hourTimes.length())
-        .map { i ->
-            HourForecast(
-                time = LocalDateTime.parse(hourTimes.getString(i)),
-                tempC = hourTemps.getDouble(i),
-                precipChance = hourPrecip.optIntOrZero(i),
-                code = hourCodes.getInt(i),
-            )
-        }
-        .filter { !it.time.isBefore(thisHour) }
-        .take(NEXT_HOURS)
+    val hours = (0 until hourTimes.length()).map { i ->
+        HourForecast(
+            time = LocalDateTime.parse(hourTimes.getString(i)),
+            tempC = hourTemps.getDouble(i),
+            precipChance = hourPrecip.optIntOrZero(i),
+            code = hourCodes.getInt(i),
+        )
+    }
 
     val daily = root.getJSONObject("daily")
-    val days = daily.getJSONArray("time")
-    val todayIndex = (0 until days.length())
-        .firstOrNull { LocalDate.parse(days.getString(it)) == now.toLocalDate() }
-        ?: 0
-    val today = DaySummary(
-        highC = daily.getJSONArray("temperature_2m_max").getDouble(todayIndex),
-        lowC = daily.getJSONArray("temperature_2m_min").getDouble(todayIndex),
-        precipChance = daily.getJSONArray("precipitation_probability_max").optIntOrZero(todayIndex),
-        code = daily.getJSONArray("weather_code").getInt(todayIndex),
-    )
+    val dayDates = daily.getJSONArray("time")
+    if (dayDates.length() == 0) throw IOException("Weather service returned no daily forecast")
+    val highs = daily.getJSONArray("temperature_2m_max")
+    val lows = daily.getJSONArray("temperature_2m_min")
+    val dayPrecip = daily.getJSONArray("precipitation_probability_max")
+    val dayCodes = daily.getJSONArray("weather_code")
+    val days = (0 until dayDates.length()).map { i ->
+        DaySummary(
+            date = LocalDate.parse(dayDates.getString(i)),
+            highC = highs.getDouble(i),
+            lowC = lows.getDouble(i),
+            precipChance = dayPrecip.optIntOrZero(i),
+            code = dayCodes.getInt(i),
+        )
+    }
 
-    return Forecast(current, today, nextHours)
+    return Forecast(current, days, hours)
 }
 
 /** Parses an Open-Meteo geocoding /v1/search response. No matches → empty list (the API omits "results"). */
@@ -69,7 +69,7 @@ fun parseGeocoding(json: String): List<Place> {
     return (0 until results.length()).map { i ->
         val r = results.getJSONObject(i)
         Place(
-            id = r.getLong("id").toString(),
+            id = Place.geocodingId(r.getLong("id")),
             name = r.getString("name"),
             region = r.optStringOrNull("admin1"),
             country = r.optStringOrNull("country"),
