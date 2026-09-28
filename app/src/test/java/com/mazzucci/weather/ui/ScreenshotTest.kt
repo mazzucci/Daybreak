@@ -162,6 +162,18 @@ class ScreenshotTest {
         Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
     }
 
+    /** Extremes on the narrow screen at 1.5x: negative and three-digit values must keep the 7-day columns aligned. */
+    @Test fun weatherExtremesLargeFont() = snap("weather_extremes_large_font", tall = true, narrow = true, fontScale = 1.5f) {
+        val lows = listOf(-12.0, -8.5, 3.0, 12.0, 20.0, 24.0, 30.0, 18.0)
+        val extremes = forecast.copy(days = forecast.days.mapIndexed { i, d -> d.copy(lowC = lows[i], highC = lows[i] + 8.5) })
+        Weather(
+            weatherState(
+                PageContent.Loaded(extremes, templateSummary),
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            )
+        )
+    }
+
     @Test fun weatherGemma() = snap("weather_gemma") {
         Weather(weatherState(PageContent.Loaded(forecast, gemmaSummary)))
     }

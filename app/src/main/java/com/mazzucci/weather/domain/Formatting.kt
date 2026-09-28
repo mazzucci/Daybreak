@@ -22,6 +22,9 @@ fun formatTemp(c: Double, unit: TempUnit): String = "${degrees(c, unit)}°${unit
 /** "72°" — for places where the unit is already clear from context. */
 fun formatDegrees(c: Double, unit: TempUnit): String = "${degrees(c, unit)}°"
 
+/** "74°F (23°C)": both units, primary first, for accessibility labels. */
+fun formatBothUnits(c: Double, unit: TempUnit): String = "${formatTemp(c, unit)} (${formatTemp(c, unit.other())})"
+
 fun TempUnit.other(): TempUnit = if (this == TempUnit.F) TempUnit.C else TempUnit.F
 
 /** "9 mph" or "14 km/h", following the primary temperature unit. */

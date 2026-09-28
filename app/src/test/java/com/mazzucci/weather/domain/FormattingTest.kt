@@ -27,6 +27,12 @@ class FormattingTest {
         assertEquals("14 km/h", formatWind(14.2, TempUnit.C))
     }
 
+    @Test fun `both units, primary first`() {
+        assertEquals("74°F (23°C)", formatBothUnits(23.4, TempUnit.F))
+        assertEquals("-12°C (10°F)", formatBothUnits(-12.0, TempUnit.C))
+        assertEquals("0°C (31°F)", formatBothUnits(-0.4, TempUnit.C)) // each unit rounds from the raw value
+    }
+
     @Test fun `other unit`() {
         assertEquals(TempUnit.C, TempUnit.F.other())
         assertEquals(TempUnit.F, TempUnit.C.other())
