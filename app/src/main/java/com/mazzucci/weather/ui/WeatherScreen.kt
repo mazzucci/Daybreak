@@ -3,13 +3,18 @@
 package com.mazzucci.weather.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,9 +50,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,10 +75,11 @@ import com.mazzucci.weather.domain.formatWind
 import com.mazzucci.weather.domain.other
 import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationSource
-import kotlinx.coroutines.launch
 
-/** Height of the transparent action row that floats over each page's hero. */
+/** Height of the transparent action row that floats over each page's hero (below the status bar). */
 private val TopBarHeight = 56.dp
+/** Up to this many pages the indicator is a row of dots; beyond it a compact "3 / 12" label. */
+private const val MAX_DOTS = 6
 private val PageMargin = 20.dp
 private val HeroCorner = 28.dp
 
@@ -88,7 +95,6 @@ fun WeatherPagerScreen(
     onOpenPlaces: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         if (state.pages.isEmpty()) {
             EmptyState(onOpenSearch, onUseCurrentLocation)
@@ -104,21 +110,16 @@ fun WeatherPagerScreen(
                 )
             }
         }
-        // Floating action row; every page starts with a gradient, so white icons always have contrast.
+        // Floating action row below the status bar; every page starts with a gradient, so white icons always
+        // have contrast. The indicator takes whatever width the four buttons leave, so they never get pushed off.
         CompositionLocalProvider(LocalContentColor provides Color.White) {
             Row(
-                Modifier.fillMaxWidth().height(TopBarHeight).padding(horizontal = 4.dp),
+                Modifier.fillMaxWidth().statusBarsPadding().height(TopBarHeight).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (state.pages.size > 1) {
-                    PageDots(
-                        pages = state.pages,
-                        current = pagerState.currentPage,
-                        onSelect = { scope.launch { pagerState.animateScrollToPage(it) } },
-                        modifier = Modifier.padding(start = 12.dp),
-                    )
+                Box(Modifier.weight(1f).padding(start = 12.dp), contentAlignment = Alignment.CenterStart) {
+                    if (state.pages.size > 1) PageIndicator(state.pages, pagerState.currentPage)
                 }
-                Spacer(Modifier.weight(1f))
                 if (state.pages.isNotEmpty()) {
                     IconButton({ state.pages.getOrNull(pagerState.currentPage)?.let { onRefresh(it.key) } }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -132,21 +133,22 @@ fun WeatherPagerScreen(
     }
 }
 
-/** Tappable dots, one per page, in the action row. */
+/**
+ * Where you are in the pager: dots for a few pages, a "3 / 12" label for many. Purely informative (the pager
+ * itself is swiped), so it's one accessibility node that names the current page.
+ */
 @Composable
-private fun PageDots(pages: List<PageUi>, current: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        pages.forEachIndexed { i, page ->
-            val name = page.place?.name ?: "My location"
-            val selected = i == current
-            Box(
-                Modifier
-                    .size(width = 20.dp, height = 40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(enabled = !selected, onClick = { onSelect(i) })
-                    .semantics { contentDescription = "Page ${i + 1} of ${pages.size}: $name" },
-                contentAlignment = Alignment.Center,
-            ) {
+private fun PageIndicator(pages: List<PageUi>, current: Int) {
+    val name = pages.getOrNull(current)?.let { it.place?.name ?: "My location" } ?: ""
+    val description = "Page ${current + 1} of ${pages.size}: $name"
+    if (pages.size <= MAX_DOTS) {
+        Row(
+            Modifier.height(TopBarHeight).semantics { contentDescription = description },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            pages.indices.forEach { i ->
+                val selected = i == current
                 Box(
                     Modifier
                         .size(width = if (selected) 18.dp else 8.dp, height = 8.dp)
@@ -155,6 +157,16 @@ private fun PageDots(pages: List<PageUi>, current: Int, onSelect: (Int) -> Unit,
                 )
             }
         }
+    } else {
+        Text(
+            "${current + 1} / ${pages.size}",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.18f))
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .semantics { contentDescription = description },
+        )
     }
 }
 
@@ -172,10 +184,21 @@ fun WeatherPage(
     val night = loaded?.let { isNight(it.forecast.current.time) } ?: false
     val gradient = loaded?.let { heroGradient(skyOf(it.forecast.current.code), night, dark) } ?: neutralGradient(dark)
 
+    val refreshing = page.refreshing && loaded != null
+    val refreshState = rememberPullToRefreshState()
     PullToRefreshBox(
-        isRefreshing = page.refreshing && loaded != null,
+        isRefreshing = refreshing,
         onRefresh = onRefresh,
+        state = refreshState,
         modifier = Modifier.fillMaxSize(),
+        indicator = {
+            // Below the status bar and the action row, not under them.
+            PullToRefreshDefaults.Indicator(
+                state = refreshState,
+                isRefreshing = refreshing,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = TopBarHeight),
+            )
+        },
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Hero(gradient) {
@@ -210,6 +233,7 @@ fun WeatherPage(
                     is PageContent.Loaded -> BodyForecast(content.forecast, unit, night)
                 }
                 Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         }
     }
@@ -223,6 +247,7 @@ private fun Hero(colors: List<Color>, content: @Composable () -> Unit) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = HeroCorner, bottomEnd = HeroCorner))
             .background(Brush.verticalGradient(colors))
+            .windowInsetsPadding(WindowInsets.statusBars) // gradient extends behind the status bar
             .padding(top = TopBarHeight, bottom = 24.dp)
             .padding(horizontal = PageMargin),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -502,6 +527,7 @@ private fun EmptyState(onOpenSearch: () -> Unit, onUseCurrentLocation: () -> Uni
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                 Text("Use my location")
             }
+            Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
     }
 }

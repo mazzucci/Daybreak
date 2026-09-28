@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
@@ -28,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         setContent { WeatherTheme { WeatherApp(vm) } }
     }
@@ -37,7 +39,7 @@ class MainActivity : ComponentActivity() {
 private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory = viewModelFactory {
     initializer {
         val store = SharedPrefsStore(context)
-        val modelStore = GemmaModelStore(context)
+        val modelStore = GemmaModelStore.get(context)
         WeatherViewModel(
             api = OpenMeteoApi(UrlConnectionHttpClient()),
             places = SavedPlacesRepository(store),

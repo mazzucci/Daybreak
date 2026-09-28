@@ -23,36 +23,47 @@ data class HeadResponse(val code: Int, val headers: Map<String, String>) {
 class ModelDownloadException(message: String) : IOException(message)
 
 /**
- * Asks Hugging Face for the model with the user's token, without following the redirect, and returns
- * the signed CDN URL. Keeping the token out of the actual download avoids sending it to the CDN.
+ * Asks Hugging Face for the model with the user's token, without letting the HTTP client follow redirects, and
+ * returns the signed CDN URL. Redirects that stay on huggingface.co (e.g. to a cache path) are followed here with
+ * the token; the first off-host redirect is the CDN link, which is handed to DownloadManager without the token.
  * Pure apart from [head], so the error mapping is unit-tested.
  */
 fun resolveModelDownload(token: String, head: (url: String, token: String) -> HeadResponse): ResolvedDownload {
     val trimmed = token.trim()
     if (trimmed.isEmpty()) throw ModelDownloadException("Paste a Hugging Face access token first")
-    val response = head(GemmaModelSource.DOWNLOAD_URL, trimmed)
-    return when (response.code) {
-        in 300..399 -> {
-            val location = response.header("Location")
-                ?: throw ModelDownloadException("Hugging Face didn't return a download link")
-            ResolvedDownload(
-                url = URL(URL(GemmaModelSource.DOWNLOAD_URL), location).toString(),
-                sizeBytes = response.header("X-Linked-Size")?.toLongOrNull(),
-                // For large (LFS/Xet) files the linked ETag is the file's SHA-256.
-                sha256 = response.header("X-Linked-ETag")?.trim('"', ' ')?.takeIf { SHA256.matches(it) },
+    var url = URL(GemmaModelSource.DOWNLOAD_URL)
+    var size: Long? = null
+    var sha: String? = null
+    repeat(MAX_HOPS) {
+        val response = head(url.toString(), trimmed)
+        // Size and checksum can come on any hop; keep the first ones seen.
+        size = size ?: response.header("X-Linked-Size")?.toLongOrNull()
+        sha = sha ?: response.header("X-Linked-ETag")?.trim('"', ' ')?.takeIf { SHA256.matches(it) }
+        when (response.code) {
+            in 300..399 -> {
+                val location = response.header("Location")
+                    ?: throw ModelDownloadException("Hugging Face didn't return a download link")
+                val next = URL(url, location)
+                if (!next.host.equals(url.host, ignoreCase = true)) return ResolvedDownload(next.toString(), size, sha)
+                url = next
+            }
+            // Served directly by huggingface.co, which would need the token on the download itself. LFS files
+            // always redirect to the CDN, so treat this as unexpected rather than hand the token to DownloadManager.
+            200 -> throw ModelDownloadException("Hugging Face didn't return a download link")
+            401 -> throw ModelDownloadException(
+                "Hugging Face didn't accept that token. Create a read token at huggingface.co/settings/tokens."
             )
+            403 -> throw ModelDownloadException(
+                "Your Hugging Face account doesn't have access yet. Open the model page, accept the Gemma license, then try again."
+            )
+            404 -> throw ModelDownloadException("The model file wasn't found on Hugging Face")
+            else -> throw ModelDownloadException("Hugging Face returned HTTP ${response.code}")
         }
-        200 -> ResolvedDownload(GemmaModelSource.DOWNLOAD_URL, response.header("Content-Length")?.toLongOrNull(), null)
-        401 -> throw ModelDownloadException(
-            "Hugging Face didn't accept that token. Create a read token at huggingface.co/settings/tokens."
-        )
-        403 -> throw ModelDownloadException(
-            "Your Hugging Face account doesn't have access yet. Open the model page, accept the Gemma license, then try again."
-        )
-        404 -> throw ModelDownloadException("The model file wasn't found on Hugging Face")
-        else -> throw ModelDownloadException("Hugging Face returned HTTP ${response.code}")
     }
+    throw ModelDownloadException("Too many redirects from Hugging Face")
 }
+
+private const val MAX_HOPS = 5
 
 /** Real HEAD request with redirects disabled. Call off the main thread. */
 fun httpHead(url: String, token: String): HeadResponse {

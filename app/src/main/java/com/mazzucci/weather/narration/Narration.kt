@@ -28,7 +28,7 @@ class ValidatingNarrator(
     private val primary: WeatherNarrator,
     private val fallback: WeatherNarrator = TemplateNarrator(),
     private val validator: NarrationValidator = NarrationValidator(),
-) {
+) : AutoCloseable {
     suspend fun narrate(input: NarrationInput): Narration {
         val llm = try {
             primary.narrate(input)
@@ -41,4 +41,9 @@ class ValidatingNarrator(
         if (cleaned != null && validator.isValid(cleaned, input)) return Narration(cleaned, NarrationSource.GEMMA)
         return Narration(fallback.narrate(input), NarrationSource.TEMPLATE)
     }
+
+    /** Frees the LLM's memory now, e.g. after its model was removed; it reloads on the next narration. */
+    fun releaseResources() = (primary as? GemmaNarrator)?.releaseEngine()
+
+    override fun close() = (primary as? AutoCloseable)?.close() ?: Unit
 }

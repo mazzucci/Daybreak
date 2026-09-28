@@ -238,6 +238,7 @@ class WeatherViewModel(
         places.remove(id)
         jobs.remove(id)?.cancel()
         contents.update { it - id }
+        fetching.update { it - id }
     }
 
     fun movePlace(from: Int, to: Int) = places.move(from, to)
@@ -272,7 +273,12 @@ class WeatherViewModel(
 
     fun removeModel() {
         model.remove()
+        llm?.releaseResources()
         refreshAll()
+    }
+
+    override fun onCleared() {
+        llm?.close()
     }
 
     companion object {

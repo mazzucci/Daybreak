@@ -5,8 +5,10 @@ package com.mazzucci.weather.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,7 +47,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -202,7 +204,7 @@ private fun InstalledState(status: ModelStatus.Installed, onRemoveModel: () -> U
         Column {
             Text("Installed", style = MaterialTheme.typography.titleMedium)
             Text(
-                "${formatSize(status.sizeBytes)} in the app's private storage; summaries never leave the phone.",
+                "${formatSize(status.sizeBytes)} in app storage; summaries never leave the phone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -217,24 +219,32 @@ private fun InstalledState(status: ModelStatus.Installed, onRemoveModel: () -> U
 @Composable
 private fun DownloadingState(status: ModelStatus.Downloading, onCancelDownload: () -> Unit) {
     val total = status.totalBytes
+    val paused = status.pausedReason
     val fraction = total?.let { (status.downloadedBytes.toFloat() / it).coerceIn(0f, 1f) }
     val title = when {
-        status.waitingForNetwork -> "Paused, waiting for a connection"
+        paused != null -> "Download paused"
         total == null -> "Starting download…"
         else -> "Downloading"
     }
-    val detail = when {
+    val progress = when {
         total != null -> "${formatSize(status.downloadedBytes)} of ${formatSize(total)}" +
             (fraction?.let { " · ${(it * 100).toInt()}%" } ?: "")
         else -> "Asking Hugging Face for the file"
     }
     Text(title, style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(4.dp))
-    Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (paused != null) {
+        Text(paused, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        Spacer(Modifier.height(2.dp))
+    }
+    Text(progress, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(12.dp))
     val bar = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)
-    if (fraction != null && !status.waitingForNetwork) LinearProgressIndicator({ fraction }, bar)
-    else LinearProgressIndicator(bar)
+    when {
+        // A paused download keeps its (static) progress on screen; the paused text above says why it isn't moving.
+        fraction != null -> LinearProgressIndicator({ fraction }, bar)
+        else -> LinearProgressIndicator(bar)
+    }
     Spacer(Modifier.height(12.dp))
     Text(
         "You can leave the app; the download continues in the background and shows in your notifications.",
@@ -283,19 +293,19 @@ private fun FailedBanner(message: String) {
 }
 
 /**
- * The guided download. The token lives only in this composable's saved state while the screen is open; it's
- * passed to [onDownloadModel] once and never written anywhere.
+ * The guided download. The token lives only in composition memory while the screen is open (deliberately not
+ * rememberSaveable, so it never enters saved instance state); it's passed to [onDownloadModel] once and never
+ * written anywhere.
  */
 @Composable
 private fun SetupSteps(onDownloadModel: (String) -> Unit, onImportModel: () -> Unit) {
-    val uriHandler = LocalUriHandler.current
-    var token by rememberSaveable { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
 
     Step(1, "Accept the license", "Sign in to Hugging Face (free) and accept Google's terms on the model page.") {
-        OutlinedButton({ uriHandler.openUri(GemmaModelSource.MODEL_PAGE) }) { Text("Open model page") }
+        LinkButton("Open model page", GemmaModelSource.MODEL_PAGE)
     }
     Step(2, "Create a read token", "In your account settings, make an access token with read permission and copy it.") {
-        OutlinedButton({ uriHandler.openUri(GemmaModelSource.TOKENS_PAGE) }) { Text("Get a token") }
+        LinkButton("Get a token", GemmaModelSource.TOKENS_PAGE)
     }
     Step(3, "Paste the token and download", "One-time download, $MODEL_SIZE_HINT, Wi-Fi recommended. The token is used once to start it and isn't stored.", last = true) {
         OutlinedTextField(
@@ -327,11 +337,34 @@ private fun SetupSteps(onDownloadModel: (String) -> Unit, onImportModel: () -> U
     }
 }
 
-/** One numbered step: a badge and a connector line on the left, title/text/action on the right. */
+/**
+ * Opens [url] in the browser; devices without one (or with it disabled) get the address inline instead of a
+ * crash, since [androidx.compose.ui.platform.UriHandler.openUri] throws when no activity can handle it.
+ */
+@Composable
+private fun LinkButton(label: String, url: String) {
+    val uriHandler = LocalUriHandler.current
+    var failed by remember { mutableStateOf(false) }
+    OutlinedButton({ failed = runCatching { uriHandler.openUri(url) }.isFailure }) { Text(label) }
+    if (failed) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Couldn't open a browser. On another device, visit ${url.removePrefix("https://")}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+/**
+ * One numbered step: a badge and a connector line on the left, title/text/action on the right. The row is
+ * sized to its content's intrinsic height so the connector can fill it (a weight inside the scrolling column
+ * would get no height at all).
+ */
 @Composable
 private fun Step(number: Int, title: String, text: String, last: Boolean = false, action: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth()) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,

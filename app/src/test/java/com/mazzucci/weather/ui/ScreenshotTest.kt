@@ -133,6 +133,18 @@ class ScreenshotTest {
         )
     }
 
+    /** Ten pages: the indicator collapses to a "1 / 10" label so the four action buttons always fit. */
+    @Test fun manyPages() = snap("many_pages") {
+        val extra = (1..7).map { i -> Place("extra$i", "Place $i", null, null, 0.0, 0.0) }
+        val base = weatherState(PageContent.Loaded(forecast, templateSummary))
+        Weather(
+            base.copy(
+                pages = base.pages + extra.map { PageUi(it.id, it, PageContent.Loading) },
+                savedPlaces = base.savedPlaces + extra,
+            )
+        )
+    }
+
     @Test fun loading() = snap("loading") {
         Weather(weatherState(PageContent.Loading))
     }
@@ -186,6 +198,15 @@ class ScreenshotTest {
 
     @Test fun settingsDownloading() = snap("settings_downloading") {
         Settings(ModelStatus.Downloading(downloadedBytes = 212L shl 20, totalBytes = 529L shl 20))
+    }
+
+    @Test fun settingsPaused() = snap("settings_paused") {
+        Settings(
+            ModelStatus.Downloading(
+                downloadedBytes = 212L shl 20, totalBytes = 529L shl 20,
+                pausedReason = "Waiting for a network connection",
+            )
+        )
     }
 
     @Test fun settingsFailed() = snap("settings_failed", night = true) {

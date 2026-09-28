@@ -46,9 +46,9 @@ To set it up, go to **Settings → AI summary** and follow the three steps on sc
 
 1. Open the model page, [litert-community/Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT), and accept the Gemma license (free Hugging Face account).
 2. Create a Hugging Face access token with read permission and paste it into the app. The token is only used once, to start the download; it isn't stored.
-3. Download the model (about 550 MB, Wi-Fi recommended). The download runs through the system download manager, so it carries on in the background, and the file is checked against its SHA-256 before being installed.
+3. Download the model (about 550 MB, Wi-Fi recommended). The download runs through the system download manager, so it carries on in the background (and resumes being tracked if the app is closed), and the file is checked against the SHA-256 checksum Hugging Face reports (or its expected size, if no checksum is given) before being installed.
 
-If you already have `gemma3-1b-it-int4.task` on the phone, **Import file…** copies it into the app's private storage instead, so you can delete the original afterwards.
+If you already have `gemma3-1b-it-int4.task` on the phone, **Import file…** copies it into the app's own storage instead, so you can delete the original afterwards.
 
 How it works:
 
