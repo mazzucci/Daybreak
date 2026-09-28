@@ -13,7 +13,12 @@ import org.json.JSONObject
 
 /** The user's saved places, in display order, persisted as a JSON array. */
 class SavedPlacesRepository(private val store: KeyValueStore) {
-    private val _places = MutableStateFlow(load())
+    private val _places = MutableStateFlow(load().also { loaded ->
+        // Places saved before ids were prefixed ("4409896" → "geo:4409896"); persist the migration once.
+        if (store.getString(KEY)?.let { raw -> loaded.isNotEmpty() && !raw.contains(Place.GEOCODING_PREFIX) } == true) {
+            store.putString(KEY, JSONArray(loaded.map { it.toJson() }).toString())
+        }
+    })
     val places: StateFlow<List<Place>> = _places.asStateFlow()
 
     /** Adds [place] at the end. Returns false if it's already saved. */
@@ -57,7 +62,7 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         .put("lon", longitude)
 
     private fun JSONObject.toPlace() = Place(
-        id = getString("id"),
+        id = getString("id").let { if (it.startsWith(Place.GEOCODING_PREFIX)) it else Place.GEOCODING_PREFIX + it },
         name = getString("name"),
         region = optString("region").ifBlank { null },
         country = optString("country").ifBlank { null },

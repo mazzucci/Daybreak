@@ -1,7 +1,6 @@
 package com.mazzucci.weather.ui
 
 import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,8 +11,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private enum class Screen { Weather, Search, Places, Settings }
@@ -22,7 +19,6 @@ private enum class Screen { Weather, Search, Places, Settings }
 @Composable
 fun WeatherApp(vm: WeatherViewModel) {
     val state by vm.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     var screen by rememberSaveable { mutableStateOf(Screen.Weather) }
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
     val pagerState = rememberPagerState { state.pages.size }
@@ -31,13 +27,9 @@ fun WeatherApp(vm: WeatherViewModel) {
         ActivityResultContracts.RequestPermission(), vm::onLocationPermissionResult,
     )
     val requestPermission = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
-    val hasPermission = {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
-    }
     val enableCurrentLocation = {
         vm.setUseCurrentLocation(true)
-        if (!hasPermission()) requestPermission()
+        if (vm.needsLocationPermission()) requestPermission()
     }
     // .task files have no registered MIME type, so accept anything and validate the name on import.
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -45,7 +37,7 @@ fun WeatherApp(vm: WeatherViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        if (state.settings.useCurrentLocation && !hasPermission()) requestPermission()
+        if (vm.shouldRequestLocationOnStart()) requestPermission()
     }
     LaunchedEffect(screen, scrollTo, state.pages.size) {
         val target = scrollTo ?: return@LaunchedEffect

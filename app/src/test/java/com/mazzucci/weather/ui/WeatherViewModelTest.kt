@@ -30,6 +30,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,8 +47,10 @@ class WeatherViewModelTest {
         var failing = false
         val searches = mutableListOf<String>()
         var searchResults: List<Place> = emptyList()
+        var forecastCalls = 0
 
         override suspend fun forecast(latitude: Double, longitude: Double): Forecast {
+            forecastCalls++
             if (failing) throw IOException("Weather service returned HTTP 503")
             return forecasts[latitude] ?: TestData.forecast()
         }
@@ -186,11 +189,38 @@ class WeatherViewModelTest {
     @Test fun `changing the unit rewrites the summary`() = runTest(dispatcher) {
         places.add(london)
         val vm = viewModel(AppSettings(primaryUnit = TempUnit.F, useCurrentLocation = false))
+        val calls = api.forecastCalls
         vm.setPrimaryUnit(TempUnit.C)
         advanceUntilIdle()
+        assertEquals("no network needed to rewrite summaries", calls, api.forecastCalls)
         val summary = (vm.content(london.id) as PageContent.Loaded).summary
         assertTrue(summary.text, summary.text.startsWith("21° and partly cloudy now"))
         assertEquals(TempUnit.C, vm.uiState.value.settings.primaryUnit)
+    }
+
+    @Test fun `turning Gemma off rewrites summaries from the cached forecast`() = runTest(dispatcher) {
+        places.add(london)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        val calls = api.forecastCalls
+
+        vm.setGemmaEnabled(false)
+        advanceUntilIdle()
+        assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(calls, api.forecastCalls)
+    }
+
+    @Test fun `location permission is answered by the provider`() = runTest(dispatcher) {
+        location.granted = false
+        val vm = viewModel()
+        assertTrue(vm.needsLocationPermission())
+        assertTrue(vm.shouldRequestLocationOnStart())
+        location.granted = true
+        assertFalse(vm.needsLocationPermission())
+
+        location.granted = false
+        val noCurrent = viewModel(AppSettings(useCurrentLocation = false))
+        assertFalse(noCurrent.shouldRequestLocationOnStart())
     }
 
     @Test fun `search is debounced and uses the latest query`() = runTest(dispatcher) {
@@ -246,6 +276,7 @@ class WeatherViewModelTest {
     @Test fun `importing a model switches summaries to Gemma`() = runTest(dispatcher) {
         places.add(london)
         val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = false)
+        val calls = api.forecastCalls
         vm.importModel("content://picked/gemma3-1b-it-int4.task")
         advanceUntilIdle()
         assertTrue(vm.uiState.value.modelStatus is ModelStatus.Installed)
@@ -254,6 +285,7 @@ class WeatherViewModelTest {
         vm.removeModel()
         advanceUntilIdle()
         assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(calls, api.forecastCalls)
     }
 
     @Test fun `a finished download switches summaries to Gemma without a manual refresh`() = runTest(dispatcher) {

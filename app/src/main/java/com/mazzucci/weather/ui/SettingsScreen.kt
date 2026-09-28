@@ -116,20 +116,27 @@ fun SettingsScreen(
 
             SectionTitle("AI summary")
             SettingsCard {
+                val modelInstalled = modelStatus is ModelStatus.Installed
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Describe the weather with Gemma", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "Runs entirely on this phone; the standard summary stays if Gemma's text doesn't match the forecast.",
+                            if (modelInstalled) {
+                                "Runs entirely on this phone; the standard summary stays if Gemma's text doesn't match the forecast."
+                            } else {
+                                "Download or import the model below to turn this on."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Spacer(Modifier.width(16.dp))
+                    // Without a model the switch would promise something that can't happen, so show it off and disabled.
                     Switch(
-                        settings.gemmaEnabled,
-                        onGemmaEnabledChange,
+                        checked = settings.gemmaEnabled && modelInstalled,
+                        onCheckedChange = onGemmaEnabledChange,
+                        enabled = modelInstalled,
                         modifier = Modifier.semantics { contentDescription = "Describe the weather with Gemma" },
                     )
                 }

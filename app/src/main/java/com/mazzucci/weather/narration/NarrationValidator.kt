@@ -31,7 +31,7 @@ class NarrationValidator(private val maxChars: Int = 280) {
 
         val temps = allowedTemps(input)
         val percents = allowedPercents(input)
-        val others = allowedOthers(input)
+        val winds = allowedWinds(input)
         return NUMBER.findAll(withoutTimes).all { m ->
             val value = m.groupValues[1].toDoubleOrNull() ?: return@all false
             if (value != value.roundToInt().toDouble()) return@all false // we only give it whole numbers
@@ -42,7 +42,10 @@ class NarrationValidator(private val maxChars: Int = 280) {
                 suffix == "°c" -> n in temps.getValue(TempUnit.C)
                 suffix.startsWith("°") || suffix.startsWith("degree") -> n in temps.getValue(input.unit)
                 suffix == "%" || suffix.startsWith("percent") -> n in percents
-                else -> n in others || n in temps.getValue(input.unit) || n in percents
+                suffix == "mph" || suffix == "km/h" || suffix == "kph" -> n in winds
+                // A bare number can only be a wind speed or the hour window: temperatures and percentages
+                // must carry their unit, so a stray "74" can't pass as some other value that happens to match.
+                else -> n in winds || n == input.forecast.nextHours.size
             }
         }
     }
@@ -59,16 +62,15 @@ class NarrationValidator(private val maxChars: Int = 280) {
         return (f.nextHours.map { it.precipChance } + f.today.precipChance + f.current.humidity).toSet()
     }
 
-    private fun allowedOthers(input: NarrationInput): Set<Int> {
+    private fun allowedWinds(input: NarrationInput): Set<Int> {
         val wind = input.forecast.current.windKmh
-        // Wind in either unit, and the "next 12 hours" window we describe in the prompt.
-        return setOf(wind.roundToInt(), kmhToMph(wind).roundToInt(), input.forecast.nextHours.size)
+        return setOf(wind.roundToInt(), kmhToMph(wind).roundToInt())
     }
 
     private companion object {
         val SENTENCE_END = Regex("[.!?](\\s|$)")
         /** "3 PM", "3pm", "3 p.m.", "3:30 pm", "15:00". Group 1 is the hour. */
         val TIME = Regex("\\b(\\d{1,2})(?::\\d{2}(?:\\s?[AaPp]\\.?[Mm]\\.?)?|\\s?[AaPp]\\.?[Mm]\\.?)(?![A-Za-z0-9])")
-        val NUMBER = Regex("(-?\\d+(?:\\.\\d+)?)(\\s?°\\s?[FfCc]?|\\s?%|\\s?percent|\\s?degrees?)?")
+        val NUMBER = Regex("(-?\\d+(?:\\.\\d+)?)(\\s?°\\s?[FfCc]?|\\s?%|\\s?percent|\\s?degrees?|\\s?mph|\\s?km/h|\\s?kph)?")
     }
 }

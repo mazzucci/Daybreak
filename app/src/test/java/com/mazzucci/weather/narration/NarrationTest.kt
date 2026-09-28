@@ -37,7 +37,7 @@ class TemplateNarratorTest {
     }
 
     @Test fun `mentions a moderate daily chance when no single hour is likely`() {
-        val f = TestData.forecast(rainAt = null).let { it.copy(today = it.today.copy(precipChance = 30)) }
+        val f = TestData.forecast(rainAt = null).let { it.copy(days = listOf(it.today.copy(precipChance = 30)) + it.days.drop(1)) }
         assertTrue(narrator.describe(inputF.copy(forecast = f)).endsWith("There's a 30% chance of rain today."))
     }
 
@@ -73,6 +73,15 @@ class NarrationValidatorTest {
         assertFalse(valid("There's a 90% chance of rain."))
         assertFalse(valid("Winds up to 30 mph."))
         assertFalse(valid("Temperatures around 21.4°C.", inputC)) // we only give whole numbers
+    }
+
+    @Test fun `temperatures and percentages need their unit`() {
+        assertFalse(valid("Highs near 74 today.")) // a real high, but a bare number could mean anything
+        assertFalse(valid("Humidity is at 58 right now."))
+        assertTrue(valid("Highs near 74° today, humidity 58%."))
+        assertTrue(valid("Breezy at 9 today.")) // bare wind speed is fine
+        assertTrue(valid("Winds around 14 km/h.", inputC))
+        assertFalse(valid("Winds around 30 km/h.", inputC))
     }
 
     @Test fun `rejects impossible times`() {
@@ -141,10 +150,22 @@ class GemmaPromptTest {
     }
 
     @Test fun `every number in the prompt JSON would pass validation`() {
-        // Guards against the prompt giving the model numbers that the validator would then reject.
-        val json = GemmaPrompt.forecastJson(inputC, Locale.US)
-        val numbers = Regex("-?\\d+").findAll(json.replace(Regex("\\d{1,2} [AP]M"), "")).map { it.value }
+        // Guards against the prompt giving the model numbers that the validator would then reject, when the
+        // model restates them with their unit as the prompt asks.
+        val json = JSONObject(GemmaPrompt.forecastJson(inputC, Locale.US))
         val v = NarrationValidator()
-        numbers.forEach { n -> assertTrue("$n should validate", v.isValid("About $n.", inputC)) }
+        val now = json.getJSONObject("now")
+        val today = json.getJSONObject("today")
+        val later = json.getJSONArray("later")
+        val statements = buildList {
+            add("It's ${now.getInt("temperature")}° now, feeling like ${now.getInt("feels_like")}°.")
+            add("Humidity ${now.getInt("humidity_percent")}% and wind ${now.getString("wind")}.")
+            add("High ${today.getInt("high")}°, low ${today.getInt("low")}°, rain ${today.getInt("max_rain_chance_percent")}%.")
+            for (i in 0 until later.length()) {
+                val h = later.getJSONObject(i)
+                add("At ${h.getString("time")} ${h.getInt("temperature")}° with ${h.getInt("rain_chance_percent")}% rain.")
+            }
+        }
+        statements.forEach { assertTrue(it, v.isValid(it, inputC)) }
     }
 }

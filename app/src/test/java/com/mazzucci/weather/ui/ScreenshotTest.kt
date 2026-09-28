@@ -173,12 +173,12 @@ class ScreenshotTest {
             search = SearchUi(
                 query = "Springfield",
                 results = listOf(
-                    Place("4409896", "Springfield", "Missouri", "United States", 37.2, -93.3),
-                    Place("4250542", "Springfield", "Illinois", "United States", 39.8, -89.6),
-                    Place("4951788", "Springfield", "Massachusetts", "United States", 42.1, -72.6),
+                    Place("geo:4409896", "Springfield", "Missouri", "United States", 37.2, -93.3),
+                    Place("geo:4250542", "Springfield", "Illinois", "United States", 39.8, -89.6),
+                    Place("geo:4951788", "Springfield", "Massachusetts", "United States", 42.1, -72.6),
                 ),
             ),
-            savedIds = setOf("4250542"),
+            savedIds = setOf("geo:4250542"),
             onQueryChange = {}, onPick = {}, onBack = {},
             autoFocus = false,
         )

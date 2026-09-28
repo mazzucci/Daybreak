@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 class OpenMeteoParsersTest {
@@ -26,6 +27,13 @@ class OpenMeteoParsersTest {
         assertEquals(LocalDateTime.of(2026, 9, 29, 1, 0), f.nextHours.last().time)
         assertEquals(21.8, f.nextHours.first().tempC, 0.001)
         assertEquals(13.0, f.nextHours.last().tempC, 0.001)
+    }
+
+    @Test fun `keeps every day and hour returned`() {
+        val f = parseForecast(fixture("forecast_sf.json"))
+        assertEquals(listOf(LocalDate.of(2026, 9, 28), LocalDate.of(2026, 9, 29)), f.days.map { it.date })
+        assertEquals(48, f.hours.size)
+        assertEquals(26.7, f.days[1].highC, 0.001)
     }
 
     @Test fun `today is the daily entry matching the current date`() {
@@ -53,7 +61,7 @@ class OpenMeteoParsersTest {
         val places = parseGeocoding(fixture("geocoding_springfield.json"))
         assertEquals(5, places.size)
         val first = places.first()
-        assertEquals("4409896", first.id)
+        assertEquals("geo:4409896", first.id)
         assertEquals("Springfield", first.name)
         assertEquals("Missouri", first.region)
         assertEquals("United States", first.country)

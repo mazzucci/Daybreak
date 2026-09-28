@@ -1,5 +1,6 @@
 package com.mazzucci.weather.data
 
+import com.mazzucci.weather.domain.FORECAST_DAYS
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
 import java.net.URLEncoder
@@ -24,7 +25,7 @@ class OpenMeteoApi(private val http: HttpClient) : WeatherApi {
                 "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code" +
                 "&hourly=temperature_2m,precipitation_probability,weather_code" +
                 "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code" +
-                "&timezone=auto&forecast_days=2"
+                "&timezone=auto&forecast_days=$FORECAST_DAYS"
 
         fun searchUrl(query: String): String =
             "https://geocoding-api.open-meteo.com/v1/search?name=${URLEncoder.encode(query.trim(), "UTF-8")}" +

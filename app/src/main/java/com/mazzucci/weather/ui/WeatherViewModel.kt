@@ -105,7 +105,7 @@ class WeatherViewModel(
             var wasInstalled = model.status.value is ModelStatus.Installed
             model.status.collect { status ->
                 val installed = status is ModelStatus.Installed
-                if (installed && !wasInstalled) refreshAll()
+                if (installed && !wasInstalled) renarrateAll()
                 wasInstalled = installed
             }
         }
@@ -119,6 +119,13 @@ class WeatherViewModel(
     }
 
     fun refreshAll() = uiState.value.pages.forEach { refresh(it.key) }
+
+    /** Whether the app still needs the location permission (the one place this is checked). */
+    fun needsLocationPermission(): Boolean = !location.hasPermission()
+
+    /** Whether to ask for the location permission when the app opens. */
+    fun shouldRequestLocationOnStart(): Boolean =
+        settingsRepo.settings.value.useCurrentLocation && needsLocationPermission()
 
     /** Called with the result of the permission prompt (or the initial check). */
     fun onLocationPermissionResult(granted: Boolean) {
@@ -160,9 +167,13 @@ class WeatherViewModel(
             // flag its replacement just set, hence the job check.
             if (jobs[key] === coroutineContext[Job]) fetching.update { it - key }
         }
+        showForecast(key, place, forecast)
+    }
+
+    /** Shows [forecast] with the instant template summary, then swaps in Gemma's if it produces a valid one. */
+    private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
         val settings = settingsRepo.settings.value
         val input = NarrationInput(place.name, forecast, settings.primaryUnit)
-        // Show the instant template summary first; swap in Gemma's if it produces a valid one.
         setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE)))
         if (llm != null && settings.gemmaEnabled && model.status.value is ModelStatus.Installed) {
             val narration = llm.narrate(input)
@@ -175,9 +186,26 @@ class WeatherViewModel(
         }
     }
 
-    private fun launchFor(key: String, block: suspend () -> Unit) {
+    /**
+     * Rewrites the summary of every loaded page from its cached forecast, without touching the network. Used when
+     * something that only affects the wording changes (unit, Gemma on/off, model installed/removed).
+     */
+    private fun renarrateAll() {
+        val placeFor = places.places.value.associateBy { it.id } +
+            listOfNotNull(currentPlace.value?.let { CURRENT to it })
+        contents.value.forEach { (key, content) ->
+            val place = placeFor[key]
+            // A page that's still fetching will narrate with the new settings when its forecast arrives.
+            if (content is PageContent.Loaded && place != null && key !in fetching.value) {
+                launchFor(key, fetch = false) { showForecast(key, place, content.forecast) }
+            }
+        }
+    }
+
+    /** Runs [block] as the only job for [key], replacing any running one. [fetch] drives the refresh indicator. */
+    private fun launchFor(key: String, fetch: Boolean = true, block: suspend () -> Unit) {
         jobs.remove(key)?.cancel()
-        fetching.update { it + key }
+        if (fetch) fetching.update { it + key }
         val job = viewModelScope.launch { block() }
         jobs[key] = job
         job.invokeOnCompletion {
@@ -247,7 +275,7 @@ class WeatherViewModel(
 
     fun setPrimaryUnit(unit: TempUnit) {
         settingsRepo.update { it.copy(primaryUnit = unit) }
-        refreshAll() // Summaries are written in the primary unit.
+        renarrateAll() // Summaries are written in the primary unit.
     }
 
     fun setUseCurrentLocation(enabled: Boolean) {
@@ -257,7 +285,7 @@ class WeatherViewModel(
 
     fun setGemmaEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(gemmaEnabled = enabled) }
-        refreshAll()
+        renarrateAll()
     }
 
     /** Starts downloading Gemma from Hugging Face; summaries switch over automatically once it's installed. */
@@ -274,7 +302,7 @@ class WeatherViewModel(
     fun removeModel() {
         model.remove()
         llm?.releaseResources()
-        refreshAll()
+        renarrateAll()
     }
 
     override fun onCleared() {

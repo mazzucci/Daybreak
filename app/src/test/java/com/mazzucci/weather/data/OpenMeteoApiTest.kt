@@ -17,6 +17,7 @@ class OpenMeteoApiTest {
         assertTrue(url.startsWith("https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42"))
         assertTrue("current=" in url && "hourly=" in url && "daily=" in url)
         assertTrue("timezone=auto" in url)
+        assertTrue("forecast_days=8" in url)
         assertEquals(12, f.nextHours.size)
     }
 
