@@ -39,4 +39,30 @@ object TestData {
             )
         },
     )
+
+    /** 9.8°C (50°F), steady rain at 10:30 PM in London; a few hours of showers then clearing to overcast. */
+    fun rainyNight(): Forecast {
+        val at = LocalDateTime.of(2026, 9, 28, 22, 30)
+        return Forecast(
+            current = CurrentConditions(at, tempC = 9.8, feelsLikeC = 7.4, humidity = 91, windKmh = 27.0, code = 63),
+            today = DaySummary(highC = 14.1, lowC = 8.3, precipChance = 90, code = 63),
+            nextHours = (0 until 12).map { i ->
+                HourForecast(
+                    time = at.withMinute(0).plusHours(i.toLong()),
+                    tempC = 9.8 - i * 0.2,
+                    precipChance = when {
+                        i < 3 -> 90
+                        i < 6 -> 60
+                        else -> 20
+                    },
+                    code = when {
+                        i < 3 -> 63
+                        i < 6 -> 80
+                        i < 9 -> 3
+                        else -> 2
+                    },
+                )
+            },
+        )
+    }
 }

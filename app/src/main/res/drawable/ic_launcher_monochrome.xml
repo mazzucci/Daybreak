@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single-colour version of the mark for themed icons (Android 13+); the launcher supplies the tint. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M62,27.5 L62,31.5 M45.5,44 L49.5,44 M74.5,44 L78.5,44 M50.3,32.3 L53.2,35.2 M73.7,32.3 L70.8,35.2 M70.8,52.8 L73.7,55.7" />
+    <path android:fillColor="#FF000000"
+        android:pathData="M62,44 m-8.5,0 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0" />
+    <path android:fillColor="#FF000000"
+        android:pathData="M34,61 h32 a8,8 0 0,1 0,16 h-32 a8,8 0 0,1 0,-16 z" />
+    <path android:fillColor="#FF000000"
+        android:pathData="M56,60 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+    <path android:fillColor="#FF000000"
+        android:pathData="M43,63 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+</vector>
