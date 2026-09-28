@@ -2,6 +2,7 @@ package com.mazzucci.weather.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.Locale
 
@@ -34,6 +35,23 @@ class FormattingTest {
     @Test fun `hour labels`() {
         assertEquals("3 PM", formatHour(LocalDateTime.of(2026, 1, 1, 15, 0), Locale.US))
         assertEquals("12 AM", formatHour(LocalDateTime.of(2026, 1, 1, 0, 0), Locale.US))
+    }
+
+    @Test fun `clock times and day labels`() {
+        assertEquals("7:02 AM", formatClock(LocalDateTime.of(2026, 9, 28, 7, 2), Locale.US))
+        assertEquals("6:56 PM", formatClock(LocalDateTime.of(2026, 9, 28, 18, 56), Locale.US))
+        val today = LocalDate.of(2026, 9, 28) // a Monday
+        assertEquals("Today", formatDayLabel(today, today, Locale.US))
+        assertEquals("Tue", formatDayLabel(today.plusDays(1), today, Locale.US))
+        assertEquals("Tuesday", formatDayName(today.plusDays(1), today, Locale.US))
+    }
+
+    @Test fun `UV categories follow the WHO bands`() {
+        assertEquals("Low", describeUv(2.4))
+        assertEquals("Moderate", describeUv(2.6))
+        assertEquals("High", describeUv(6.05))
+        assertEquals("Very high", describeUv(10.0))
+        assertEquals("Extreme", describeUv(11.2))
     }
 
     @Test fun `describes WMO codes`() {
