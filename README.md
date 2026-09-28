@@ -6,6 +6,7 @@ A simple Android app that shows the weather for your current location and any pl
 - Current location is optional: turn it off and use saved places only
 - A one-line summary at the top, a large temperature in your preferred unit with the other unit alongside, today's high/low and rain chance, and the next 12 hours
 - Today's sunrise, sunset, UV index and wind gusts, plus a 7-day list with each day's range on a shared scale
+- Every temperature in both units: the primary one large, the other small underneath (hourly strip and 7-day list included)
 - Optional on-device AI summary written by [Gemma](https://ai.google.dev/gemma), run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
 - Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 8 days of hourly and daily data per place, including wind, gusts, sun times and UV
 - Uses Android's built-in location service (no Google Play Services required)

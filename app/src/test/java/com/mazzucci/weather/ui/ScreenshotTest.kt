@@ -72,13 +72,25 @@ class ScreenshotTest {
         settings = settings,
     )
 
-    /** [tall] renders on a very tall screen so the whole scrolling page (down to the 7-day list) is visible. */
-    private fun snap(name: String, night: Boolean = false, tall: Boolean = false, content: @Composable () -> Unit) {
+    /**
+     * [tall] renders on a very tall screen so the whole scrolling page (down to the 7-day list) is visible.
+     * [narrow] uses the 320dp width of the smallest phones; [fontScale] is the system "font size" setting.
+     */
+    private fun snap(
+        name: String,
+        night: Boolean = false,
+        tall: Boolean = false,
+        narrow: Boolean = false,
+        fontScale: Float = 1f,
+        content: @Composable () -> Unit,
+    ) {
         val device = DeviceConfig.PIXEL_5
         paparazzi.unsafeUpdateConfig(
             device.copy(
                 nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT,
+                screenWidth = if (narrow) 320 * device.density.dpiValue / 160 else device.screenWidth,
                 screenHeight = if (tall) device.screenHeight * 2 else device.screenHeight,
+                fontScale = fontScale,
             )
         )
         paparazzi.snapshot(name) { WeatherTheme(darkTheme = night, content = content) }
@@ -138,6 +150,16 @@ class ScreenshotTest {
                 settings = AppSettings(primaryUnit = TempUnit.C),
             )
         )
+    }
+
+    /** Smallest supported width: the 7-day rows must still fit both units, the bar and the rain chance. */
+    @Test fun weatherNarrow() = snap("weather_narrow", tall = true, narrow = true) {
+        Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
+    }
+
+    /** Largest common font size, on the narrow screen: cells grow instead of clipping. */
+    @Test fun weatherLargeFont() = snap("weather_large_font", tall = true, narrow = true, fontScale = 1.5f) {
+        Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
     }
 
     @Test fun weatherGemma() = snap("weather_gemma") {

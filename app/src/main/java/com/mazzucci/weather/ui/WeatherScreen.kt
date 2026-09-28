@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -65,8 +68,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mazzucci.weather.domain.Forecast
@@ -293,6 +298,7 @@ private fun PlaceHeader(page: PageUi) {
 }
 
 /** Summary, big temperature, condition and today's range, all on the gradient. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit, night: Boolean) {
     val cur = forecast.current
@@ -321,7 +327,11 @@ private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit,
         Text(cur.description, style = MaterialTheme.typography.titleLarge)
     }
     Spacer(Modifier.height(16.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Wraps onto a second line on narrow screens or with large text, rather than squeezing a pill.
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         HeroPill("High", formatDegrees(forecast.today.highC, unit))
         HeroPill("Low", formatDegrees(forecast.today.lowC, unit))
         HeroPill("Rain", "${forecast.today.precipChance}%")
@@ -338,9 +348,9 @@ private fun HeroPill(label: String, value: String) {
             .semantics(mergeDescendants = true) { contentDescription = "$label $value" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         Spacer(Modifier.width(6.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium)
+        Text(value, style = MaterialTheme.typography.titleMedium, maxLines = 1)
     }
 }
 
@@ -440,20 +450,52 @@ private fun TileRow(content: @Composable RowScope.() -> Unit) {
 }
 
 /**
+ * A temperature in the primary unit with the other unit in small muted text underneath ("71°" over "21°C"),
+ * the same pairing the hero uses. [primaryStyle] sets the size of the main line; the secondary is always
+ * labelSmall so it reads as an annotation, not a second value to compare.
+ */
+@Composable
+private fun DualTemp(
+    c: Double,
+    unit: TempUnit,
+    primaryStyle: TextStyle,
+    modifier: Modifier = Modifier,
+    alignment: Alignment.Horizontal = Alignment.CenterHorizontally,
+) {
+    Column(modifier, horizontalAlignment = alignment) {
+        Text(formatDegrees(c, unit), style = primaryStyle, maxLines = 1)
+        Text(
+            formatTemp(c, unit.other()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/** "74°F (23°C)" for accessibility labels, so TalkBack announces both units like the hero does. */
+private fun describeTemp(c: Double, unit: TempUnit): String =
+    "${formatTemp(c, unit)} (${formatTemp(c, unit.other())})"
+
+/**
  * One row per day: name, icon, rain chance, and the low–high range drawn on a bar shared by the whole week, so
- * warmer and cooler days line up visually.
+ * warmer and cooler days line up visually. Low and high each carry the other unit underneath, and the bar sits
+ * level with the primary line so the row still scans as "low ── high".
  */
 @Composable
 private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) {
     val palette = cardIconPalette()
     val rainColor = MaterialTheme.weatherColors.rain
-    // Column widths follow the font scale, so large text doesn't wrap "Today" or "-12°" mid-word.
+    // Minimum column widths follow the font scale, so the columns stay aligned across rows at any text size.
     val density = LocalDensity.current
     val dayWidth = with(density) { 52.sp.toDp() }
     val rainWidth = with(density) { 36.sp.toDp() }
     val tempWidth = with(density) { 34.sp.toDp() }
     val weekLow = days.minOf { it.lowC }
     val weekHigh = days.maxOf { it.highC }
+    // Line heights scale with the font, so the bar keeps tracking the primary numbers at any font size.
+    val primaryLine = with(density) { MaterialTheme.typography.titleSmall.lineHeight.toDp() }
+    val secondaryLine = with(density) { MaterialTheme.typography.labelSmall.lineHeight.toDp() }
     Card(
         Modifier.fillMaxWidth().padding(horizontal = PageMargin),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -468,44 +510,52 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                         .semantics(mergeDescendants = true) {
                             contentDescription = buildString {
                                 append("${formatDayName(day.date, today)}, ${describeWeatherCode(day.code)}, ")
-                                append("high ${formatDegrees(day.highC, unit)}, low ${formatDegrees(day.lowC, unit)}")
+                                append("high ${describeTemp(day.highC, unit)}, low ${describeTemp(day.lowC, unit)}")
                                 if (rain != null) append(", $rain% chance of rain")
                             }
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // The single-line cells get the secondary line's height as bottom padding, so centring them
+                    // lines them up with the primary numbers and the bar rather than with the gap below.
+                    val toPrimaryLine = Modifier.padding(bottom = secondaryLine)
                     Text(
                         formatDayLabel(day.date, today),
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
-                        modifier = Modifier.width(dayWidth),
+                        modifier = toPrimaryLine.widthIn(min = dayWidth),
                     )
-                    WeatherIcon(day.code, night = false, palette, size = 26.dp, contentDescription = null)
+                    WeatherIcon(day.code, night = false, palette, toPrimaryLine, size = 26.dp, contentDescription = null)
                     Text(
                         rain?.let { "$it%" }.orEmpty(),
                         style = MaterialTheme.typography.labelSmall,
                         color = rainColor,
                         textAlign = TextAlign.End,
                         maxLines = 1,
-                        modifier = Modifier.width(rainWidth),
+                        modifier = toPrimaryLine.width(rainWidth),
                     )
                     Spacer(Modifier.width(12.dp))
-                    Text(
-                        formatDegrees(day.lowC, unit),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.End,
-                        maxLines = 1,
-                        modifier = Modifier.width(tempWidth),
+                    // Minimum widths keep the columns aligned across rows; wider text (large fonts, "−12°C")
+                    // grows the cell and the bar gives way rather than the number clipping.
+                    DualTemp(
+                        day.lowC, unit,
+                        primaryStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        modifier = Modifier.widthIn(min = tempWidth),
+                        alignment = Alignment.End,
                     )
                     Spacer(Modifier.width(8.dp))
-                    RangeBar(day.lowC, day.highC, weekLow, weekHigh, Modifier.weight(1f))
+                    Column(Modifier.weight(1f)) {
+                        Box(Modifier.fillMaxWidth().height(primaryLine), contentAlignment = Alignment.Center) {
+                            RangeBar(day.lowC, day.highC, weekLow, weekHigh, Modifier.fillMaxWidth())
+                        }
+                        Spacer(Modifier.height(secondaryLine))
+                    }
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        formatDegrees(day.highC, unit),
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        modifier = Modifier.width(tempWidth),
+                    DualTemp(
+                        day.highC, unit,
+                        primaryStyle = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.widthIn(min = tempWidth),
+                        alignment = Alignment.Start,
                     )
                 }
             }
@@ -588,22 +638,24 @@ private fun HourlyStrip(forecast: Forecast, unit: TempUnit, nightNow: Boolean) {
             val night = if (i == 0) nightNow else forecast.isNight(hour)
             Card(
                 Modifier.semantics(mergeDescendants = true) {
-                    contentDescription = "$label, ${formatDegrees(hour.tempC, unit)}, ${hour.precipChance}% chance of rain"
+                    contentDescription = "$label, ${describeTemp(hour.tempC, unit)}, ${hour.precipChance}% chance of rain"
                 },
                 colors = CardDefaults.cardColors(
                     containerColor = if (i == 0) MaterialTheme.colorScheme.primaryContainer
                     else MaterialTheme.colorScheme.surfaceContainer
                 ),
             ) {
+                // A minimum rather than fixed width, so long labels or large fonts widen the card instead of
+                // clipping; at the default font every card still comes out the same 52dp.
                 Column(
-                    Modifier.padding(horizontal = 10.dp, vertical = 12.dp).width(52.dp),
+                    Modifier.padding(horizontal = 10.dp, vertical = 12.dp).widthIn(min = 52.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(label, style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.height(8.dp))
                     WeatherIcon(hour.code, night, palette, size = 30.dp)
                     Spacer(Modifier.height(8.dp))
-                    Text(formatDegrees(hour.tempC, unit), style = MaterialTheme.typography.titleMedium)
+                    DualTemp(hour.tempC, unit, primaryStyle = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "${hour.precipChance}%",
@@ -632,7 +684,7 @@ private fun LoadingSkeleton() {
         Box(Modifier.width(120.dp).height(18.dp).clip(CircleShape).background(color))
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth().clip(shape), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            repeat(5) { Box(Modifier.width(72.dp).height(124.dp).clip(shape).background(color)) }
+            repeat(5) { Box(Modifier.width(72.dp).height(138.dp).clip(shape).background(color)) }
         }
         Spacer(Modifier.height(32.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
