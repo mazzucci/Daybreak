@@ -72,9 +72,14 @@ class ScreenshotTest {
         settings = settings,
     )
 
-    private fun snap(name: String, night: Boolean = false, content: @Composable () -> Unit) {
+    /** [tall] renders on a very tall screen so the whole scrolling page (down to the 7-day list) is visible. */
+    private fun snap(name: String, night: Boolean = false, tall: Boolean = false, content: @Composable () -> Unit) {
+        val device = DeviceConfig.PIXEL_5
         paparazzi.unsafeUpdateConfig(
-            DeviceConfig.PIXEL_5.copy(nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT)
+            device.copy(
+                nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT,
+                screenHeight = if (tall) device.screenHeight * 2 else device.screenHeight,
+            )
         )
         paparazzi.snapshot(name) { WeatherTheme(darkTheme = night, content = content) }
     }
@@ -107,6 +112,20 @@ class ScreenshotTest {
 
     @Test fun weatherDark() = snap("weather_dark", night = true) {
         Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
+    }
+
+    @Test fun weatherFullPage() = snap("weather_full_page", tall = true) {
+        Weather(weatherState(PageContent.Loaded(forecast, templateSummary)))
+    }
+
+    @Test fun weatherFullPageDark() = snap("weather_full_page_dark", night = true, tall = true) {
+        Weather(
+            weatherState(
+                PageContent.Loaded(rainyNight, rainyNightSummary),
+                place = london, key = london.id,
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            )
+        )
     }
 
     @Test fun weatherGemma() = snap("weather_gemma") {

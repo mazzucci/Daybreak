@@ -10,6 +10,9 @@ const val FORECAST_DAYS = 8
 /** Length of the hourly strip and of the window the summary describes. */
 const val NEXT_HOURS = 12
 
+/** Length of the multi-day list on each page (today included). */
+const val WEEK_DAYS = 7
+
 /**
  * A place the app can show weather for: either a saved search result or the device's current location.
  * [id] doubles as the page key: saved places are "geo:<geocoding id>", the device location is [CURRENT_LOCATION_ID].
@@ -52,6 +55,28 @@ data class Forecast(
     val nextHours: List<HourForecast> = current.time.truncatedTo(ChronoUnit.HOURS).let { thisHour ->
         hours.filter { !it.time.isBefore(thisHour) }.take(NEXT_HOURS)
     }
+
+    /** Today and the days after it, for the multi-day list (at most [count]). */
+    fun upcomingDays(count: Int = WEEK_DAYS): List<DaySummary> =
+        days.filter { !it.date.isBefore(today.date) }.take(count)
+
+    /** Whether it's dark now at the place, from Open-Meteo's is_day flag or else from sunrise/sunset. */
+    val isNightNow: Boolean get() = current.isDay?.not() ?: isNight(current.time)
+
+    /** Whether it's dark at the start of [hour]. */
+    fun isNight(hour: HourForecast): Boolean = hour.isDay?.not() ?: isNight(hour.time)
+
+    /**
+     * Whether [time] falls outside that day's sunrise–sunset. Days without sun times (polar day/night, or a
+     * response missing the fields) fall back to a fixed 20:00–06:00 night.
+     */
+    fun isNight(time: LocalDateTime): Boolean {
+        val day = days.firstOrNull { it.date == time.toLocalDate() }
+        val sunrise = day?.sunrise
+        val sunset = day?.sunset
+        return if (sunrise != null && sunset != null) time.isBefore(sunrise) || !time.isBefore(sunset)
+        else time.hour < 6 || time.hour >= 20
+    }
 }
 
 data class CurrentConditions(
@@ -61,6 +86,8 @@ data class CurrentConditions(
     val humidity: Int,
     val windKmh: Double,
     val code: Int,
+    /** Open-Meteo's is_day flag; null if the response didn't include it. */
+    val isDay: Boolean? = null,
 ) {
     val description: String get() = describeWeatherCode(code)
 }
@@ -72,6 +99,16 @@ data class DaySummary(
     /** Highest hourly chance of precipitation on [date], 0–100. */
     val precipChance: Int,
     val code: Int,
+    /** Local sunrise and sunset; null when the sun doesn't rise or set that day, or the field is missing. */
+    val sunrise: LocalDateTime? = null,
+    val sunset: LocalDateTime? = null,
+    /** Highest sustained wind and gust of the day, km/h. */
+    val windMaxKmh: Double? = null,
+    val gustMaxKmh: Double? = null,
+    /** Total rain, showers and snow water equivalent, mm. */
+    val precipSumMm: Double? = null,
+    /** Highest UV index of the day. */
+    val uvIndexMax: Double? = null,
 )
 
 data class HourForecast(
@@ -79,6 +116,11 @@ data class HourForecast(
     val tempC: Double,
     val precipChance: Int,
     val code: Int,
+    /** Sustained wind and gusts at 10 m, km/h; null if missing. */
+    val windKmh: Double? = null,
+    val gustKmh: Double? = null,
+    /** Open-Meteo's is_day flag for the start of the hour; null if missing. */
+    val isDay: Boolean? = null,
 )
 
 enum class TempUnit { F, C }

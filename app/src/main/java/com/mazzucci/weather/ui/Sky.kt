@@ -2,7 +2,6 @@ package com.mazzucci.weather.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import java.time.LocalDateTime
 
 /** The handful of looks the UI distinguishes, collapsed from WMO weather codes. */
 enum class Sky { CLEAR, PARTLY_CLOUDY, CLOUDY, FOG, DRIZZLE, RAIN, SNOW, STORM, UNKNOWN }
@@ -18,12 +17,6 @@ fun skyOf(code: Int): Sky = when (code) {
     95, 96, 99 -> Sky.STORM
     else -> Sky.UNKNOWN
 }
-
-/**
- * Whether it's night at the place's local [time]. Open-Meteo's forecast doesn't include sunrise/sunset in the
- * fields we fetch, so this is a fixed 20:00–06:00 window: close enough to pick a backdrop and an icon.
- */
-fun isNight(time: LocalDateTime): Boolean = time.hour < 6 || time.hour >= 20
 
 /**
  * Top and bottom colors of the hero gradient for a condition. Every color here keeps white text at >= 4.5:1

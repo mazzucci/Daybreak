@@ -15,6 +15,8 @@ import java.time.LocalDateTime
  * Parses an Open-Meteo /v1/forecast response requested with `timezone=auto` and the
  * current/hourly/daily fields from [OpenMeteoApi.forecastUrl]. Times are the place's local time.
  * All returned days and hours are kept; [Forecast] derives today and the next-hours window.
+ * The core fields are required; the detail fields (wind, gusts, sun times, UV, is_day) are optional, and a missing
+ * array or a null value becomes null rather than failing the whole forecast.
  */
 fun parseForecast(json: String): Forecast {
     val root = JSONObject(json)
@@ -27,6 +29,7 @@ fun parseForecast(json: String): Forecast {
         humidity = cur.getInt("relative_humidity_2m"),
         windKmh = cur.getDouble("wind_speed_10m"),
         code = cur.getInt("weather_code"),
+        isDay = cur.optBooleanFlag("is_day"),
     )
 
     val hourly = root.getJSONObject("hourly")
@@ -34,12 +37,18 @@ fun parseForecast(json: String): Forecast {
     val hourTemps = hourly.getJSONArray("temperature_2m")
     val hourPrecip = hourly.getJSONArray("precipitation_probability")
     val hourCodes = hourly.getJSONArray("weather_code")
+    val hourWind = hourly.optJSONArray("wind_speed_10m")
+    val hourGusts = hourly.optJSONArray("wind_gusts_10m")
+    val hourIsDay = hourly.optJSONArray("is_day")
     val hours = (0 until hourTimes.length()).map { i ->
         HourForecast(
             time = LocalDateTime.parse(hourTimes.getString(i)),
             tempC = hourTemps.getDouble(i),
             precipChance = hourPrecip.optIntOrZero(i),
             code = hourCodes.getInt(i),
+            windKmh = hourWind.doubleOrNull(i),
+            gustKmh = hourGusts.doubleOrNull(i),
+            isDay = hourIsDay.doubleOrNull(i)?.let { it != 0.0 },
         )
     }
 
@@ -50,6 +59,12 @@ fun parseForecast(json: String): Forecast {
     val lows = daily.getJSONArray("temperature_2m_min")
     val dayPrecip = daily.getJSONArray("precipitation_probability_max")
     val dayCodes = daily.getJSONArray("weather_code")
+    val sunrises = daily.optJSONArray("sunrise")
+    val sunsets = daily.optJSONArray("sunset")
+    val windMax = daily.optJSONArray("wind_speed_10m_max")
+    val gustMax = daily.optJSONArray("wind_gusts_10m_max")
+    val precipSum = daily.optJSONArray("precipitation_sum")
+    val uvMax = daily.optJSONArray("uv_index_max")
     val days = (0 until dayDates.length()).map { i ->
         DaySummary(
             date = LocalDate.parse(dayDates.getString(i)),
@@ -57,6 +72,12 @@ fun parseForecast(json: String): Forecast {
             lowC = lows.getDouble(i),
             precipChance = dayPrecip.optIntOrZero(i),
             code = dayCodes.getInt(i),
+            sunrise = sunrises.timeOrNull(i),
+            sunset = sunsets.timeOrNull(i),
+            windMaxKmh = windMax.doubleOrNull(i),
+            gustMaxKmh = gustMax.doubleOrNull(i),
+            precipSumMm = precipSum.doubleOrNull(i),
+            uvIndexMax = uvMax.doubleOrNull(i),
         )
     }
 
@@ -81,6 +102,18 @@ fun parseGeocoding(json: String): List<Place> {
 
 /** Open-Meteo sends null for precipitation probability in some models/hours; treat that as 0%. */
 private fun JSONArray.optIntOrZero(i: Int): Int = if (isNull(i)) 0 else getInt(i)
+
+/** Value at [i] of an optional array; null if the array is missing, too short, or holds null there. */
+private fun JSONArray?.doubleOrNull(i: Int): Double? =
+    if (this == null || i >= length() || isNull(i)) null else optDouble(i).takeIf { !it.isNaN() }
+
+/** Local time at [i] of an optional array. Open-Meteo sends 1970-01-01T00:00 or null when there's no sunrise. */
+private fun JSONArray?.timeOrNull(i: Int): LocalDateTime? =
+    if (this == null || i >= length() || isNull(i)) null
+    else runCatching { LocalDateTime.parse(getString(i)) }.getOrNull()?.takeIf { it.year > 1970 }
+
+private fun JSONObject.optBooleanFlag(key: String): Boolean? =
+    if (has(key) && !isNull(key)) optInt(key, 1) != 0 else null
 
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (has(key) && !isNull(key)) getString(key).ifBlank { null } else null

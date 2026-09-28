@@ -5,14 +5,15 @@ A simple Android app that shows the weather for your current location and any pl
 - Search for any city and save it; swipe between places, reorder or remove them
 - Current location is optional: turn it off and use saved places only
 - A one-line summary at the top, a large temperature in your preferred unit with the other unit alongside, today's high/low and rain chance, and the next 12 hours
+- Today's sunrise, sunset, UV index and wind gusts, plus a 7-day list with each day's range on a shared scale
 - Optional on-device AI summary written by [Gemma](https://ai.google.dev/gemma), run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
-- Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 8 days of hourly and daily data per place; the UI currently shows today and the next 12 hours
+- Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 8 days of hourly and daily data per place, including wind, gusts, sun times and UV
 - Uses Android's built-in location service (no Google Play Services required)
 - Kotlin + Jetpack Compose, min Android 8.0 (API 26)
 
 ## Screenshots
 
-The backdrop follows the conditions and the time of day at each place (clear, cloudy, rain, snow, storm; day or night), and the app has its own light and dark palettes.
+The backdrop follows the conditions and the time of day at each place (clear, cloudy, rain, snow, storm; day or night, from each place's real sunrise and sunset), and the app has its own light and dark palettes.
 
 | Weather | Dark | Gemma summary | Rainy night |
 |:---:|:---:|:---:|:---:|
@@ -25,6 +26,10 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 | Search | Places | Settings: set up Gemma | Settings: downloading |
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_search_search.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_places_places.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsNotInstalled_settings_not_installed.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsDownloading_settings_downloading.png" width="200"> |
+
+| Full page | Full page (dark, °C) |
+|:---:|:---:|
+| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPage_weather_full_page.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPageDark_weather_full_page_dark.png" width="200"> |
 
 | Settings: installed | Settings: failed (dark) | Rainy night (dark) | App icon |
 |:---:|:---:|:---:|:---:|

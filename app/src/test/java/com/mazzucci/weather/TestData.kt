@@ -25,7 +25,7 @@ object TestData {
         rainAt: Int? = 4,
     ): Forecast = Forecast(
         current = CurrentConditions(now, tempC, feelsLikeC = 20.1, humidity = 58, windKmh = 14.2, code = 2),
-        days = week(now, DaySummary(now.toLocalDate(), 23.6, 13.2, precipChance = if (rainAt != null) 60 else 5, code = 61)),
+        days = week(now, DaySummary(now.toLocalDate(), 23.6, 13.2, precipChance = if (rainAt != null) 60 else 5, code = 61, uvIndexMax = 6.2)),
         hours = (0 until 12).map { i ->
             HourForecast(
                 time = now.withMinute(0).plusHours(i.toLong()),
@@ -37,6 +37,8 @@ object TestData {
                     else -> 10
                 },
                 code = if (rainAt != null && i >= rainAt) 61 else 2,
+                windKmh = 14.2 + i,
+                gustKmh = 24.0 + i,
             )
         },
     )
@@ -46,7 +48,7 @@ object TestData {
         val at = LocalDateTime.of(2026, 9, 28, 22, 30)
         return Forecast(
             current = CurrentConditions(at, tempC = 9.8, feelsLikeC = 7.4, humidity = 91, windKmh = 27.0, code = 63),
-            days = week(at, DaySummary(at.toLocalDate(), 14.1, 8.3, precipChance = 90, code = 63)),
+            days = week(at, DaySummary(at.toLocalDate(), 14.1, 8.3, precipChance = 90, code = 63, uvIndexMax = 1.4)),
             hours = (0 until 12).map { i ->
                 HourForecast(
                     time = at.withMinute(0).plusHours(i.toLong()),
@@ -67,9 +69,28 @@ object TestData {
         )
     }
 
-    /** [today] followed by six milder, drier days, so tests see a realistic multi-day forecast. */
+    /**
+     * [today] followed by varied days (a wet one, a sunny one, …), so tests see a realistic multi-day forecast.
+     * Every day gets sunrise 7:02 and sunset 18:56 plus wind and UV.
+     */
     private fun week(now: LocalDateTime, today: DaySummary): List<DaySummary> =
-        listOf(today) + (1L until FORECAST_DAYS).map { d ->
-            DaySummary(now.toLocalDate().plusDays(d), today.highC + d % 3, today.lowC + d % 2, precipChance = 10, code = 2)
+        (listOf(today) + (1L until FORECAST_DAYS).map { d ->
+            val wet = d == 2L
+            DaySummary(
+                now.toLocalDate().plusDays(d),
+                highC = today.highC + listOf(0, 2, -4, 1, 3, -1, 2, 0)[d.toInt()],
+                lowC = today.lowC + listOf(0, 1, -2, 0, 2, -1, 1, 0)[d.toInt()],
+                precipChance = if (wet) 70 else 10,
+                code = if (wet) 63 else listOf(0, 1, 2, 3)[d.toInt() % 4],
+                uvIndexMax = if (wet) 2.0 else 5.5,
+            )
+        }).map { day ->
+            day.copy(
+                sunrise = day.date.atTime(7, 2),
+                sunset = day.date.atTime(18, 56),
+                windMaxKmh = 20.0,
+                gustMaxKmh = 35.0,
+                precipSumMm = if (day.precipChance >= 60) 6.5 else 0.0,
+            )
         }
 }

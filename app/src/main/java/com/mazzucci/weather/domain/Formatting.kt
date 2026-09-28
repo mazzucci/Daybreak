@@ -1,5 +1,6 @@
 package com.mazzucci.weather.domain
 
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -32,6 +33,27 @@ fun formatWind(kmh: Double, unit: TempUnit): String = when (unit) {
 /** "3 PM" style hour label. */
 fun formatHour(time: LocalDateTime, locale: Locale = Locale.getDefault()): String =
     time.format(DateTimeFormatter.ofPattern("h a", locale))
+
+/** "7:02 AM" style clock time, for sunrise and sunset. */
+fun formatClock(time: LocalDateTime, locale: Locale = Locale.getDefault()): String =
+    time.format(DateTimeFormatter.ofPattern("h:mm a", locale))
+
+/** "Today", then short weekday names ("Tue") for the multi-day list. */
+fun formatDayLabel(date: LocalDate, today: LocalDate, locale: Locale = Locale.getDefault()): String =
+    if (date == today) "Today" else date.format(DateTimeFormatter.ofPattern("EEE", locale))
+
+/** Full weekday name for accessibility labels ("Tuesday"). */
+fun formatDayName(date: LocalDate, today: LocalDate, locale: Locale = Locale.getDefault()): String =
+    if (date == today) "Today" else date.format(DateTimeFormatter.ofPattern("EEEE", locale))
+
+/** WHO UV index category for a (rounded) UV index. */
+fun describeUv(uv: Double): String = when (uv.roundToInt()) {
+    in Int.MIN_VALUE..2 -> "Low"
+    in 3..5 -> "Moderate"
+    in 6..7 -> "High"
+    in 8..10 -> "Very high"
+    else -> "Extreme"
+}
 
 /** WMO weather interpretation codes, as used by Open-Meteo. */
 fun describeWeatherCode(code: Int): String = when (code) {
