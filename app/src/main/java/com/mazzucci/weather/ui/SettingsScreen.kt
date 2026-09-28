@@ -29,7 +29,17 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.mazzucci.weather.narration.GemmaModelSource
+import com.mazzucci.weather.narration.isBusy
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -44,10 +54,14 @@ fun SettingsScreen(
     modelStatus: ModelStatus,
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
+    onDownloadModel: (hfToken: String) -> Unit,
+    onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
     onRemoveModel: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
+    var token by rememberSaveable { mutableStateOf("") }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -84,27 +98,48 @@ fun SettingsScreen(
                 Text("Model", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
                 Text(modelStatusText(modelStatus), style = MaterialTheme.typography.bodyMedium)
-                if (modelStatus is ModelStatus.Importing) {
+                if (modelStatus.isBusy) {
                     Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    val progress = (modelStatus as? ModelStatus.Downloading)?.let { d ->
+                        d.totalBytes?.let { d.downloadedBytes.toFloat() / it }
+                    }
+                    if (progress != null) LinearProgressIndicator({ progress }, Modifier.fillMaxWidth())
+                    else LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onImportModel, enabled = modelStatus !is ModelStatus.Importing) {
-                        Text(if (modelStatus is ModelStatus.Installed) "Replace model" else "Import model")
+                when {
+                    modelStatus is ModelStatus.Downloading -> {
+                        OutlinedButton(onCancelDownload) { Text("Cancel download") }
                     }
-                    if (modelStatus is ModelStatus.Installed) {
-                        OutlinedButton(onRemoveModel) { Text("Remove") }
+                    modelStatus is ModelStatus.Installed -> OutlinedButton(onRemoveModel) { Text("Remove model") }
+                    !modelStatus.isBusy -> {
+                        Text(
+                            "1. Open the model page and accept the Gemma license (free Hugging Face account).\n" +
+                                "2. Create a read access token and paste it below.\n" +
+                                "3. Download (about 550 MB; Wi-Fi recommended). The token is only used to start the download.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton({ uriHandler.openUri(GemmaModelSource.MODEL_PAGE) }) { Text("Model page") }
+                            OutlinedButton({ uriHandler.openUri(GemmaModelSource.TOKENS_PAGE) }) { Text("Get token") }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = token,
+                            onValueChange = { token = it },
+                            label = { Text("Hugging Face token") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button({ onDownloadModel(token) }, enabled = token.isNotBlank()) { Text("Download Gemma") }
+                            TextButton(onImportModel) { Text("Import file…") }
+                        }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Download gemma3-1b-it-int4.task (about 550 MB) from huggingface.co/litert-community/Gemma3-1B-IT " +
-                        "after accepting the Gemma license, then import it here. The file is copied into the app; " +
-                        "you can delete the download afterwards.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -124,8 +159,15 @@ private fun SectionTitle(text: String) {
 private fun modelStatusText(status: ModelStatus): String = when (status) {
     ModelStatus.NotInstalled -> "No model imported"
     ModelStatus.Importing -> "Importing…"
+    is ModelStatus.Downloading -> when {
+        status.waitingForNetwork -> "Download paused, waiting for a network connection…"
+        status.totalBytes != null ->
+            "Downloading… ${formatSize(status.downloadedBytes)} of ${formatSize(status.totalBytes)}"
+        else -> "Starting download…"
+    }
+    ModelStatus.Verifying -> "Checking the download…"
     is ModelStatus.Installed -> "Gemma installed (${formatSize(status.sizeBytes)})"
-    is ModelStatus.Failed -> "Import failed: ${status.message}"
+    is ModelStatus.Failed -> status.message
 }
 
 private fun formatSize(bytes: Long): String =

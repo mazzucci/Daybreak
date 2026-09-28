@@ -94,6 +94,15 @@ class WeatherViewModel(
             }
         }
         if (settingsRepo.settings.value.useCurrentLocation) refreshCurrentLocation()
+        // A download can finish while the user is anywhere in the app; re-narrate as soon as the model lands.
+        viewModelScope.launch {
+            var wasInstalled = model.status.value is ModelStatus.Installed
+            model.status.collect { status ->
+                val installed = status is ModelStatus.Installed
+                if (installed && !wasInstalled) refreshAll()
+                wasInstalled = installed
+            }
+        }
     }
 
     // --- Pages ---------------------------------------------------------------------------------
@@ -234,11 +243,15 @@ class WeatherViewModel(
         refreshAll()
     }
 
+    /** Starts downloading Gemma from Hugging Face; summaries switch over automatically once it's installed. */
+    fun downloadModel(hfToken: String) {
+        viewModelScope.launch { model.download(hfToken) }
+    }
+
+    fun cancelModelDownload() = model.cancelDownload()
+
     fun importModel(uri: String) {
-        viewModelScope.launch {
-            model.import(uri)
-            if (model.status.value is ModelStatus.Installed) refreshAll()
-        }
+        viewModelScope.launch { model.import(uri) }
     }
 
     fun removeModel() {

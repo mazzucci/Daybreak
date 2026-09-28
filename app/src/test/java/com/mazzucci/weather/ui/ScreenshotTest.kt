@@ -113,7 +113,7 @@ class ScreenshotTest {
         SettingsScreen(
             settings = AppSettings(),
             modelStatus = ModelStatus.Installed(529L shl 20),
-            onUnitChange = {}, onGemmaEnabledChange = {}, onImportModel = {}, onRemoveModel = {}, onBack = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {}, onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
 }
