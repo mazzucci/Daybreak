@@ -15,6 +15,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // MediaPipe's LLM engine is ~20-30 MB per ABI. 64-bit ARM covers current phones and x86_64 covers
+        // emulators; 32-bit devices are too weak to run Gemma usefully anyway.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildFeatures { compose = true }
