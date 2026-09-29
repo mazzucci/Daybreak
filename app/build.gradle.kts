@@ -43,6 +43,8 @@ dependencies {
     implementation("com.google.mediapipe:tasks-genai:0.10.35")
 
     testImplementation("junit:junit:4.13.2")
+    // android.jar's XmlPullParser is a stub in JVM unit tests; kxml2 is the parser Android itself ships.
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation there.
     testImplementation("org.json:json:20250517")
