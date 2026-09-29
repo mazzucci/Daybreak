@@ -54,8 +54,8 @@ private const val GALE_KMH = 75.0
 private const val UV_EXTREME = 11f
 
 /**
- * Explains [term] with this forecast's values, in the primary [unit]. Hand-written and checked against the data,
- * so it's always right; no model involved.
+ * Explains [term] with this forecast's values, in the primary [unit]. Hand-written and built from the data (no
+ * model involved), so every number matches the page.
  */
 fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Locale.US): Explanation {
     val cur = forecast.current
@@ -67,16 +67,17 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
             val why = when {
                 abs(diff) <= 1 -> "About the same as the air temperature: not much wind or humidity to change how it feels."
                 diff < 0 && cur.windKmh >= 15 -> "Colder than the air ($air): the ${formatWind(cur.windKmh, unit)} wind carries heat away from your skin."
-                diff < 0 -> "Colder than the air ($air): a breeze or dry air takes heat away from your skin."
-                cur.humidity >= 60 -> "Warmer than the air ($air): with ${cur.humidity}% humidity, sweat evaporates slowly, so your body cools less."
-                else -> "Warmer than the air ($air): sunshine and little wind make it feel warmer."
+                diff < 0 -> "Colder than the air ($air): without sunshine on you (in the shade, under cloud or after dark), even a light breeze feels cool."
+                cur.tempC >= 20 && dewPointC(cur.tempC, cur.humidity) >= MUGGY_DEW_POINT_C ->
+                    "Warmer than the air ($air): the air is muggy, so sweat evaporates slowly and your body cools less."
+                else -> "Warmer than the air ($air): sunshine, still air or humidity make it feel warmer."
             }
             Explanation(
                 title = "Feels like",
                 value = formatTemp(cur.feelsLikeC, unit),
                 detail = formatTemp(cur.feelsLikeC, unit.other()),
                 now = why,
-                meaning = "How the temperature feels on your skin once wind and humidity are taken into account. It's what to dress for.",
+                meaning = "How the temperature feels on your skin once wind, humidity and sunshine are taken into account. It's what to dress for.",
                 spoken = formatBothUnits(cur.feelsLikeC, unit),
             )
         }
@@ -84,7 +85,9 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
             val (word, feel) = when {
                 cur.humidity < 30 -> "Dry" to "Lips and skin may feel it."
                 cur.humidity < 60 -> "Comfortable" to "Neither dry nor sticky."
-                cur.tempC >= 20 -> "Humid" to "Warm and sticky: sweat evaporates slowly, so it feels hotter than the number."
+                cur.tempC >= 20 && dewPointC(cur.tempC, cur.humidity) >= MUGGY_DEW_POINT_C ->
+                    "Humid" to "Warm and sticky: sweat evaporates slowly, so it feels hotter than the number."
+                cur.tempC >= 20 -> "Comfortable" to "Plenty of moisture for this warmth, but not muggy."
                 else -> "Damp" to "In cool weather it makes the air feel raw and chilly."
             }
             Explanation(
@@ -103,9 +106,11 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
                 kmh < 12 -> "Light air to a light breeze: you feel it on your face and leaves rustle."
                 kmh < 29 -> "A gentle to moderate breeze: small branches move and loose paper blows around."
                 kmh < 50 -> "A fresh to strong breeze: large branches sway and umbrellas are hard to use."
-                else -> "Gale force: walking against it is hard. Take care outside."
+                kmh < 62 -> "Near gale: whole trees move and walking into it takes effort."
+                else -> "Gale force: twigs break off trees and walking against it is hard. Take care outside."
             }
-            val gust = forecast.nextHours.firstOrNull()?.gustKmh?.takeIf { it > kmh + 5 }
+            // Same rule as the Wind tile, so the two never disagree about gusts.
+            val gust = forecast.nextHours.firstOrNull()?.gustKmh?.takeIf { it > kmh }
             Explanation(
                 title = "Wind",
                 value = formatWind(kmh, unit),
@@ -121,8 +126,8 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
                 null -> "No UV forecast for today."
                 in Int.MIN_VALUE..2 -> "No protection needed for most people."
                 in 3..5 -> "Sunscreen and sunglasses if you're out for a while around midday."
-                in 6..7 -> "Sunscreen, a hat and shade around midday: unprotected skin can burn in about 20 to 30 minutes."
-                in 8..10 -> "Avoid the midday sun: unprotected skin can burn in about 15 minutes."
+                in 6..7 -> "Sunscreen, a hat and shade around midday: fair skin can burn in about 20 to 30 minutes."
+                in 8..10 -> "Avoid the midday sun: fair skin can burn in about 15 to 20 minutes."
                 else -> "Stay in the shade around midday: skin can burn in minutes."
             }
             Explanation(
@@ -200,7 +205,7 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
                 value = "$p%",
                 detail = "Highest hourly chance today",
                 now = amount + umbrella,
-                meaning = "The chance that at least a little rain (or snow) falls at this place in a given hour. It says nothing about how long it rains or how heavy it is.",
+                meaning = "The chance that at least a little rain (or snow) falls at this place in a given hour. We show today's highest hour, so the chance of some rain at some point today can be higher. It says nothing about how long it rains or how heavy it is.",
                 gauge = Gauge.Scale(p / 100f, "0%", "100%", Gauge.Scale.Kind.MOISTURE),
             )
         }
@@ -229,6 +234,17 @@ private fun formatHoursMinutesShort(minutes: Long): String {
     val m = minutes % 60
     return listOfNotNull(h.takeIf { it > 0 }?.let { "${it}h" }, m.takeIf { it > 0 || h == 0L }?.let { "${it}m" }).joinToString(" ")
 }
+
+/** Dew point by the Magnus formula; mugginess follows it far better than relative humidity. */
+private fun dewPointC(tempC: Double, humidity: Int): Double {
+    val a = 17.62
+    val b = 243.12
+    val alpha = kotlin.math.ln(humidity.coerceAtLeast(1) / 100.0) + a * tempC / (b + tempC)
+    return b * alpha / (a - alpha)
+}
+
+/** From about this dew point, warm air feels sticky. */
+private const val MUGGY_DEW_POINT_C = 16.0
 
 private fun plural(n: Long, word: String) = "$n $word${if (n == 1L) "" else "s"}"
 

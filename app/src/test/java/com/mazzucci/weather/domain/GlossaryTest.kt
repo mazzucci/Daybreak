@@ -22,11 +22,14 @@ class GlossaryTest {
         assertEquals("68°F", e.value)
         assertEquals("20°C", e.detail)
         assertEquals("68°F (20°C)", e.spoken)
-        assertEquals("Colder than the air (71°F): a breeze or dry air takes heat away from your skin.", e.now)
+        assertEquals("Colder than the air (71°F): without sunshine on you (in the shade, under cloud or after dark), even a light breeze feels cool.", e.now)
         val windy = f.copy(current = f.current.copy(windKmh = 30.0))
         assertTrue(explain(Term.FEELS_LIKE, windy, TempUnit.F).now.contains("the 19 mph wind"))
-        val muggy = f.copy(current = f.current.copy(feelsLikeC = 26.0, humidity = 80))
-        assertTrue(explain(Term.FEELS_LIKE, muggy, TempUnit.C).now.contains("80% humidity"))
+        val muggy = f.copy(current = f.current.copy(tempC = 24.0, feelsLikeC = 28.0, humidity = 80))
+        assertTrue(explain(Term.FEELS_LIKE, muggy, TempUnit.C).now.contains("muggy"))
+        // Humid but cool: no talk of sweat.
+        val coolDamp = f.copy(current = f.current.copy(tempC = 12.0, feelsLikeC = 14.0, humidity = 90))
+        assertTrue(!explain(Term.FEELS_LIKE, coolDamp, TempUnit.C).now.contains("sweat"))
         val same = f.copy(current = f.current.copy(feelsLikeC = f.current.tempC))
         assertTrue(explain(Term.FEELS_LIKE, same, TempUnit.C).now.contains("About the same"))
     }
@@ -35,7 +38,7 @@ class GlossaryTest {
         val uv = explain(Term.UV, f, TempUnit.F)
         assertEquals("6", uv.value)
         assertEquals("Today's peak: High", uv.detail)
-        assertEquals("Sunscreen, a hat and shade around midday: unprotected skin can burn in about 20 to 30 minutes.", uv.now)
+        assertEquals("Sunscreen, a hat and shade around midday: fair skin can burn in about 20 to 30 minutes.", uv.now)
 
         val humidity = explain(Term.HUMIDITY, f, TempUnit.F)
         assertEquals("58%", humidity.value)

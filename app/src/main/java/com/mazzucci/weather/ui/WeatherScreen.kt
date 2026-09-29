@@ -64,6 +64,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import java.util.Locale
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -147,7 +149,11 @@ fun WeatherPagerScreen(
             EmptyState(onOpenSearch, onUseCurrentLocation)
         } else {
             val commutePage = state.pages.indexOfFirst { it.content !is PageContent.NeedsPermission && it.content !is PageContent.Failed }
-            HorizontalPager(pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
+            // Keyed by place, so per-page state (an open explanation) stays with its place when places move.
+            HorizontalPager(
+                pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+                key = { state.pages[it].key },
+            ) { index ->
                 val page = state.pages[index]
                 WeatherPage(
                     page = page,
@@ -239,7 +245,7 @@ fun WeatherPage(
     var explaining by rememberSaveable { mutableStateOf<Term?>(null) }
     val explainTerm = explaining
     if (explainTerm != null && loaded != null) {
-        ExplainSheet(explain(explainTerm, loaded.forecast, unit)) { explaining = null }
+        ExplainSheet(explain(explainTerm, loaded.forecast, unit, Locale.getDefault())) { explaining = null }
     }
     val night = loaded?.forecast?.isNightNow ?: false
     val gradient = loaded?.let { heroGradient(skyOf(it.forecast.current.code), night, dark) } ?: neutralGradient(dark)
@@ -247,7 +253,10 @@ fun WeatherPage(
     val refreshing = page.refreshing && loaded != null
     val refreshState = rememberPullToRefreshState()
     // Tiles and pills anywhere on the page open their explanation through this.
-    CompositionLocalProvider(LocalExplain provides { t: Term -> explaining = t }) {
+    // Close the sheet for good when the forecast goes away (a failed refresh), so it can't reappear by itself later.
+    LaunchedEffect(loaded == null) { if (loaded == null) explaining = null }
+    val openExplanation = remember { { t: Term -> explaining = t } }
+    CompositionLocalProvider(LocalExplain provides openExplanation) {
     PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = onRefresh,

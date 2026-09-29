@@ -116,11 +116,9 @@ class ScreenshotTest {
         key: String = sanFrancisco.id,
         settings: AppSettings = AppSettings(),
     ) = WeatherUiState(
-        pages = listOf(
-            PageUi(key, place, first),
-            PageUi(london.id, london, PageContent.Loading),
-            PageUi(tokyo.id, tokyo, PageContent.Loading),
-        ),
+        // Page keys are unique in the app (the pager relies on it), so the other places skip the first one.
+        pages = listOf(PageUi(key, place, first)) +
+            listOf(london, tokyo).filter { it.id != key }.map { PageUi(it.id, it, PageContent.Loading) },
         savedPlaces = listOf(sanFrancisco, london, tokyo),
         settings = settings,
     )
