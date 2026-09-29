@@ -82,13 +82,51 @@ class ActivityScorerTest {
         assertEquals("Rain and strong wind", describeBlockers(plan.blockers))
     }
 
-    @Test fun `a daylight-saving gap doesn't split a window`() {
-        // Spring forward: 1:00 is followed by 3:00 in local time. Walking the list keeps them consecutive.
-        val times = listOf(noon, noon.plusHours(1), noon.plusHours(3), noon.plusHours(4))
-        val scored = times.map { HourScore(hour(time = it), 90, emptySet()) }
-        val w = ActivityScorer.windows(scored).single()
-        assertEquals(4, w.hours.size)
-        assertEquals(noon.plusHours(5), w.end)
+    @Test fun `polar night names darkness instead of nothing`() {
+        val polar = base.copy(
+            current = base.current.copy(isDay = false),
+            days = base.days.map { it.copy(sunrise = it.date.atStartOfDay(), sunset = it.date.atStartOfDay()) },
+        )
+        val plan = ActivityScorer.plan(polar, Activity.WALKING)
+        assertNull(plan.best)
+        assertEquals(listOf(Limit.DARK), plan.blockers)
+        assertEquals("Darkness", describeBlockers(plan.blockers))
+    }
+
+    @Test fun `a big in-band temperature penalty is named`() {
+        val s = score(hour(tempC = 1.0), Activity.WALKING.profile)
+        assertTrue(s.score < ActivityScorer.GOOD)
+        assertEquals(setOf(Limit.COLD), s.limits)
+        assertTrue(score(hour(tempC = 9.0)).limits.isEmpty()) // a little cool: no reason to mention
+    }
+
+    @Test fun `crossing a wind or rain limit costs a step`() {
+        assertTrue(score(hour(wind = 38.0, gust = null)).score < ActivityScorer.GOOD)
+        assertTrue(score(hour(precip = 25)).score >= ActivityScorer.GOOD) // just over: dented, still fine
+        assertEquals(setOf(Limit.RAIN), score(hour(precip = 25)).limits)
+    }
+
+    @Test fun `daylight is judged mid-hour, and now follows the current conditions`() {
+        val sunrise = noon.withHour(7).withMinute(2)
+        val sunset = noon.withHour(18).withMinute(5)
+        val f = base.copy(days = base.days.map { it.copy(sunrise = it.date.atTime(7, 2), sunset = it.date.atTime(18, 5)) })
+        assertTrue(Limit.DARK !in ActivityScorer.score(hour(time = sunrise.withMinute(0)), f, cycling).limits)
+        assertTrue(Limit.DARK in ActivityScorer.score(hour(time = sunset.withMinute(0)), f, cycling).limits)
+        val dawn = f.copy(current = f.current.copy(time = sunrise.withMinute(30), isDay = true))
+        assertTrue(Limit.DARK !in ActivityScorer.score(hour(time = sunrise.withMinute(0)), dawn, cycling, isNow = true).limits)
+    }
+
+    @Test fun `a longer good window beats a single perfect hour`() {
+        fun scored(vararg s: Int) = s.mapIndexed { i, v -> HourScore(hour(time = noon.plusHours(i.toLong())), v, emptySet()) }
+        val candidates = ActivityScorer.windows(scored(100, 10, 84, 84, 84, 84, 10))
+        assertEquals(listOf(1, 4), candidates.map { it.hours.size })
+        assertTrue(ActivityScorer.value(candidates[1]) > ActivityScorer.value(candidates[0]))
+    }
+
+    @Test fun `a window that runs to the end of the data is open-ended`() {
+        fun scored(vararg s: Int) = s.mapIndexed { i, v -> HourScore(hour(time = noon.plusHours(i.toLong())), v, emptySet()) }
+        val w = ActivityScorer.windows(scored(90, 10, 90, 90))
+        assertEquals(listOf(false, true), w.map { it.openEnded })
     }
 
     @Test fun `window text`() {

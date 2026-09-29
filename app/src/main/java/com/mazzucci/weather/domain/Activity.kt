@@ -35,8 +35,11 @@ enum class Limit { STORM, SNOW, RAIN, WIND, COLD, HEAT, DARK }
 /** How good one hour is for the activity, 0–100, and what held it back. */
 data class HourScore(val hour: HourForecast, val score: Int, val limits: Set<Limit>)
 
-/** A run of consecutive good hours. [end] is exclusive (the hour after the last one). */
-data class ActivityWindow(val hours: List<HourScore>) {
+/**
+ * A run of consecutive good hours. [end] is exclusive (the hour after the last one). [openEnded] means the run
+ * reaches the last scored hour, so it may well go on: the data ran out, not the good weather.
+ */
+data class ActivityWindow(val hours: List<HourScore>, val openEnded: Boolean = false) {
     init {
         require(hours.isNotEmpty())
     }
@@ -59,15 +62,13 @@ data class ActivityPlan(
     val blockers: List<Limit>,
 )
 
-/**
- * Scores hours for an activity and finds the best window. Hours are walked in list order rather than by clock
- * arithmetic, so a daylight-saving day (a missing or repeated local hour) still gives sensible windows.
- */
+/** Scores hours for an activity and finds the best window. */
 object ActivityScorer {
     const val GOOD = 70
     const val HORIZON_HOURS = 24
 
-    fun score(hour: HourForecast, forecast: Forecast, profile: WeatherProfile): HourScore {
+    /** [isNow] uses the current conditions' daylight, so "Now" agrees with the rest of the page. */
+    fun score(hour: HourForecast, forecast: Forecast, profile: WeatherProfile, isNow: Boolean = false): HourScore {
         val limits = mutableSetOf<Limit>()
         var score = 100.0
         when {
@@ -78,7 +79,7 @@ object ActivityScorer {
         }
         if (hour.precipChance > profile.maxPrecipChance) {
             limits += Limit.RAIN
-            score -= (hour.precipChance - profile.maxPrecipChance) * 1.2
+            score -= LIMIT_STEP + (hour.precipChance - profile.maxPrecipChance) * 1.2
         }
         val t = hour.tempC
         val ideal = profile.idealC
@@ -86,35 +87,59 @@ object ActivityScorer {
         when {
             t < ok.start -> { limits += Limit.COLD; score -= 40 + (ok.start - t) * 4 + (ideal.start - ok.start) * 3 }
             t > ok.endInclusive -> { limits += Limit.HEAT; score -= 40 + (t - ok.endInclusive) * 4 + (ok.endInclusive - ideal.endInclusive) * 3 }
-            t < ideal.start -> score -= (ideal.start - t) * 3
-            t > ideal.endInclusive -> score -= (t - ideal.endInclusive) * 3
+            t < ideal.start -> {
+                val penalty = (ideal.start - t) * 3
+                score -= penalty
+                if (penalty > NOTABLE) limits += Limit.COLD
+            }
+            t > ideal.endInclusive -> {
+                val penalty = (t - ideal.endInclusive) * 3
+                score -= penalty
+                if (penalty > NOTABLE) limits += Limit.HEAT
+            }
         }
-        hour.windKmh?.let { w ->
-            if (w > profile.maxWindKmh) { limits += Limit.WIND; score -= (w - profile.maxWindKmh) * 2 }
+        val windOver = hour.windKmh?.let { it - profile.maxWindKmh }?.takeIf { it > 0 }
+        val gustOver = hour.gustKmh?.let { it - profile.maxGustKmh }?.takeIf { it > 0 }
+        if (windOver != null || gustOver != null) {
+            limits += Limit.WIND
+            score -= LIMIT_STEP + (windOver ?: 0.0) * 2 + (gustOver ?: 0.0) * 1.5
         }
-        hour.gustKmh?.let { g ->
-            if (g > profile.maxGustKmh) { limits += Limit.WIND; score -= (g - profile.maxGustKmh) * 1.5 }
-        }
-        if (forecast.isNight(hour)) { limits += Limit.DARK; score -= 50 }
+        if (isDark(hour, forecast, isNow)) { limits += Limit.DARK; score -= 50 }
         return HourScore(hour, score.roundToInt().coerceIn(0, 100), limits)
     }
+
+    /**
+     * Daylight at the middle of the hour, so an hour the sun rises early in (7:00 with sunrise 7:02) counts as
+     * light and one it sets early in (18:00 with sunset 18:05) as dark. The current hour follows the current
+     * conditions instead.
+     */
+    private fun isDark(hour: HourForecast, forecast: Forecast, isNow: Boolean): Boolean =
+        if (isNow) forecast.isNightNow else forecast.isNight(hour.time.plusMinutes(30))
 
     /** Scores the next [HORIZON_HOURS] hours from the current one and picks the best window. */
     fun plan(forecast: Forecast, activity: Activity): ActivityPlan {
         val thisHour = forecast.nextHours.firstOrNull()?.time
         val ahead = if (thisHour == null) emptyList() else forecast.hours.filter { !it.time.isBefore(thisHour) }.take(HORIZON_HOURS)
-        val scored = ahead.map { score(it, forecast, activity.profile) }
-        val best = windows(scored).maxWithOrNull(compareBy<ActivityWindow> { value(it) }.thenByDescending { it.start })
-        val blockers = if (best != null) emptyList() else scored
-            .filter { Limit.DARK !in it.limits }
-            .flatMap { it.limits }
-            .groupingBy { it }.eachCount()
-            .entries.sortedByDescending { it.value }
-            .map { it.key }
+        val scored = ahead.mapIndexed { i, h -> score(h, forecast, activity.profile, isNow = i == 0) }
+        val candidates = windows(scored)
+        // A lone good hour only wins when there's no longer window at all.
+        val pool = candidates.filter { it.hours.size >= 2 }.ifEmpty { candidates }
+        val best = pool.maxWithOrNull(compareBy<ActivityWindow> { value(it) }.thenByDescending { it.start })
+        val blockers = if (best != null) emptyList() else blockersOf(scored)
         return ActivityPlan(activity, scored, best, blockers)
     }
 
-    /** Runs of consecutive hours scoring at least [GOOD]. */
+    /**
+     * The most common reasons, most frequent first. Darkness only counts when there's no daylight at all in the
+     * scored hours (polar night, or late evening with the data running out before sunrise).
+     */
+    private fun blockersOf(scored: List<HourScore>): List<Limit> {
+        val light = scored.filter { Limit.DARK !in it.limits }
+        if (light.isEmpty()) return if (scored.isEmpty()) emptyList() else listOf(Limit.DARK)
+        return light.flatMap { it.limits }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+    }
+
+    /** Runs of consecutive hours (in list order) scoring at least [GOOD]. */
     fun windows(scored: List<HourScore>): List<ActivityWindow> {
         val result = mutableListOf<ActivityWindow>()
         var run = mutableListOf<HourScore>()
@@ -122,12 +147,18 @@ object ActivityScorer {
             if (h.score >= GOOD) run += h
             else if (run.isNotEmpty()) { result += ActivityWindow(run); run = mutableListOf() }
         }
-        if (run.isNotEmpty()) result += ActivityWindow(run)
+        if (run.isNotEmpty()) result += ActivityWindow(run, openEnded = true)
         return result
     }
 
-    /** Higher is better: quality first, then a bonus for length up to four hours. Ties go to the earlier window. */
-    private fun value(w: ActivityWindow): Int = w.averageScore + 5 * minOf(w.hours.size, 4)
+    /** Higher is better: quality, plus a bonus for length up to four hours. Ties go to the earlier window. */
+    internal fun value(w: ActivityWindow): Int = w.averageScore + 8 * minOf(w.hours.size, 4)
+
+    /** Extra cost for crossing a rain or wind limit at all, so an hour over the limit rarely still counts as good. */
+    private const val LIMIT_STEP = 15.0
+
+    /** An in-band temperature penalty big enough to be worth naming as a reason. */
+    private const val NOTABLE = 15.0
 
     private val SNOW = setOf(71, 73, 75, 77, 85, 86)
     private val RAIN = setOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82)
