@@ -161,9 +161,9 @@ private fun ScoreBars(plan: ActivityPlan, barArea: Dp = 32.dp) {
 
 /** A small line drawing in the style of the weather icons: a bicycle for cycling, footprints for running and walking. */
 @Composable
-private fun ActivityGlyph(activity: Activity, color: Color, modifier: Modifier = Modifier) {
+internal fun ActivityGlyph(activity: Activity, color: Color, modifier: Modifier = Modifier, glyph: Dp = 24.dp) {
     Box(modifier.clip(CircleShape).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(24.dp)) {
+        Canvas(Modifier.size(glyph)) {
             if (activity == Activity.CYCLING) bicycle(color) else footprints(color)
         }
     }
