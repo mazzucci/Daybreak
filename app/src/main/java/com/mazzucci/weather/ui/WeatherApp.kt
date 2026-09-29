@@ -94,6 +94,7 @@ fun WeatherApp(vm: WeatherViewModel) {
             onUnitChange = vm::setPrimaryUnit,
             onGemmaEnabledChange = vm::setGemmaEnabled,
             onMemesEnabledChange = vm::setMemesEnabled,
+            onComingUpEnabledChange = vm::setComingUpEnabled,
             onToneChange = vm::setTone,
             onAboutMeChange = vm::setAboutMe,
             onActivityChange = vm::setActivity,

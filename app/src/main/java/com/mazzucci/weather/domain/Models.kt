@@ -24,6 +24,8 @@ data class Place(
     val country: String? = null,
     val latitude: Double,
     val longitude: Double,
+    /** ISO 3166-1 alpha-2 code ("US"), for public holidays; null if unknown. */
+    val countryCode: String? = null,
 ) {
     /** "Region, Country" line shown under the name; null if there's nothing to add. */
     val detail: String? get() = listOfNotNull(region, country).joinToString(", ").ifBlank { null }
@@ -180,6 +182,8 @@ data class AppSettings(
     val aboutMe: String = "",
     /** The activity to find good weather windows for; null hides the card. */
     val activity: Activity? = Activity.CYCLING,
+    /** Whether pages show upcoming public holidays, long weekends and the next season. */
+    val comingUpEnabled: Boolean = true,
     /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */
     val memesEnabled: Boolean = true,
 )

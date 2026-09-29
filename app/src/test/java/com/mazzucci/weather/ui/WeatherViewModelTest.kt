@@ -23,6 +23,11 @@ import com.mazzucci.weather.narration.TemplateNarrator
 import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.narration.MemeWriter
 import com.mazzucci.weather.data.MemeRepository
+import java.time.LocalDate
+import com.mazzucci.weather.domain.LongWeekend
+import com.mazzucci.weather.domain.Holiday
+import com.mazzucci.weather.data.HolidayRepository
+import com.mazzucci.weather.data.HolidayApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -96,6 +101,12 @@ class WeatherViewModelTest {
         TemplateNarrator(Locale.US),
     )
 
+    private val fakeHolidays = object : HolidayApi {
+        override suspend fun publicHolidays(year: Int, countryCode: String) =
+            if (countryCode == "US") listOf(Holiday(LocalDate.of(year, 11, 11), "Veterans Day")) else emptyList()
+        override suspend fun longWeekends(year: Int, countryCode: String) = emptyList<LongWeekend>()
+    }
+
     private var memeReply = "TOP: Fog rolls in\nBOTTOM: Bridge has left"
     private var memeCalls = 0
     /** When set, the fake Gemma waits on it before answering, to test what happens meanwhile. */
@@ -111,6 +122,7 @@ class WeatherViewModelTest {
         return WeatherViewModel(
             api, places, repo, location, model, llm, TemplateNarrator(Locale.US),
             memeWriter = memeWriter, memes = MemeRepository(store),
+            holidays = HolidayRepository(fakeHolidays, store),
         ).also { advanceUntilIdle() }
     }
 
@@ -364,6 +376,19 @@ class WeatherViewModelTest {
         vm.setAboutMe("x".repeat(400))
         advanceUntilIdle()
         assertEquals(ABOUT_ME_MAX_CHARS, vm.uiState.value.settings.aboutMe.length)
+    }
+
+    @Test fun `pages count down to the country's next holiday and season, and the switch hides them`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        val items = (vm.content(sanFrancisco.id) as PageContent.Loaded).comingUp
+        assertEquals(listOf("Veterans Day", "First day of winter"), items.map { it.title })
+        vm.setComingUpEnabled(false)
+        advanceUntilIdle()
+        assertTrue((vm.content(sanFrancisco.id) as PageContent.Loaded).comingUp.isEmpty())
+        vm.setComingUpEnabled(true)
+        advanceUntilIdle()
+        assertEquals(2, (vm.content(sanFrancisco.id) as PageContent.Loaded).comingUp.size)
     }
 
     @Test fun `each page gets a template meme without the model`() = runTest(dispatcher) {

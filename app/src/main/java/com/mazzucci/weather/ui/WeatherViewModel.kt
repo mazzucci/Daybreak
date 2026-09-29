@@ -8,11 +8,15 @@ import com.mazzucci.weather.data.SettingsRepository
 import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.domain.Countdown
+import com.mazzucci.weather.domain.comingUp
+import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.capAboutMe
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.data.HolidayRepository
 import com.mazzucci.weather.data.MemeRepository
 import com.mazzucci.weather.data.SavedMeme
 import com.mazzucci.weather.narration.LocalModelManager
@@ -43,7 +47,13 @@ sealed interface PageContent {
     data object NeedsPermission : PageContent
     data class Failed(val message: String) : PageContent
     /** [meme] is null while memes are off (or until the first one is written). */
-    data class Loaded(val forecast: Forecast, val summary: Narration, val meme: Meme? = null) : PageContent
+    data class Loaded(
+        val forecast: Forecast,
+        val summary: Narration,
+        val meme: Meme? = null,
+        /** Upcoming holidays, long weekends and the next season; empty while off or loading. */
+        val comingUp: List<Countdown> = emptyList(),
+    ) : PageContent
 }
 
 /**
@@ -78,6 +88,7 @@ class WeatherViewModel(
     private val template: TemplateNarrator = TemplateNarrator(),
     private val memeWriter: MemeWriter = MemeWriter(),
     private val memes: MemeRepository? = null,
+    private val holidays: HolidayRepository? = null,
     private val searchDebounceMs: Long = 350,
 ) : ViewModel() {
 
@@ -189,6 +200,7 @@ class WeatherViewModel(
         val input = narrationInput(place, forecast)
         val quickMeme = if (settings.memesEnabled) savedOrTemplateMeme(key, place, input).meme else null
         setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
+        showComingUp(key, place, forecast) // before Gemma: it's a quick, usually cached lookup
         if (gemmaReady()) {
             val narration = llm!!.narrate(input)
             if (narration.source == NarrationSource.GEMMA) updateLoaded(key, forecast) { it.copy(summary = narration) }
@@ -200,6 +212,16 @@ class WeatherViewModel(
     private fun narrationInput(place: Place, forecast: Forecast): NarrationInput {
         val settings = settingsRepo.settings.value
         return NarrationInput(place.name, forecast, settings.primaryUnit, settings.tone, settings.aboutMe)
+    }
+
+    /** Adds the countdowns for [place]'s country; seasons still show when the holiday lookup fails. */
+    private suspend fun showComingUp(key: String, place: Place, forecast: Forecast) {
+        if (!settingsRepo.settings.value.comingUpEnabled) return
+        val today = forecast.current.time.toLocalDate()
+        val year = countryCodeOf(place)?.let { cc -> holidays?.around(today, cc) }
+        if (!settingsRepo.settings.value.comingUpEnabled) return // turned off while fetching
+        val items = comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude)
+        updateLoaded(key, forecast) { it.copy(comingUp = items) }
     }
 
     private fun gemmaReady(): Boolean =
@@ -380,6 +402,20 @@ class WeatherViewModel(
 
     /** Only changes the activity card, which is computed from the cached forecast: nothing to refetch or re-narrate. */
     fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
+
+    fun setComingUpEnabled(enabled: Boolean) {
+        settingsRepo.update { it.copy(comingUpEnabled = enabled) }
+        if (enabled) {
+            visiblePlaces().forEach { (key, place) ->
+                val content = contents.value[key]
+                if (content is PageContent.Loaded && key !in jobs) {
+                    launchFor(key, fetch = false) { showComingUp(key, place, content.forecast) }
+                }
+            }
+        } else {
+            contents.update { map -> map.mapValues { (_, c) -> if (c is PageContent.Loaded) c.copy(comingUp = emptyList()) else c } }
+        }
+    }
 
     fun setMemesEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(memesEnabled = enabled) }

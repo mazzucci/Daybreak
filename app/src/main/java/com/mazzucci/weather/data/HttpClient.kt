@@ -18,7 +18,7 @@ class UrlConnectionHttpClient(private val timeoutMs: Int = 10_000) : HttpClient 
         try {
             conn.connectTimeout = timeoutMs
             conn.readTimeout = timeoutMs
-            if (conn.responseCode != 200) throw IOException("Weather service returned HTTP ${conn.responseCode}")
+            if (conn.responseCode != 200) throw IOException("Server returned HTTP ${conn.responseCode}")
             conn.inputStream.bufferedReader().use { it.readText() }
         } finally {
             conn.disconnect()

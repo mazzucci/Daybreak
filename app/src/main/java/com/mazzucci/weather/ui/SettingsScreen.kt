@@ -97,6 +97,7 @@ fun SettingsScreen(
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
+    onComingUpEnabledChange: (Boolean) -> Unit,
     onToneChange: (Tone) -> Unit,
     onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
@@ -189,6 +190,28 @@ fun SettingsScreen(
                         checked = settings.memesEnabled,
                         onCheckedChange = onMemesEnabledChange,
                         modifier = Modifier.semantics { contentDescription = "Daily weather meme" },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Holidays and countdowns", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Next public holiday and long weekend for each place's country (from Nager.Date; only the " +
+                                "country is sent), and the next season.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = settings.comingUpEnabled,
+                        onCheckedChange = onComingUpEnabledChange,
+                        modifier = Modifier.semantics { contentDescription = "Holidays and countdowns" },
                     )
                 }
             }

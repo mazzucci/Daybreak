@@ -20,7 +20,9 @@ import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelStore
 import com.mazzucci.weather.narration.GemmaNarrator
 import com.mazzucci.weather.narration.MemeWriter
+import com.mazzucci.weather.data.HolidayRepository
 import com.mazzucci.weather.data.MemeRepository
+import com.mazzucci.weather.data.NagerHolidayApi
 import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.ui.WeatherApp
 import com.mazzucci.weather.ui.WeatherTheme
@@ -41,10 +43,11 @@ class MainActivity : ComponentActivity() {
 private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory = viewModelFactory {
     initializer {
         val store = SharedPrefsStore(context)
+        val http = UrlConnectionHttpClient()
         val modelStore = GemmaModelStore.get(context)
         val gemma = GemmaNarrator(context, modelStore::installedFile) // one engine for the summary and the meme
         WeatherViewModel(
-            api = OpenMeteoApi(UrlConnectionHttpClient()),
+            api = OpenMeteoApi(http),
             places = SavedPlacesRepository(store),
             settingsRepo = SettingsRepository(
                 store, AppSettings(primaryUnit = defaultUnit()),
@@ -55,6 +58,7 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
             llm = ValidatingNarrator(gemma),
             memeWriter = MemeWriter(gemma),
             memes = MemeRepository(store),
+            holidays = HolidayRepository(NagerHolidayApi(http), store),
         )
     }
 }

@@ -32,6 +32,9 @@ import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
+import com.mazzucci.weather.domain.Holiday
+import com.mazzucci.weather.domain.LongWeekend
+import com.mazzucci.weather.domain.comingUp
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.narration.MemeMood
 import com.mazzucci.weather.narration.TemplateMemes
@@ -120,7 +123,7 @@ class ScreenshotTest {
         SettingsScreen(
             settings = settings,
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
@@ -326,6 +329,19 @@ class ScreenshotTest {
             ActivityCard(ActivityScorer.plan(forecast, Activity.CYCLING), TempUnit.F, forecast.current.time.toLocalDate())
             ActivityCard(ActivityScorer.plan(showery, Activity.RUNNING), TempUnit.C, showery.current.time.toLocalDate())
             ActivityCard(ActivityScorer.plan(wet, Activity.WALKING), TempUnit.C, wet.current.time.toLocalDate())
+        }
+    }
+
+    @Test fun comingUpCard() = snap("coming_up", tall = true) {
+        val today = forecast.current.time.toLocalDate()
+        val items = comingUp(
+            today,
+            listOf(Holiday(today.plusDays(4), "Founders Day"), Holiday(today.plusDays(44), "Veterans Day")),
+            listOf(LongWeekend(today.plusDays(4), today.plusDays(6), 3, emptyList())),
+            latitude = sanFrancisco.latitude,
+        )
+        Column(Modifier.padding(vertical = 16.dp)) {
+            ComingUpCard(items, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))
         }
     }
 

@@ -61,6 +61,7 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         .put("name", name)
         .putOpt("region", region)
         .putOpt("country", country)
+        .putOpt("cc", countryCode)
         .put("lat", latitude)
         .put("lon", longitude)
 
@@ -71,6 +72,7 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         country = optString("country").ifBlank { null },
         latitude = getDouble("lat"),
         longitude = getDouble("lon"),
+        countryCode = optString("cc").ifBlank { null },
     )
 
     private companion object {
@@ -97,6 +99,7 @@ class SettingsRepository(
         store.putString(KEY_CURRENT, s.useCurrentLocation.toString())
         store.putString(KEY_GEMMA, s.gemmaEnabled.toString())
         store.putString(KEY_MEMES, s.memesEnabled.toString())
+        store.putString(KEY_COMING_UP, s.comingUpEnabled.toString())
         store.putString(KEY_TONE, s.tone.name)
         privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
@@ -108,6 +111,7 @@ class SettingsRepository(
         useCurrentLocation = store.getString(KEY_CURRENT)?.toBooleanStrictOrNull() ?: defaults.useCurrentLocation,
         gemmaEnabled = store.getString(KEY_GEMMA)?.toBooleanStrictOrNull() ?: defaults.gemmaEnabled,
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
+        comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
         aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
@@ -122,6 +126,7 @@ class SettingsRepository(
         const val KEY_CURRENT = "use_current_location"
         const val KEY_GEMMA = "gemma_enabled"
         const val KEY_MEMES = "memes_enabled"
+        const val KEY_COMING_UP = "coming_up_enabled"
         const val KEY_TONE = "tone"
         const val KEY_ABOUT_ME = "about_me"
         const val KEY_ACTIVITY = "activity"
