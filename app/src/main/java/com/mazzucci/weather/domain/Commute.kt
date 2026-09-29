@@ -34,7 +34,7 @@ data class CommuteAdvice(
 /**
  * Scores the next commute for [activity] with the same scorer as the "best time" card:
  * - today, if it's a workday and the trip home is still ahead (after leaving, only the trip home counts);
- * - otherwise the next workday, skipping weekends and [holidays].
+ * - otherwise the next workday, skipping the country's [weekend] and [holidays].
  * Darkness never tips it to "work from home" (lights fix that); it's a caveat at most. Null when the forecast
  * doesn't cover the trips.
  */
@@ -43,10 +43,11 @@ fun commuteAdvice(
     activity: Activity,
     commute: CommuteSettings,
     holidays: Set<LocalDate> = emptySet(),
+    weekend: Set<DayOfWeek> = SAT_SUN,
 ): CommuteAdvice? {
     val now = forecast.current.time
     val thisHour = now.truncatedTo(ChronoUnit.HOURS)
-    fun workday(d: LocalDate) = d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY && d !in holidays
+    fun workday(d: LocalDate) = d.dayOfWeek !in weekend && d !in holidays
     fun leaveAt(d: LocalDate) = d.atTime(commute.leaveHour, 0)
     fun backAt(d: LocalDate) = if (commute.returnHour <= commute.leaveHour) d.plusDays(1).atTime(commute.returnHour, 0) else d.atTime(commute.returnHour, 0)
 
@@ -74,6 +75,23 @@ private fun score(hour: HourForecast, forecast: Forecast, activity: Activity, is
 /** The forecast hour at [time], or the next one within the hour (a daylight-saving gap skips 2 AM). */
 private fun hourAt(forecast: Forecast, time: LocalDateTime): HourForecast? =
     forecast.hours.firstOrNull { !it.time.isBefore(time) && it.time.isBefore(time.plusHours(2)) }
+
+private val SAT_SUN = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+private val FRI_SAT = setOf(DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
+
+/** Countries whose weekend isn't Saturday and Sunday (ISO codes). */
+private val WEEKENDS: Map<String, Set<DayOfWeek>> =
+    listOf("BH", "BD", "DZ", "EG", "IL", "IQ", "JO", "KW", "LY", "MV", "OM", "QA", "SA", "SD", "SY", "YE").associateWith { FRI_SAT } +
+        mapOf(
+            "AF" to setOf(DayOfWeek.FRIDAY),
+            "IR" to setOf(DayOfWeek.FRIDAY),
+            "SO" to setOf(DayOfWeek.THURSDAY, DayOfWeek.FRIDAY),
+            "BN" to setOf(DayOfWeek.FRIDAY, DayOfWeek.SUNDAY),
+            "NP" to setOf(DayOfWeek.SATURDAY),
+        )
+
+/** The usual weekend days in a country; Saturday and Sunday when unknown. */
+fun weekendDays(countryCode: String?): Set<DayOfWeek> = countryCode?.uppercase()?.let { WEEKENDS[it] } ?: SAT_SUN
 
 /** Below this, a trip isn't worth it: suggest working from home. */
 private const val POOR = 40

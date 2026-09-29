@@ -59,6 +59,7 @@ import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.WindSide
 import com.mazzucci.weather.domain.compassPoint
 import com.mazzucci.weather.domain.describeReplay
+import com.mazzucci.weather.domain.formatClock
 import com.mazzucci.weather.domain.formatRain
 import com.mazzucci.weather.domain.kmhToMph
 import java.time.Duration
@@ -177,7 +178,8 @@ private fun ReplayContent(r: RideReplay, unit: TempUnit) {
     // Shown in the ride place's own time, not the phone's: a Tokyo ride reads the same wherever it's viewed.
     val start = track.start?.atOffset(ZoneOffset.ofTotalSeconds(r.utcOffsetSeconds))
     val title = track.name ?: "Your ride"
-    val date = start?.format(DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a", Locale.US))
+    // The clock part follows the phone's 12/24-hour setting like every other time in the app.
+    val date = start?.let { "${it.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))} · ${formatClock(it.toLocalDateTime(), Locale.US)}" }
     val km = track.distanceKm
     val distance = if (unit == TempUnit.F) String.format(Locale.US, "%.1f", kmhToMph(km)) else String.format(Locale.US, "%.1f", km)
     val time = formatRideTime(track.duration)

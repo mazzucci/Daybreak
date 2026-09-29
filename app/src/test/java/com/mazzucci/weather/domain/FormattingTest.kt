@@ -43,6 +43,11 @@ class FormattingTest {
         assertEquals("12 AM", formatHour(LocalDateTime.of(2026, 1, 1, 0, 0), Locale.US))
     }
 
+    @Test fun `24-hour clock`() {
+        assertEquals("18:00", formatHour(LocalDateTime.of(2026, 1, 1, 18, 0), Locale.US, use24Hour = true))
+        assertEquals("06:56", formatClock(LocalDateTime.of(2026, 9, 28, 6, 56), Locale.US, use24Hour = true))
+    }
+
     @Test fun `clock times and day labels`() {
         assertEquals("7:02 AM", formatClock(LocalDateTime.of(2026, 9, 28, 7, 2), Locale.US))
         assertEquals("6:56 PM", formatClock(LocalDateTime.of(2026, 9, 28, 18, 56), Locale.US))

@@ -34,12 +34,20 @@ fun formatWind(kmh: Double, unit: TempUnit): String = when (unit) {
 }
 
 /** "3 PM" style hour label. */
-fun formatHour(time: LocalDateTime, locale: Locale = Locale.getDefault()): String =
-    time.format(DateTimeFormatter.ofPattern("h a", locale))
+fun formatHour(time: LocalDateTime, locale: Locale = Locale.getDefault(), use24Hour: Boolean = ClockFormat.use24Hour): String =
+    time.format(DateTimeFormatter.ofPattern(if (use24Hour) "HH:mm" else "h a", locale))
 
 /** "7:02 AM" style clock time, for sunrise and sunset. */
-fun formatClock(time: LocalDateTime, locale: Locale = Locale.getDefault()): String =
-    time.format(DateTimeFormatter.ofPattern("h:mm a", locale))
+fun formatClock(time: LocalDateTime, locale: Locale = Locale.getDefault(), use24Hour: Boolean = ClockFormat.use24Hour): String =
+    time.format(DateTimeFormatter.ofPattern(if (use24Hour) "HH:mm" else "h:mm a", locale))
+
+/**
+ * Whether times are written on the 24-hour clock ("18:00") or the 12-hour one ("6 PM"). Follows the phone's own
+ * setting; the activity updates it whenever it comes to the foreground. False (12-hour) in tests.
+ */
+object ClockFormat {
+    @Volatile var use24Hour: Boolean = false
+}
 
 /** "Today", then short weekday names ("Tue") for the multi-day list. English, like the rest of the UI. */
 fun formatDayLabel(date: LocalDate, today: LocalDate, locale: Locale = Locale.US): String =

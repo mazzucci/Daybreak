@@ -1,6 +1,8 @@
 package com.mazzucci.weather.widget
 
 import android.content.Context
+import android.text.format.DateFormat
+import com.mazzucci.weather.domain.ClockFormat
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CancellationException
@@ -33,6 +35,8 @@ class WidgetRefreshWorker(context: Context, params: WorkerParameters) : Coroutin
             cancel(applicationContext)
             return Result.success()
         }
+        // Often a fresh process with no activity: read the phone's clock setting here too.
+        ClockFormat.use24Hour = DateFormat.is24HourFormat(applicationContext)
         val store = WidgetStore(SharedPrefsStore(applicationContext, WidgetStore.PREFS_FILE))
         val old = store.load() ?: return Result.success() // nothing to refresh until the app has shown a place
         val forecast = try {

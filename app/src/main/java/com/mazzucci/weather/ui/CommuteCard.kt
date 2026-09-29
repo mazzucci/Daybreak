@@ -65,10 +65,12 @@ fun CommuteCard(advice: CommuteAdvice, activity: Activity, unit: TempUnit, today
                 Text(copy.eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(copy.headline, style = MaterialTheme.typography.titleLarge)
                 // Non-breaking spaces around the separator so a wrapped line never starts with a dot, and in "at 5 PM"
-                // so the hour never splits from its "at" or its AM/PM.
+                // and "at 18:00" so the hour never splits from its "at" or its AM/PM.
                 val shown = copy.detail
                     .replace(" · ", " · ")
-                    .replace(Regex("at (\\d+) ([AP]M)"), "at $1 $2")
+                    .replace(Regex("at (\\d[\\d:]*)( [AP]M)?")) { m ->
+                        "at\u00A0${m.groupValues[1]}${m.groupValues[2].replace(' ', '\u00A0')}"
+                    }
                 Text(
                     shown,
                     style = MaterialTheme.typography.bodyMedium,
