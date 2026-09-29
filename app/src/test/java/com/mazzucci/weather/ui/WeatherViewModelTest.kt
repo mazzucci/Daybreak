@@ -18,6 +18,9 @@ import com.mazzucci.weather.narration.ModelStatus
 import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.narration.TemplateNarrator
 import com.mazzucci.weather.narration.ValidatingNarrator
+import com.mazzucci.weather.narration.MemeWriter
+import com.mazzucci.weather.data.MemeRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -86,6 +89,12 @@ class WeatherViewModelTest {
     private val gemmaPlaces = mutableListOf<String>()
     private val llm = ValidatingNarrator({ input -> gemmaPlaces += input.placeName; gemmaReply }, TemplateNarrator(Locale.US))
 
+    private var memeReply = "TOP: Fog rolls in\nBOTTOM: Bridge has left"
+    private var memeCalls = 0
+    /** When set, the fake Gemma waits on it before answering, to test what happens meanwhile. */
+    private var memeGate: CompletableDeferred<Unit>? = null
+    private val memeWriter = MemeWriter({ _, _, _ -> memeCalls++; memeGate?.await(); memeReply })
+
     private fun TestScope.viewModel(
         settings: AppSettings = AppSettings(),
         modelInstalled: Boolean = false,
@@ -94,8 +103,11 @@ class WeatherViewModelTest {
         val repo = SettingsRepository(store, settings)
         return WeatherViewModel(
             api, places, repo, location, model, llm, TemplateNarrator(Locale.US),
+            memeWriter = memeWriter, memes = MemeRepository(store),
         ).also { advanceUntilIdle() }
     }
+
+    private fun WeatherViewModel.meme(key: String) = (content(key) as PageContent.Loaded).meme
 
     private val WeatherViewModel.pages get() = uiState.value.pages
     private fun WeatherViewModel.content(key: String) = pages.first { it.key == key }.content
@@ -318,6 +330,101 @@ class WeatherViewModelTest {
         model.status.value = ModelStatus.Installed(500L shl 20) // DownloadManager reports completion later
         advanceUntilIdle()
         assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
+    }
+
+    @Test fun `each page gets a template meme without the model`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(sanFrancisco.id)?.source)
+        assertEquals(0, memeCalls)
+    }
+
+    @Test fun `Gemma writes the meme once a day and it survives a refresh and a restart`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        assertEquals("Fog rolls in", vm.meme(sanFrancisco.id)?.top)
+        assertEquals(NarrationSource.GEMMA, vm.meme(sanFrancisco.id)?.source)
+        assertEquals(1, memeCalls)
+
+        vm.refresh(sanFrancisco.id)
+        advanceUntilIdle()
+        val again = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        assertEquals("Fog rolls in", again.meme(sanFrancisco.id)?.top)
+        assertEquals(1, memeCalls)
+    }
+
+    @Test fun `a rejected Gemma meme keeps the template one`() = runTest(dispatcher) {
+        memeReply = "TOP: It is 71 degrees\nBOTTOM: wow"
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(sanFrancisco.id)?.source)
+        assertEquals(1, memeCalls)
+    }
+
+    @Test fun `a rejected Gemma meme isn't retried on refresh the same day`() = runTest(dispatcher) {
+        memeReply = "TOP: 42\nBOTTOM: nope"
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        vm.refresh(sanFrancisco.id)
+        advanceUntilIdle()
+        assertEquals(1, memeCalls)
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(sanFrancisco.id)?.source)
+    }
+
+    @Test fun `turning memes off while Gemma writes one keeps them off`() = runTest(dispatcher) {
+        memeGate = CompletableDeferred()
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        assertEquals(1, memeCalls) // waiting on the gate
+        vm.setMemesEnabled(false)
+        memeGate!!.complete(Unit)
+        advanceUntilIdle()
+        assertNull(vm.meme(sanFrancisco.id))
+        assertNull(store.getString("meme:${sanFrancisco.id}"))
+    }
+
+    @Test fun `the current-location meme follows the place, not just the page`() = runTest(dispatcher) {
+        val vm = viewModel(modelInstalled = true)
+        assertEquals("Fog rolls in", vm.meme(WeatherViewModel.CURRENT)?.top)
+        memeReply = "TOP: New town\nBOTTOM: Same rain"
+        location.place = london.copy(id = Place.CURRENT_LOCATION_ID)
+        vm.refresh(WeatherViewModel.CURRENT)
+        advanceUntilIdle()
+        assertEquals("New town", vm.meme(WeatherViewModel.CURRENT)?.top)
+        assertEquals(2, memeCalls)
+    }
+
+    @Test fun `turning memes on keeps Gemma's summary and doesn't ask for it again`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false, memesEnabled = false), modelInstalled = true)
+        val summaries = gemmaPlaces.size
+        assertNull(vm.meme(sanFrancisco.id))
+        vm.setMemesEnabled(true)
+        advanceUntilIdle()
+        assertEquals(NarrationSource.GEMMA, vm.meme(sanFrancisco.id)?.source)
+        assertEquals(NarrationSource.GEMMA, (vm.content(sanFrancisco.id) as PageContent.Loaded).summary.source)
+        assertEquals(summaries, gemmaPlaces.size)
+    }
+
+    @Test fun `removing a place forgets its meme`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        assertTrue(store.getString("meme:${sanFrancisco.id}") != null)
+        vm.removePlace(sanFrancisco.id)
+        assertNull(store.getString("meme:${sanFrancisco.id}"))
+    }
+
+    @Test fun `turning memes off hides them without a refetch, and back on restores them`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        val fetches = api.forecastCalls
+        vm.setMemesEnabled(false)
+        advanceUntilIdle()
+        assertNull(vm.meme(sanFrancisco.id))
+        vm.setMemesEnabled(true)
+        advanceUntilIdle()
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(sanFrancisco.id)?.source)
+        assertEquals(fetches, api.forecastCalls)
     }
 
     @Test fun `cancelling a download returns to not installed`() = runTest(dispatcher) {

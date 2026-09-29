@@ -86,6 +86,7 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
         store.putString(KEY_UNIT, s.primaryUnit.name)
         store.putString(KEY_CURRENT, s.useCurrentLocation.toString())
         store.putString(KEY_GEMMA, s.gemmaEnabled.toString())
+        store.putString(KEY_MEMES, s.memesEnabled.toString())
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -93,11 +94,13 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
             ?: defaults.primaryUnit,
         useCurrentLocation = store.getString(KEY_CURRENT)?.toBooleanStrictOrNull() ?: defaults.useCurrentLocation,
         gemmaEnabled = store.getString(KEY_GEMMA)?.toBooleanStrictOrNull() ?: defaults.gemmaEnabled,
+        memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
     )
 
     private companion object {
         const val KEY_UNIT = "primary_unit"
         const val KEY_CURRENT = "use_current_location"
         const val KEY_GEMMA = "gemma_enabled"
+        const val KEY_MEMES = "memes_enabled"
     }
 }

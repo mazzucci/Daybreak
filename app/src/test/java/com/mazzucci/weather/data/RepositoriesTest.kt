@@ -6,10 +6,15 @@ import com.mazzucci.weather.TestData.tokyo
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.narration.Meme
+import com.mazzucci.weather.narration.MemeMood
+import com.mazzucci.weather.narration.NarrationSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 class SavedPlacesRepositoryTest {
     private val store = InMemoryStore()
@@ -83,5 +88,29 @@ class SettingsRepositoryTest {
     @Test fun `bad stored values fall back to defaults`() {
         val store = InMemoryStore(mapOf("primary_unit" to "K", "use_current_location" to "maybe"))
         assertEquals(AppSettings(), SettingsRepository(store).settings.value)
+    }
+
+    @Test fun `memes are remembered per page, day, place and mood`() {
+        val store = InMemoryStore()
+        val repo = MemeRepository(store)
+        val date = LocalDate.of(2026, 9, 28)
+        val rain = SavedMeme(Meme("Top", "Bottom", MemeMood.RAIN, NarrationSource.GEMMA), gemmaTried = true)
+        val sun = SavedMeme(Meme("Sun", "Fun", MemeMood.SUN, NarrationSource.TEMPLATE), gemmaTried = true)
+        repo.put("geo:1", date, "SF", rain)
+        repo.put("geo:1", date, "SF", sun) // a mood flip keeps both
+        assertEquals(rain, MemeRepository(store).get("geo:1", date, "SF", MemeMood.RAIN))
+        assertEquals(sun, repo.get("geo:1", date, "SF", MemeMood.SUN))
+        assertNull(repo.get("geo:1", date.plusDays(1), "SF", MemeMood.RAIN))
+        assertNull(repo.get("geo:1", date, "Seattle", MemeMood.RAIN))
+        assertNull(repo.get("geo:1", date, "SF", MemeMood.FOG))
+        assertNull(repo.get("geo:2", date, "SF", MemeMood.RAIN))
+
+        repo.put("geo:1", date.plusDays(1), "SF", rain) // a new day starts a fresh entry
+        assertNull(repo.get("geo:1", date, "SF", MemeMood.SUN))
+
+        repo.remove("geo:1")
+        assertNull(store.getString("meme:geo:1"))
+        store.putString("meme:geo:3", "not json")
+        assertNull(repo.get("geo:3", date, "SF", MemeMood.RAIN))
     }
 }

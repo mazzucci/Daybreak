@@ -10,7 +10,12 @@ import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.data.MemeRepository
+import com.mazzucci.weather.data.SavedMeme
 import com.mazzucci.weather.narration.LocalModelManager
+import com.mazzucci.weather.narration.Meme
+import com.mazzucci.weather.narration.MemeWriter
+import com.mazzucci.weather.narration.memeMoodOf
 import com.mazzucci.weather.narration.ModelStatus
 import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
@@ -27,13 +32,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.coroutines.coroutineContext
 
 sealed interface PageContent {
     data object Loading : PageContent
     data object NeedsPermission : PageContent
     data class Failed(val message: String) : PageContent
-    data class Loaded(val forecast: Forecast, val summary: Narration) : PageContent
+    /** [meme] is null while memes are off (or until the first one is written). */
+    data class Loaded(val forecast: Forecast, val summary: Narration, val meme: Meme? = null) : PageContent
 }
 
 /**
@@ -66,6 +73,8 @@ class WeatherViewModel(
     /** Null when there's no LLM available at all (e.g. in tests or previews). */
     private val llm: ValidatingNarrator?,
     private val template: TemplateNarrator = TemplateNarrator(),
+    private val memeWriter: MemeWriter = MemeWriter(),
+    private val memes: MemeRepository? = null,
     private val searchDebounceMs: Long = 350,
 ) : ViewModel() {
 
@@ -168,21 +177,60 @@ class WeatherViewModel(
         showForecast(key, place, forecast)
     }
 
-    /** Shows [forecast] with the instant template summary, then swaps in Gemma's if it produces a valid one. */
+    /**
+     * Shows [forecast] with the instant template summary (and the day's meme), then swaps in Gemma's summary if it
+     * produces a valid one, then gives Gemma its one try at the day's meme.
+     */
     private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
         val settings = settingsRepo.settings.value
         val input = NarrationInput(place.name, forecast, settings.primaryUnit)
-        setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE)))
-        if (llm != null && settings.gemmaEnabled && model.status.value is ModelStatus.Installed) {
-            val narration = llm.narrate(input)
-            if (narration.source == NarrationSource.GEMMA) {
-                contents.update { map ->
-                    val loaded = map[key] as? PageContent.Loaded
-                    if (loaded?.forecast == forecast) map + (key to loaded.copy(summary = narration)) else map
-                }
-            }
+        val quickMeme = if (settings.memesEnabled) savedOrTemplateMeme(key, place, input).meme else null
+        setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
+        if (gemmaReady()) {
+            val narration = llm!!.narrate(input)
+            if (narration.source == NarrationSource.GEMMA) updateLoaded(key, forecast) { it.copy(summary = narration) }
         }
+        // Re-reads the setting: memes may have been turned on or off while Gemma was busy.
+        showMeme(key, place, input)
     }
+
+    private fun gemmaReady(): Boolean =
+        llm != null && settingsRepo.settings.value.gemmaEnabled && model.status.value is ModelStatus.Installed
+
+    private fun memesOn(): Boolean = settingsRepo.settings.value.memesEnabled
+
+    private fun savedOrTemplateMeme(key: String, place: Place, input: NarrationInput): SavedMeme =
+        memes?.get(key, input.forecast.today.date, memePlaceTag(place), memeMoodOf(input.forecast))
+            ?: SavedMeme(memeWriter.template(input, key), gemmaTried = false)
+
+    /**
+     * Puts the day's meme on a loaded page (if memes are on), asks Gemma for one unless it already had its try at
+     * this place, day and mood, and remembers the result so refreshes and restarts show the same meme.
+     */
+    private suspend fun showMeme(key: String, place: Place, input: NarrationInput) {
+        if (!memesOn()) return
+        val forecast = input.forecast
+        val saved = savedOrTemplateMeme(key, place, input)
+        updateLoaded(key, forecast) { it.copy(meme = saved.meme) }
+        var result = saved
+        if (!saved.gemmaTried && saved.meme.source != NarrationSource.GEMMA && memeWriter.canUseModel && gemmaReady()) {
+            val gemma = memeWriter.fromModel(input, key)
+            if (!memesOn()) return // turned off while Gemma was writing: don't bring the card back
+            gemma?.let { m -> updateLoaded(key, forecast) { it.copy(meme = m) } }
+            result = SavedMeme(gemma ?: saved.meme, gemmaTried = true)
+        }
+        memes?.put(key, forecast.today.date, memePlaceTag(place), result)
+    }
+
+    /** Identifies the place a meme was written for, so the current-location page doesn't keep another city's. */
+    private fun memePlaceTag(place: Place): String =
+        String.format(Locale.ROOT, "%s|%.2f|%.2f", place.name, place.latitude, place.longitude)
+
+    private fun updateLoaded(key: String, forecast: Forecast, change: (PageContent.Loaded) -> PageContent.Loaded) =
+        contents.update { map ->
+            val loaded = map[key] as? PageContent.Loaded
+            if (loaded?.forecast == forecast) map + (key to change(loaded)) else map
+        }
 
     /**
      * Rewrites the summary of every loaded page from its cached forecast, without touching the network. Used when
@@ -191,15 +239,31 @@ class WeatherViewModel(
     private fun renarrateAll() {
         // Visible pages only, in page order, so the page the user is most likely looking at goes first (Gemma
         // generates one summary at a time). Built from the sources rather than uiState, which updates asynchronously.
-        val visible = buildList {
-            if (settingsRepo.settings.value.useCurrentLocation) currentPlace.value?.let { add(CURRENT to it) }
-            places.places.value.forEach { add(it.id to it) }
-        }
-        visible.forEach { (key, place) ->
+        visiblePlaces().forEach { (key, place) ->
             val content = contents.value[key]
             // A page that's still fetching will narrate with the new settings when its forecast arrives.
             if (content is PageContent.Loaded && key !in fetching.value) {
                 launchFor(key, fetch = false) { showForecast(key, place, content.forecast) }
+            }
+        }
+    }
+
+    /** Page keys and places currently shown, in page order. */
+    private fun visiblePlaces(): List<Pair<String, Place>> = buildList {
+        if (settingsRepo.settings.value.useCurrentLocation) currentPlace.value?.let { add(CURRENT to it) }
+        places.places.value.forEach { add(it.id to it) }
+    }
+
+    /**
+     * Adds memes to loaded pages after they're turned on, without re-running the summaries. Pages with a job in
+     * flight add theirs when that job reaches its meme step.
+     */
+    private fun showMemesOnLoadedPages() {
+        val unit = settingsRepo.settings.value.primaryUnit
+        visiblePlaces().forEach { (key, place) ->
+            val content = contents.value[key]
+            if (content is PageContent.Loaded && key !in jobs) {
+                launchFor(key, fetch = false) { showMeme(key, place, NarrationInput(place.name, content.forecast, unit)) }
             }
         }
     }
@@ -266,6 +330,7 @@ class WeatherViewModel(
 
     fun removePlace(id: String) {
         places.remove(id)
+        memes?.remove(id)
         jobs.remove(id)?.cancel()
         contents.update { it - id }
         fetching.update { it - id }
@@ -287,8 +352,16 @@ class WeatherViewModel(
         } else {
             // The page is gone; don't keep fetching or narrating for it.
             jobs.remove(CURRENT)?.cancel()
+            memes?.remove(CURRENT)
             contents.update { it - CURRENT }
             fetching.update { it - CURRENT }
+        }
+    }
+
+    fun setMemesEnabled(enabled: Boolean) {
+        settingsRepo.update { it.copy(memesEnabled = enabled) }
+        if (enabled) showMemesOnLoadedPages() else contents.update { map ->
+            map.mapValues { (_, c) -> if (c is PageContent.Loaded) c.copy(meme = null) else c }
         }
     }
 

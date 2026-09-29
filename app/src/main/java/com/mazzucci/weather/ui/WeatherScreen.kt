@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import com.mazzucci.weather.domain.formatBothUnits
@@ -82,6 +83,7 @@ import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.DaySummary
+import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.domain.Daylight
 import com.mazzucci.weather.domain.describeUv
 import com.mazzucci.weather.domain.describeWeatherCode
@@ -251,7 +253,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -380,7 +382,7 @@ private fun SummaryBlock(summary: Narration) {
 
 /** Detail tiles and the hourly strip, on the normal surface below the hero. */
 @Composable
-private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean) {
+private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, meme: Meme?) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
     TileRow {
@@ -416,6 +418,16 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean) {
         )
         Spacer(Modifier.height(12.dp))
         DailyList(week, forecast.today.date, unit)
+    }
+    if (meme != null) {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "Today's weather meme",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = PageMargin).semantics { heading() },
+        )
+        Spacer(Modifier.height(12.dp))
+        MemeCard(meme, Modifier.padding(horizontal = PageMargin))
     }
 }
 
