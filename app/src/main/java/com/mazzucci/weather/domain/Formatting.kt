@@ -58,6 +58,39 @@ fun describeUv(uv: Double): String = when (uv.roundToInt()) {
     else -> "Extreme"
 }
 
+/** "9 AM–1 PM" for an activity window. */
+fun formatWindow(w: ActivityWindow, locale: Locale = Locale.getDefault()): String =
+    "${formatHour(w.start, locale)}–${formatHour(w.end, locale)}"
+
+/** "Dry · light wind · 17–21°": what the window is like, in the primary unit. */
+fun describeWindow(w: ActivityWindow, unit: TempUnit): String {
+    val rain = when {
+        w.maxPrecipChance < 10 -> "Dry"
+        else -> "${w.maxPrecipChance}% rain chance"
+    }
+    val wind = w.maxWindKmh?.let { if (it < 12) "calm" else if (it < 25) "light wind" else "breezy" }
+    val lo = degrees(w.minTempC, unit)
+    val hi = degrees(w.maxTempC, unit)
+    val temp = if (lo == hi) "$lo°" else "$lo–$hi°"
+    return listOfNotNull(rain, wind, temp).joinToString(" · ")
+}
+
+/** "Rain and wind": the top one or two reasons there's no good window. */
+fun describeBlockers(limits: List<Limit>): String {
+    val words = limits.take(2).map {
+        when (it) {
+            Limit.STORM -> "storms"
+            Limit.SNOW -> "snow"
+            Limit.RAIN -> "rain"
+            Limit.WIND -> "strong wind"
+            Limit.COLD -> "the cold"
+            Limit.HEAT -> "the heat"
+            Limit.DARK -> "darkness"
+        }
+    }
+    return if (words.isEmpty()) "Not great conditions" else words.joinToString(" and ").replaceFirstChar { it.uppercase() }
+}
+
 /** WMO weather interpretation codes, as used by Open-Meteo. */
 fun describeWeatherCode(code: Int): String = when (code) {
     0 -> "Clear sky"

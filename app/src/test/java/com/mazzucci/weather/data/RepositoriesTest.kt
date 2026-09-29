@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.TestData.london
 import com.mazzucci.weather.TestData.sanFrancisco
 import com.mazzucci.weather.TestData.tokyo
+import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
@@ -122,6 +123,17 @@ class SettingsRepositoryTest {
         assertNull(store.getString("about_me"))
         assertEquals("I cycle", private.getString("about_me"))
         assertEquals("I cycle", SettingsRepository(store, privateStore = private).settings.value.aboutMe)
+    }
+
+    @Test fun `activity is saved, including off`() {
+        val store = InMemoryStore()
+        assertEquals(Activity.CYCLING, SettingsRepository(store).settings.value.activity)
+        SettingsRepository(store).update { it.copy(activity = null) }
+        assertNull(SettingsRepository(store).settings.value.activity)
+        SettingsRepository(store).update { it.copy(activity = Activity.RUNNING) }
+        assertEquals(Activity.RUNNING, SettingsRepository(store).settings.value.activity)
+        store.putString("activity", "SKIING")
+        assertEquals(Activity.CYCLING, SettingsRepository(store).settings.value.activity)
     }
 
     @Test fun `voice and note are saved, and an unknown voice falls back`() {

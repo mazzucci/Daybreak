@@ -178,6 +178,8 @@ data class AppSettings(
     val tone: Tone = Tone.FRIENDLY,
     /** Optional note about the user ("I cycle to work"), used by Gemma to pick what to mention. Stays on the phone. */
     val aboutMe: String = "",
+    /** The activity to find good weather windows for; null hides the card. */
+    val activity: Activity? = Activity.CYCLING,
     /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */
     val memesEnabled: Boolean = true,
 )

@@ -6,6 +6,7 @@ import com.mazzucci.weather.data.LocationProvider
 import com.mazzucci.weather.data.SavedPlacesRepository
 import com.mazzucci.weather.data.SettingsRepository
 import com.mazzucci.weather.data.WeatherApi
+import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
@@ -376,6 +377,9 @@ class WeatherViewModel(
         settingsRepo.update { it.copy(aboutMe = trimmed) }
         renarrateAll()
     }
+
+    /** Only changes the activity card, which is computed from the cached forecast: nothing to refetch or re-narrate. */
+    fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
 
     fun setMemesEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(memesEnabled = enabled) }

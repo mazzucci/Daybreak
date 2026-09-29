@@ -30,6 +30,8 @@ import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.domain.Activity
+import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.narration.MemeMood
 import com.mazzucci.weather.narration.TemplateMemes
@@ -118,7 +120,7 @@ class ScreenshotTest {
         SettingsScreen(
             settings = settings,
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
@@ -314,6 +316,15 @@ class ScreenshotTest {
             ModelStatus.Installed(529L shl 20),
             AppSettings(tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
         )
+    }
+
+    @Test fun activityCards() = snap("activity_cards", tall = true) {
+        val wet = rainyNight.copy(hours = rainyNight.hours.map { it.copy(precipChance = 90, code = 63) })
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ActivityCard(ActivityScorer.plan(forecast, Activity.CYCLING), TempUnit.F, forecast.current.time.toLocalDate())
+            ActivityCard(ActivityScorer.plan(forecast, Activity.RUNNING), TempUnit.C, forecast.current.time.toLocalDate())
+            ActivityCard(ActivityScorer.plan(wet, Activity.WALKING), TempUnit.C, wet.current.time.toLocalDate())
+        }
     }
 
     @Test fun weatherPirate() = snap("weather_pirate") {

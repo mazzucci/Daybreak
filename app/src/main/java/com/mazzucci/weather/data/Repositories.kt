@@ -1,5 +1,6 @@
 package com.mazzucci.weather.data
 
+import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
@@ -98,6 +99,7 @@ class SettingsRepository(
         store.putString(KEY_MEMES, s.memesEnabled.toString())
         store.putString(KEY_TONE, s.tone.name)
         privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
+        store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -108,6 +110,11 @@ class SettingsRepository(
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
         tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
         aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
+        activity = when (val v = store.getString(KEY_ACTIVITY)) {
+            null -> defaults.activity
+            ACTIVITY_OFF -> null
+            else -> runCatching { Activity.valueOf(v) }.getOrDefault(defaults.activity)
+        },
     )
 
     private companion object {
@@ -117,5 +124,7 @@ class SettingsRepository(
         const val KEY_MEMES = "memes_enabled"
         const val KEY_TONE = "tone"
         const val KEY_ABOUT_ME = "about_me"
+        const val KEY_ACTIVITY = "activity"
+        const val ACTIVITY_OFF = "OFF"
     }
 }
