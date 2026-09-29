@@ -80,6 +80,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
+import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelSource
@@ -98,6 +99,7 @@ fun SettingsScreen(
     onMemesEnabledChange: (Boolean) -> Unit,
     onToneChange: (Tone) -> Unit,
     onAboutMeChange: (String) -> Unit,
+    onActivityChange: (Activity?) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -138,6 +140,36 @@ fun SettingsScreen(
 
             SectionTitle("Summary style")
             SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
+
+            SectionTitle("Outdoor plans")
+            SettingsCard {
+                Text("Activity", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Each place's page shows the best time in the next 24 hours for it, judged on rain, wind, temperature and daylight.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                // One choice out of four, presented exactly like the voice picker: a radio group with a check on the pick.
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (Activity.entries + null).forEach { activity ->
+                        val selected = settings.activity == activity
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onActivityChange(activity) },
+                            modifier = Modifier.semantics { role = Role.RadioButton },
+                            label = { Text(activity?.label ?: "Off") },
+                            leadingIcon = if (selected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                }
+            }
 
             SectionTitle("Fun")
             SettingsCard {

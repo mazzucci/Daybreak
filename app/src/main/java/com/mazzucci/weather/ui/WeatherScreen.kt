@@ -58,6 +58,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +83,8 @@ import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.formatDegrees
+import com.mazzucci.weather.domain.Activity
+import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.domain.DaySummary
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.domain.Daylight
@@ -127,6 +130,7 @@ fun WeatherPagerScreen(
                 WeatherPage(
                     page = page,
                     unit = state.settings.primaryUnit,
+                    activity = state.settings.activity,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -197,6 +201,7 @@ private fun PageIndicator(pages: List<PageUi>, current: Int) {
 fun WeatherPage(
     page: PageUi,
     unit: TempUnit,
+    activity: Activity? = null,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -253,7 +258,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -382,7 +387,7 @@ private fun SummaryBlock(summary: Narration) {
 
 /** Detail tiles and the hourly strip, on the normal surface below the hero. */
 @Composable
-private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, meme: Meme?) {
+private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, meme: Meme?, activity: Activity?) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
     TileRow {
@@ -407,6 +412,13 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, mem
     )
     Spacer(Modifier.height(12.dp))
     HourlyStrip(forecast, unit, night)
+    if (activity != null) {
+        val plan = remember(forecast, activity) { ActivityScorer.plan(forecast, activity) }
+        if (plan.hours.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            ActivityCard(plan, unit, forecast.current.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
+        }
+    }
     SunAndUv(forecast.today, unit)
     val week = forecast.upcomingDays()
     if (week.size > 1) {

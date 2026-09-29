@@ -7,6 +7,7 @@ A simple Android app that shows the weather for your current location and any pl
 - A one-line summary at the top, a large temperature in your preferred unit with the other unit alongside, today's high/low and rain chance, and the next 12 hours
 - Today's sunrise, sunset, UV index and wind gusts, plus a 7-day list with each day's range on a shared scale
 - Temperatures in both units: the primary one large, the other small alongside or underneath (current, feels-like, hourly strip and 7-day list); screen readers hear both
+- "Best time to ride" (or run, or walk): each of the next 24 hours is scored for rain, wind and gusts, temperature and daylight, and the page shows the best window with a bar per hour, or what's in the way
 - Pick the summary's voice (Friendly, Brief, Cheerful, Deadpan, Pirate) and optionally tell it a little about yourself ("I cycle to work"), which Gemma uses to choose what to mention. The note never leaves the phone
 - A daily weather meme per place, made entirely on the phone (no network): a hand-written caption for the day's mood, or a fresh one from Gemma once it's set up. Turn it off in Settings
 - Optional on-device AI summary written by [Gemma](https://ai.google.dev/gemma), run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
