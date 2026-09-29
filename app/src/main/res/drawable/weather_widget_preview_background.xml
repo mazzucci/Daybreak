@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The partly-cloudy day sky from ui/Sky.kt, for the picker preview. drawable-v31 uses the launcher's own radius. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FF245C96" />
+    <corners android:radius="24dp" />
+</shape>

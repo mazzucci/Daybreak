@@ -13,6 +13,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +62,16 @@ fun WeatherIcon(
     Canvas(modifier.size(size).then(semantics)) {
         drawSky(sky, night, palette)
     }
+}
+
+/** The same glyph as a bitmap, for surfaces Compose can't draw into directly (the home-screen widget). */
+fun weatherIconBitmap(code: Int, night: Boolean, palette: IconPalette, sizePx: Int): ImageBitmap {
+    val bitmap = ImageBitmap(sizePx, sizePx)
+    val size = androidx.compose.ui.geometry.Size(sizePx.toFloat(), sizePx.toFloat())
+    CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, androidx.compose.ui.graphics.Canvas(bitmap), size) {
+        drawSky(skyOf(code), night, palette)
+    }
+    return bitmap
 }
 
 private fun DrawScope.drawSky(sky: Sky, night: Boolean, p: IconPalette) {

@@ -8,6 +8,9 @@ import com.mazzucci.weather.data.SettingsRepository
 import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.domain.WidgetSnapshot
+import com.mazzucci.weather.domain.widgetSnapshotOf
+import com.mazzucci.weather.widget.WidgetPublisher
 import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Countdown
 import com.mazzucci.weather.domain.comingUp
@@ -37,12 +40,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
+
+/** What the widget should do after a UI change. */
+private sealed interface WidgetUpdate {
+    data object Clear : WidgetUpdate
+    data object Keep : WidgetUpdate
+    data class Show(val snapshot: WidgetSnapshot) : WidgetUpdate
+}
 
 sealed interface PageContent {
     data object Loading : PageContent
@@ -93,6 +105,9 @@ class WeatherViewModel(
     private val memeWriter: MemeWriter = MemeWriter(),
     private val memes: MemeRepository? = null,
     private val holidays: HolidayRepository? = null,
+    /** Receives what the first loaded page shows, for the home-screen widget. */
+    private val widget: WidgetPublisher? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
     private val searchDebounceMs: Long = 350,
 ) : ViewModel() {
 
@@ -121,6 +136,35 @@ class WeatherViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, WeatherUiState())
 
     init {
+        if (widget != null) {
+            // The widget mirrors the first page that has a forecast, including Gemma's summary once it lands. With
+            // no pages at all it's cleared; while pages are loading or failed it keeps what it had.
+            viewModelScope.launch {
+                uiState
+                    .map { s ->
+                        // From the settings, not the page list: the very first UI state has no pages yet either.
+                        if (s.savedPlaces.isEmpty() && !s.settings.useCurrentLocation) return@map WidgetUpdate.Clear
+                        s.pages.firstNotNullOfOrNull { page ->
+                            val loaded = page.content as? PageContent.Loaded ?: return@firstNotNullOfOrNull null
+                            val place = page.place ?: return@firstNotNullOfOrNull null
+                            WidgetUpdate.Show(
+                                widgetSnapshotOf(
+                                    place, loaded.forecast, s.settings.primaryUnit, loaded.summary.text,
+                                    summaryByGemma = loaded.summary.source == NarrationSource.GEMMA, nowMillis = 0,
+                                ),
+                            )
+                        } ?: WidgetUpdate.Keep
+                    }
+                    .distinctUntilChanged()
+                    .collect { update ->
+                        when (update) {
+                            WidgetUpdate.Clear -> widget.clear()
+                            WidgetUpdate.Keep -> Unit
+                            is WidgetUpdate.Show -> widget.publish(update.snapshot.copy(writtenAtMillis = clock()))
+                        }
+                    }
+            }
+        }
         viewModelScope.launch {
             places.places.collect { list ->
                 list.filter { it.id !in contents.value && it.id !in jobs }.forEach { load(it.id, it) }

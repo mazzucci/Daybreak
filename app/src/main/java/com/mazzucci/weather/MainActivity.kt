@@ -22,6 +22,8 @@ import com.mazzucci.weather.narration.GemmaNarrator
 import com.mazzucci.weather.narration.MemeWriter
 import com.mazzucci.weather.data.HolidayRepository
 import com.mazzucci.weather.data.MemeRepository
+import com.mazzucci.weather.data.WidgetStore
+import com.mazzucci.weather.widget.GlanceWidgetPublisher
 import com.mazzucci.weather.data.NagerHolidayApi
 import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.ui.WeatherApp
@@ -64,6 +66,7 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
             memeWriter = MemeWriter(gemma),
             memes = MemeRepository(store),
             // Its own short timeout: holidays are a nice-to-have and shouldn't keep a page waiting.
+            widget = GlanceWidgetPublisher(context.applicationContext, WidgetStore(SharedPrefsStore(context, WidgetStore.PREFS_FILE))),
             holidays = HolidayRepository(NagerHolidayApi(UrlConnectionHttpClient(timeoutMs = 5_000)), store),
         )
     }
