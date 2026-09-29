@@ -49,7 +49,14 @@ import com.mazzucci.weather.narration.MemeMood
 import com.mazzucci.weather.narration.TemplateMemes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import com.mazzucci.weather.domain.Explanation
 import com.mazzucci.weather.narration.TemplateNarrator
 import org.junit.Rule
 import org.junit.Test
@@ -423,11 +430,37 @@ class ScreenshotTest {
         }
     }
 
+    /** The sheet's content on the sheet's own colour and shape, with its handle, as ModalBottomSheet shows it. */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun Sheet(explanation: Explanation) {
+        Surface(
+            color = MaterialTheme.explainSheetColor,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        ) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                BottomSheetDefaults.DragHandle()
+                ExplainContent(explanation)
+            }
+        }
+    }
+
+    /** One sheet without a gauge, the two scale bars (moisture and intensity) and the daylight arc mid-afternoon. */
     @Test fun explainSheets() = snap("explain_sheets", tall = true) {
-        Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            ExplainContent(explain(Term.FEELS_LIKE, forecast, TempUnit.F))
-            ExplainContent(explain(Term.UV, forecast, TempUnit.F))
-            ExplainContent(explain(Term.SUN, forecast, TempUnit.F))
+        Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Sheet(explain(Term.FEELS_LIKE, forecast, TempUnit.F))
+            Sheet(explain(Term.HUMIDITY, forecast, TempUnit.F))
+            Sheet(explain(Term.UV, forecast, TempUnit.F))
+            Sheet(explain(Term.SUN, forecast, TempUnit.F))
+        }
+    }
+
+    /** Dark, narrow and 1.5x: the value stays on one line, the scale labels fit, and the arc is empty at night. */
+    @Test fun explainSheetsDarkLargeFont() = snap("explain_sheets_dark_large_font", night = true, tall = true, narrow = true, fontScale = 1.5f) {
+        Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Sheet(explain(Term.WIND, rainyNight, TempUnit.C))
+            Sheet(explain(Term.RAIN_CHANCE, rainyNight, TempUnit.C))
+            Sheet(explain(Term.SUN, rainyNight, TempUnit.C))
         }
     }
 

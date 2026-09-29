@@ -32,6 +32,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,6 +47,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -62,7 +68,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.clickable
 import com.mazzucci.weather.domain.explain
 import com.mazzucci.weather.domain.Term
@@ -119,6 +127,8 @@ private val TopBarHeight = 56.dp
 private const val MAX_DOTS = 6
 private val PageMargin = 20.dp
 private val HeroCorner = 28.dp
+/** Inline-content id of the "tap to explain" glyph in a tile's label. */
+private const val INFO_GLYPH = "info"
 
 /** Stateless main screen: one swipeable page per place. Kept free of ViewModel so screenshot tests can render it. */
 @Composable
@@ -376,10 +386,11 @@ private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit,
 @Composable
 private fun HeroPill(label: String, value: String, spoken: String = value, term: Term? = null) {
     val explain = LocalExplain.current
+    val onClick = if (term != null && explain != null) ({ explain(term) }) else null
     Row(
         Modifier
             .clip(CircleShape)
-            .then(if (term != null && explain != null) Modifier.clickable(onClickLabel = "Explain") { explain(term) } else Modifier)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = "Explain", role = Role.Button, onClick = onClick) else Modifier)
             .background(Color.Black.copy(alpha = 0.18f))
             .padding(horizontal = 14.dp, vertical = 8.dp)
             .semantics(mergeDescendants = true) { contentDescription = "$label $spoken" },
@@ -388,7 +399,19 @@ private fun HeroPill(label: String, value: String, spoken: String = value, term:
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Text(value, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        if (onClick != null) {
+            // Marks this pill as the one that opens something; High and Low next to it don't.
+            Spacer(Modifier.width(5.dp))
+            InfoGlyph(LocalContentColor.current.copy(alpha = 0.8f), MaterialTheme.typography.labelLarge)
+        }
     }
+}
+
+/** The "tap to explain" mark beside a label, sized to that label's text so it grows with the font setting. */
+@Composable
+private fun InfoGlyph(tint: Color, style: TextStyle) {
+    val size = with(LocalDensity.current) { style.fontSize.toDp() }
+    Icon(Icons.Outlined.Info, contentDescription = null, Modifier.size(size), tint = tint)
 }
 
 @Composable
@@ -719,19 +742,44 @@ private fun StatTile(
     }
     val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     if (onClick != null) {
-        Card(onClick = onClick, modifier = tileModifier.semantics { onClick(label = "Explain", action = null) }, colors = colors) {
-            StatTileContent(label, value, detail, compact)
+        // Card's own click has no role; TalkBack should say "button" and offer "Explain".
+        val explainable = tileModifier.semantics {
+            role = Role.Button
+            onClick(label = "Explain", action = null)
+        }
+        Card(onClick = onClick, modifier = explainable, colors = colors) {
+            StatTileContent(label, value, detail, compact, explainable = true)
         }
     } else {
-        Card(tileModifier, colors = colors) { StatTileContent(label, value, detail, compact) }
+        Card(tileModifier, colors = colors) { StatTileContent(label, value, detail, compact, explainable = false) }
     }
 }
 
 @Composable
-private fun StatTileContent(label: String, value: String, detail: String?, compact: Boolean) {
+private fun StatTileContent(label: String, value: String, detail: String?, compact: Boolean, explainable: Boolean) {
     run {
         Column(Modifier.padding(vertical = 14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // The glyph is part of the label's text, so on a narrow tile at a large font size the line breaks
+            // fall between words ("Feels" / "like ⓘ") rather than the glyph squeezing the label mid-word.
+            val labelStyle = MaterialTheme.typography.labelMedium
+            val glyphTint = MaterialTheme.colorScheme.outline
+            Text(
+                buildAnnotatedString {
+                    append(label)
+                    if (explainable) {
+                        append(' ')
+                        appendInlineContent(INFO_GLYPH)
+                    }
+                },
+                style = labelStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                inlineContent = mapOf(
+                    INFO_GLYPH to InlineTextContent(
+                        Placeholder(labelStyle.fontSize, labelStyle.fontSize, PlaceholderVerticalAlign.TextCenter),
+                    ) { Icon(Icons.Outlined.Info, contentDescription = null, Modifier.fillMaxSize(), tint = glyphTint) },
+                ),
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 value,
