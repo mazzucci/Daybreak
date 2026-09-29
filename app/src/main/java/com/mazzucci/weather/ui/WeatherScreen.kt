@@ -85,7 +85,9 @@ import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
+import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Countdown
+import com.mazzucci.weather.domain.commuteAdvice
 import com.mazzucci.weather.domain.DaySummary
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.domain.Daylight
@@ -126,12 +128,16 @@ fun WeatherPagerScreen(
         if (state.pages.isEmpty()) {
             EmptyState(onOpenSearch, onUseCurrentLocation)
         } else {
+            val commutePage = state.pages.indexOfFirst { it.content !is PageContent.NeedsPermission && it.content !is PageContent.Failed }
             HorizontalPager(pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
                 val page = state.pages[index]
                 WeatherPage(
                     page = page,
                     unit = state.settings.primaryUnit,
                     activity = state.settings.activity,
+                    // The commute is about one place: the first page that can show weather (your location, or your
+                    // first saved place when location is off or unavailable).
+                    commute = state.settings.commute.takeIf { it.enabled && index == commutePage },
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -203,6 +209,7 @@ fun WeatherPage(
     page: PageUi,
     unit: TempUnit,
     activity: Activity? = null,
+    commute: CommuteSettings? = null,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -259,7 +266,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -395,6 +402,8 @@ private fun BodyForecast(
     meme: Meme?,
     activity: Activity?,
     comingUp: List<Countdown>,
+    commute: CommuteSettings? = null,
+    holidays: Set<LocalDate> = emptySet(),
 ) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
@@ -411,6 +420,16 @@ private fun BodyForecast(
             Modifier.weight(1f),
             detail = gust?.takeIf { it > cur.windKmh }?.let { "Gusts ${formatWind(it, unit)}" },
         )
+    }
+    if (commute != null) {
+        // The hero and its tiles are "now"; the commute verdict opens the planning part of the page, still
+        // above the fold. Walking is the fallback mode when outdoor plans are off.
+        val mode = activity ?: Activity.WALKING
+        val advice = remember(forecast, mode, commute, holidays) { commuteAdvice(forecast, mode, commute, holidays) }
+        if (advice != null) {
+            Spacer(Modifier.height(16.dp))
+            CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
+        }
     }
     Spacer(Modifier.height(24.dp))
     Text(

@@ -182,6 +182,8 @@ data class AppSettings(
     val aboutMe: String = "",
     /** The activity to find good weather windows for; null hides the card. */
     val activity: Activity? = Activity.CYCLING,
+    /** Weekday commute times for the "office or home" card (off unless [CommuteSettings.enabled]). */
+    val commute: CommuteSettings = CommuteSettings(),
     /** Whether pages show upcoming public holidays, long weekends and the next season. */
     val comingUpEnabled: Boolean = true,
     /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */

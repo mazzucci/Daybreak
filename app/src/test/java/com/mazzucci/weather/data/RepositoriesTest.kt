@@ -5,6 +5,7 @@ import com.mazzucci.weather.TestData.sanFrancisco
 import com.mazzucci.weather.TestData.tokyo
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
@@ -131,6 +132,17 @@ class SettingsRepositoryTest {
         assertNull(store.getString("about_me"))
         assertEquals("I cycle", private.getString("about_me"))
         assertEquals("I cycle", SettingsRepository(store, privateStore = private).settings.value.aboutMe)
+    }
+
+    @Test fun `commute times survive switching it off, and junk falls back to the default`() {
+        val store = InMemoryStore()
+        assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
+        SettingsRepository(store).update { it.copy(commute = CommuteSettings(7, 18, enabled = true)) }
+        assertEquals(CommuteSettings(7, 18, enabled = true), SettingsRepository(store).settings.value.commute)
+        SettingsRepository(store).update { it.copy(commute = it.commute.copy(enabled = false)) }
+        assertEquals(CommuteSettings(7, 18, enabled = false), SettingsRepository(store).settings.value.commute)
+        store.putString("commute", "on-25-99")
+        assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
     }
 
     @Test fun `activity is saved, including off`() {
