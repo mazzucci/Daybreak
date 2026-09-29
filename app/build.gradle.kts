@@ -41,10 +41,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // On-device Gemma via MediaPipe LLM Inference. The model file itself is imported by the user at runtime.
     implementation("com.google.mediapipe:tasks-genai:0.10.35")
+    // Home-screen widget (Jetpack Glance) and its periodic refresh.
+    implementation("androidx.glance:glance-appwidget:1.1.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
     // android.jar's XmlPullParser is a stub in JVM unit tests; kxml2 is the parser Android itself ships.
     testImplementation("net.sf.kxml:kxml2:2.3.0")
+    testImplementation("androidx.glance:glance-appwidget-testing:1.1.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation there.
     testImplementation("org.json:json:20250517")

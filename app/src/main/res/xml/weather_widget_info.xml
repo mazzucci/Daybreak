@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Updates come from the app and a 2-hour WorkManager job, not from updatePeriodMillis.
+  Sizes follow the launcher grid (70 × cells − 30 dp): 4×2 by default, resizable down to 2×1; WeatherWidget lays
+  out differently for each breakpoint. The picker shows previewLayout on Android 12+ and previewImage before that
+  (the image is the widget_mock_4x2 Paparazzi snapshot, see WidgetMockScreenshotTest).
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/weather_widget_preview"
+    android:previewImage="@drawable/weather_widget_preview"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

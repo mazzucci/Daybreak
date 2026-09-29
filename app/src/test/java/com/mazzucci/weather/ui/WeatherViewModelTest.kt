@@ -23,6 +23,8 @@ import com.mazzucci.weather.narration.TemplateNarrator
 import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.narration.MemeWriter
 import com.mazzucci.weather.data.MemeRepository
+import com.mazzucci.weather.domain.WidgetSnapshot
+import com.mazzucci.weather.widget.WidgetPublisher
 import java.time.LocalDate
 import com.mazzucci.weather.domain.LongWeekend
 import com.mazzucci.weather.domain.Holiday
@@ -107,6 +109,9 @@ class WeatherViewModelTest {
         override suspend fun longWeekends(year: Int, countryCode: String) = emptyList<LongWeekend>()
     }
 
+    private val published = mutableListOf<WidgetSnapshot>()
+    private var widgetCleared = 0
+
     private var memeReply = "TOP: Fog rolls in\nBOTTOM: Bridge has left"
     private var memeCalls = 0
     /** When set, the fake Gemma waits on it before answering, to test what happens meanwhile. */
@@ -123,6 +128,11 @@ class WeatherViewModelTest {
             api, places, repo, location, model, llm, TemplateNarrator(Locale.US),
             memeWriter = memeWriter, memes = MemeRepository(store),
             holidays = HolidayRepository(fakeHolidays, store),
+            widget = object : WidgetPublisher {
+                override fun publish(snapshot: WidgetSnapshot) { published += snapshot }
+                override fun clear() { widgetCleared++ }
+            },
+            clock = { 42L },
         ).also { advanceUntilIdle() }
     }
 
@@ -389,6 +399,37 @@ class WeatherViewModelTest {
         vm.setComingUpEnabled(true)
         advanceUntilIdle()
         assertEquals(2, (vm.content(sanFrancisco.id) as PageContent.Loaded).comingUp.size)
+    }
+
+    @Test fun `the widget mirrors the first loaded page, and Gemma's summary when it lands`() = runTest(dispatcher) {
+        places.add(sanFrancisco); places.add(london)
+        viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        val last = published.last()
+        assertEquals("San Francisco", last.placeName)
+        assertEquals(gemmaReply, last.summary)
+        assertTrue(last.summaryByGemma)
+        assertEquals(42L, last.writtenAtMillis)
+        assertTrue(published.none { it.placeName == "London" })
+    }
+
+    @Test fun `removing the last place clears the widget, a failed load keeps it`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        assertEquals("San Francisco", published.last().placeName)
+        api.failing = true
+        vm.refresh(sanFrancisco.id)
+        advanceUntilIdle()
+        assertEquals(0, widgetCleared) // still a page, just failed: keep the last good snapshot
+        vm.removePlace(sanFrancisco.id)
+        advanceUntilIdle()
+        assertEquals(1, widgetCleared)
+    }
+
+    @Test fun `the widget falls back to the next page when location isn't available`() = runTest(dispatcher) {
+        location.granted = false
+        places.add(london)
+        viewModel()
+        assertEquals("London", published.last().placeName)
     }
 
     @Test fun `each page gets a template meme without the model`() = runTest(dispatcher) {
