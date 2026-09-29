@@ -67,8 +67,17 @@ object ActivityScorer {
     const val GOOD = 70
     const val HORIZON_HOURS = 24
 
-    /** [isNow] uses the current conditions' daylight, so "Now" agrees with the rest of the page. */
-    fun score(hour: HourForecast, forecast: Forecast, profile: WeatherProfile, isNow: Boolean = false): HourScore {
+    /**
+     * [isNow] uses the current conditions' daylight, so "Now" agrees with the rest of the page. With [ignoreDark],
+     * darkness is still named in the limits but costs nothing (a commute happens anyway; lights solve it).
+     */
+    fun score(
+        hour: HourForecast,
+        forecast: Forecast,
+        profile: WeatherProfile,
+        isNow: Boolean = false,
+        ignoreDark: Boolean = false,
+    ): HourScore {
         val limits = mutableSetOf<Limit>()
         var score = 100.0
         when {
@@ -105,7 +114,10 @@ object ActivityScorer {
             score -= LIMIT_STEP + (windOver ?: 0.0) * 2 + (gustOver ?: 0.0) * 1.5
         }
         // Dark hours are never more than "poor", however nice the weather: grey bars through the night.
-        if (isDark(hour, forecast, isNow)) { limits += Limit.DARK; score = minOf(score - 50, DARK_MAX) }
+        if (isDark(hour, forecast, isNow)) {
+            limits += Limit.DARK
+            if (!ignoreDark) score = minOf(score - 50, DARK_MAX)
+        }
         return HourScore(hour, score.roundToInt().coerceIn(0, 100), limits)
     }
 

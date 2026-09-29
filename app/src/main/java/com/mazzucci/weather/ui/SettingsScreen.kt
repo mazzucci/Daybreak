@@ -104,7 +104,7 @@ fun SettingsScreen(
     onToneChange: (Tone) -> Unit,
     onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
-    onCommuteChange: (CommuteSettings?) -> Unit,
+    onCommuteChange: (CommuteSettings) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -388,7 +388,7 @@ private fun capAboutMeDraft(text: String): String {
 
 /** The office-or-home check: a switch, then the two weekday travel times. */
 @Composable
-private fun CommuteSettingsCard(commute: CommuteSettings?, onChange: (CommuteSettings?) -> Unit) {
+private fun CommuteSettingsCard(commute: CommuteSettings, onChange: (CommuteSettings) -> Unit) {
     SettingsCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -402,12 +402,12 @@ private fun CommuteSettingsCard(commute: CommuteSettings?, onChange: (CommuteSet
             }
             Spacer(Modifier.width(16.dp))
             Switch(
-                checked = commute != null,
-                onCheckedChange = { onChange(if (it) CommuteSettings() else null) },
+                checked = commute.enabled,
+                onCheckedChange = { onChange(commute.copy(enabled = it)) },
                 modifier = Modifier.semantics { contentDescription = "Office or home check" },
             )
         }
-        if (commute != null) {
+        if (commute.enabled) {
             Spacer(Modifier.height(12.dp))
             HourStepper("Leave for work", commute.leaveHour) { onChange(commute.copy(leaveHour = it)) }
             HourStepper("Head home", commute.returnHour) { onChange(commute.copy(returnHour = it)) }

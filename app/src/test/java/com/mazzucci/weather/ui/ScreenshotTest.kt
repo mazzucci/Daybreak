@@ -350,7 +350,7 @@ class ScreenshotTest {
     @Test fun settingsVoice() = snap("settings_voice", tall = true) {
         Settings(
             ModelStatus.Installed(529L shl 20),
-            AppSettings(commute = CommuteSettings(8, 17), tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
+            AppSettings(commute = CommuteSettings(8, 17, enabled = true), tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
         )
     }
 

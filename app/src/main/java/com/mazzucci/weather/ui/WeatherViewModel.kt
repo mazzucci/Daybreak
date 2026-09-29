@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
 
@@ -54,6 +55,8 @@ sealed interface PageContent {
         val meme: Meme? = null,
         /** Upcoming holidays, long weekends and the next season; empty while off or loading. */
         val comingUp: List<Countdown> = emptyList(),
+        /** Public holiday dates for the place's country (this year and next), for the commute check. */
+        val holidays: Set<LocalDate> = emptySet(),
     ) : PageContent
 }
 
@@ -217,13 +220,30 @@ class WeatherViewModel(
     }
 
     /** Adds the countdowns for [place]'s country; seasons still show when the holiday lookup fails. */
+    /**
+     * Adds the countdowns for [place]'s country (seasons still show when the holiday lookup fails) and the holiday
+     * dates the commute check skips. Holidays are fetched when either feature is on.
+     */
     private suspend fun showComingUp(key: String, place: Place, forecast: Forecast) {
-        if (!settingsRepo.settings.value.comingUpEnabled) return
+        fun wanted() = settingsRepo.settings.value.let { it.comingUpEnabled || it.commute.enabled }
+        if (!wanted()) return
         val today = forecast.current.time.toLocalDate()
         val year = countryCodeOf(place)?.let { cc -> holidays?.around(today, cc) }
-        if (!settingsRepo.settings.value.comingUpEnabled) return // turned off while fetching
-        val items = comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude)
-        updateLoaded(key, forecast) { it.copy(comingUp = items) }
+        if (!wanted()) return // turned off while fetching
+        val show = settingsRepo.settings.value.comingUpEnabled
+        val items = if (show) comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude) else emptyList()
+        val dates = year?.holidays.orEmpty().map { it.date }.toSet()
+        updateLoaded(key, forecast) { it.copy(comingUp = items, holidays = dates) }
+    }
+
+    /** Re-runs the holiday lookup for every loaded page (after a setting that needs it is switched on). */
+    private fun refreshHolidays() {
+        // Not through launchFor: a page busy with Gemma still gets its card, and nothing gets cancelled. A page
+        // that's refetching drops this result (updateLoaded checks the forecast) and adds its own.
+        visiblePlaces().forEach { (key, place) ->
+            val content = contents.value[key]
+            if (content is PageContent.Loaded) viewModelScope.launch { showComingUp(key, place, content.forecast) }
+        }
     }
 
     private fun gemmaReady(): Boolean =
@@ -408,19 +428,19 @@ class WeatherViewModel(
     fun setComingUpEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(comingUpEnabled = enabled) }
         if (enabled) {
-            // Not through launchFor: a page busy with Gemma still gets its card, and nothing gets cancelled. A page
-            // that's refetching drops this result (updateLoaded checks the forecast) and adds its own.
-            visiblePlaces().forEach { (key, place) ->
-                val content = contents.value[key]
-                if (content is PageContent.Loaded) viewModelScope.launch { showComingUp(key, place, content.forecast) }
-            }
+            refreshHolidays()
         } else {
             contents.update { map -> map.mapValues { (_, c) -> if (c is PageContent.Loaded) c.copy(comingUp = emptyList()) else c } }
         }
     }
 
-    /** Like the activity, the commute line is computed from the cached forecast: nothing to refetch. */
-    fun setCommute(commute: CommuteSettings?) = settingsRepo.update { it.copy(commute = commute) }
+    /** The commute card is computed from the cached forecast: nothing to refetch. */
+    fun setCommute(commute: CommuteSettings) {
+        val wasOn = settingsRepo.settings.value.commute.enabled
+        settingsRepo.update { it.copy(commute = commute) }
+        // The commute skips public holidays, which come with the countdowns: fetch them if nothing has yet.
+        if (commute.enabled && !wasOn) refreshHolidays()
+    }
 
     fun setMemesEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(memesEnabled = enabled) }

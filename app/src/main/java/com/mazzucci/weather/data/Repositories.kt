@@ -106,7 +106,8 @@ class SettingsRepository(
         store.putString(KEY_TONE, s.tone.name)
         privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
-        store.putString(KEY_COMMUTE, s.commute?.let { "${it.leaveHour}-${it.returnHour}" } ?: COMMUTE_OFF)
+        // "on-8-17" / "off-8-17": the times survive switching the check off.
+        store.putString(KEY_COMMUTE, "${if (s.commute.enabled) "on" else "off"}-${s.commute.leaveHour}-${s.commute.returnHour}")
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -118,11 +119,12 @@ class SettingsRepository(
         comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
         aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
-        commute = when (val v = store.getString(KEY_COMMUTE)) {
-            null, COMMUTE_OFF -> defaults.commute
-            else -> v.split("-").mapNotNull { it.toIntOrNull() }.takeIf { it.size == 2 && it.all { h -> h in 0..23 } }
-                ?.let { (leave, back) -> CommuteSettings(leave, back) } ?: defaults.commute
-        },
+        commute = store.getString(KEY_COMMUTE)?.split("-")?.let { parts ->
+            val hours = parts.drop(1).mapNotNull { it.toIntOrNull() }
+            if (parts.size == 3 && parts[0] in setOf("on", "off") && hours.size == 2 && hours.all { it in 0..23 }) {
+                CommuteSettings(hours[0], hours[1], enabled = parts[0] == "on")
+            } else null
+        } ?: defaults.commute,
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
             null -> defaults.activity
             ACTIVITY_OFF -> null
@@ -140,7 +142,6 @@ class SettingsRepository(
         const val KEY_ABOUT_ME = "about_me"
         const val KEY_ACTIVITY = "activity"
         const val KEY_COMMUTE = "commute"
-        const val COMMUTE_OFF = "OFF"
         const val ACTIVITY_OFF = "OFF"
     }
 }

@@ -2,6 +2,7 @@ package com.mazzucci.weather.domain
 
 import com.mazzucci.weather.TestData
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.DayOfWeek
@@ -23,14 +24,55 @@ class CommuteTest {
     private val monday7am = LocalDateTime.of(2026, 9, 28, 7, 0)
     private val settings = CommuteSettings(leaveHour = 8, returnHour = 17)
 
-    @Test fun `before leaving it's about today, after that the next weekday`() {
-        assertEquals(monday7am.toLocalDate(), commuteAdvice(forecast(monday7am), Activity.CYCLING, settings)!!.day)
-        val monday9am = monday7am.withHour(9)
-        assertEquals(DayOfWeek.TUESDAY, commuteAdvice(forecast(monday9am), Activity.CYCLING, settings)!!.day.dayOfWeek)
+    @Test fun `today until the trip home, then the next weekday`() {
+        val early = commuteAdvice(forecast(monday7am), Activity.CYCLING, settings)!!
+        assertEquals(monday7am.toLocalDate(), early.day)
+        assertNotNull(early.outbound)
+        // Leaving now: the trip in is the current hour, still judged.
+        assertNotNull(commuteAdvice(forecast(monday7am.withHour(8).withMinute(10)), Activity.CYCLING, settings)!!.outbound)
+        // Mid-morning: only the way home is left.
+        val midday = commuteAdvice(forecast(monday7am.withHour(10)), Activity.CYCLING, settings)!!
+        assertEquals(monday7am.toLocalDate(), midday.day)
+        assertNull(midday.outbound)
+        // After the trip home: tomorrow.
+        assertEquals(DayOfWeek.TUESDAY, commuteAdvice(forecast(monday7am.withHour(18)), Activity.CYCLING, settings)!!.day.dayOfWeek)
+    }
+
+    @Test fun `a night shift's trip home is the next morning`() {
+        val night = CommuteSettings(leaveHour = 22, returnHour = 6)
+        val advice = commuteAdvice(forecast(monday7am.withHour(21)) { if (it.hour == 6 && it.dayOfMonth == 29) 80 else 0 }, Activity.CYCLING, night)!!
+        assertEquals(monday7am.toLocalDate(), advice.day)
+        assertEquals(monday7am.plusDays(1).withHour(6), advice.inbound.hour.time)
+        assertEquals(CommuteAdvice.Verdict.WORK_FROM_HOME, advice.verdict)
+        // At 1 AM on Tuesday the shift that started Monday still has its trip home ahead.
+        val onShift = commuteAdvice(forecast(monday7am.plusDays(1).withHour(1)), Activity.CYCLING, night)!!
+        assertEquals(monday7am.toLocalDate(), onShift.day)
+        assertNull(onShift.outbound)
+    }
+
+    @Test fun `darkness is a caveat, never a reason to stay home`() {
+        val winter = forecast(monday7am).let { f -> f.copy(days = f.days.map { it.copy(sunrise = it.date.atTime(7, 30), sunset = it.date.atTime(16, 50)) }) }
+        val advice = commuteAdvice(winter, Activity.CYCLING, settings)!!
+        assertEquals(CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, advice.verdict)
+        assertEquals(
+            "Office day, with a catch" to "Dark on the way home at 5 PM: take lights.",
+            describeCommute(advice, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()),
+        )
+    }
+
+    @Test fun `public holidays are skipped like weekends`() {
+        val tuesday = monday7am.toLocalDate().plusDays(1)
+        val advice = commuteAdvice(forecast(monday7am.withHour(18)), Activity.CYCLING, settings, holidays = setOf(tuesday))!!
+        assertEquals(DayOfWeek.WEDNESDAY, advice.day.dayOfWeek)
+    }
+
+    @Test fun `a missing daylight-saving hour uses the next one`() {
+        val gap = forecast(monday7am).let { f -> f.copy(hours = f.hours.filterNot { it.time == monday7am.withHour(17) }) }
+        assertEquals(monday7am.withHour(18), commuteAdvice(gap, Activity.CYCLING, settings)!!.inbound.hour.time)
     }
 
     @Test fun `weekends are skipped`() {
-        val friday = LocalDateTime.of(2026, 10, 2, 10, 0)
+        val friday = LocalDateTime.of(2026, 10, 2, 18, 0) // after Friday's trip home
         val f = forecast(friday)
         assertEquals(DayOfWeek.MONDAY, commuteAdvice(f, Activity.CYCLING, settings)!!.day.dayOfWeek)
     }
@@ -42,11 +84,16 @@ class CommuteTest {
         assertEquals(CommuteAdvice.Verdict.WORK_FROM_HOME, rainHome.verdict)
         val showery = commuteAdvice(forecast(monday7am) { if (it.hour == 8) 35 else 0 }, Activity.CYCLING, settings)!!
         assertEquals(CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, showery.verdict)
+        assertEquals(
+            "A chance of rain (35%) on the way in at 8 AM.",
+            describeCommute(showery, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()).second,
+        )
     }
 
     @Test fun `no advice when the forecast doesn't reach the trips`() {
-        val late = TestData.forecast() // only 12 hours ahead of Monday 2:30 PM
-        assertNull(commuteAdvice(late, Activity.CYCLING, settings))
+        val evening = forecast(monday7am.withHour(18)).let { f -> f.copy(hours = f.hours.filter { it.time.toLocalDate() == monday7am.toLocalDate() }) }
+        assertNull(commuteAdvice(evening, Activity.CYCLING, settings)) // Tuesday's trips aren't in the data
+        assertNull(commuteAdvice(TestData.forecast().copy(hours = emptyList()), Activity.CYCLING, settings))
     }
 
     @Test fun `wording names the day and the problem`() {
@@ -56,7 +103,7 @@ class CommuteTest {
             "Office day" to "Good to ride both ways: dry, 61° going in, dry, 61° coming home.",
             describeCommute(dry, Activity.CYCLING, TempUnit.F, today),
         )
-        val rainHome = commuteAdvice(forecast(monday7am.withHour(9)) { if (it.hour == 17) 80 else 0 }, Activity.CYCLING, settings)!!
+        val rainHome = commuteAdvice(forecast(monday7am.withHour(18)) { if (it.hour == 17) 80 else 0 }, Activity.CYCLING, settings)!!
         assertEquals(
             "Tomorrow: maybe work from home" to "Rain likely (80%) on the way home at 5 PM.",
             describeCommute(rainHome, Activity.CYCLING, TempUnit.F, today),

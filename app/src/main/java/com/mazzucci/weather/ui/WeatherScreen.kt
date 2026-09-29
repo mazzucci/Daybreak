@@ -128,14 +128,16 @@ fun WeatherPagerScreen(
         if (state.pages.isEmpty()) {
             EmptyState(onOpenSearch, onUseCurrentLocation)
         } else {
+            val commutePage = state.pages.indexOfFirst { it.content !is PageContent.NeedsPermission && it.content !is PageContent.Failed }
             HorizontalPager(pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
                 val page = state.pages[index]
                 WeatherPage(
                     page = page,
                     unit = state.settings.primaryUnit,
                     activity = state.settings.activity,
-                    // The commute is about one place: the first page (your location, or your first saved place).
-                    commute = state.settings.commute.takeIf { index == 0 },
+                    // The commute is about one place: the first page that can show weather (your location, or your
+                    // first saved place when location is off or unavailable).
+                    commute = state.settings.commute.takeIf { it.enabled && index == commutePage },
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -264,7 +266,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp, commute)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -401,12 +403,13 @@ private fun BodyForecast(
     activity: Activity?,
     comingUp: List<Countdown>,
     commute: CommuteSettings? = null,
+    holidays: Set<LocalDate> = emptySet(),
 ) {
     val cur = forecast.current
     if (commute != null) {
-        // Walking is the fallback mode when outdoor plans are off; the card says which in its detail line.
+        // Walking is the fallback mode when outdoor plans are off.
         val mode = activity ?: Activity.WALKING
-        val advice = remember(forecast, mode, commute) { commuteAdvice(forecast, mode, commute) }
+        val advice = remember(forecast, mode, commute, holidays) { commuteAdvice(forecast, mode, commute, holidays) }
         if (advice != null) {
             Spacer(Modifier.height(20.dp))
             CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))

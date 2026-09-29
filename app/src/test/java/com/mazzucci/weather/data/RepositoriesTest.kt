@@ -134,13 +134,15 @@ class SettingsRepositoryTest {
         assertEquals("I cycle", SettingsRepository(store, privateStore = private).settings.value.aboutMe)
     }
 
-    @Test fun `commute times are saved, and junk turns it off`() {
+    @Test fun `commute times survive switching it off, and junk falls back to the default`() {
         val store = InMemoryStore()
-        assertNull(SettingsRepository(store).settings.value.commute)
-        SettingsRepository(store).update { it.copy(commute = CommuteSettings(7, 18)) }
-        assertEquals(CommuteSettings(7, 18), SettingsRepository(store).settings.value.commute)
-        store.putString("commute", "25-99")
-        assertNull(SettingsRepository(store).settings.value.commute)
+        assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
+        SettingsRepository(store).update { it.copy(commute = CommuteSettings(7, 18, enabled = true)) }
+        assertEquals(CommuteSettings(7, 18, enabled = true), SettingsRepository(store).settings.value.commute)
+        SettingsRepository(store).update { it.copy(commute = it.commute.copy(enabled = false)) }
+        assertEquals(CommuteSettings(7, 18, enabled = false), SettingsRepository(store).settings.value.commute)
+        store.putString("commute", "on-25-99")
+        assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
     }
 
     @Test fun `activity is saved, including off`() {
