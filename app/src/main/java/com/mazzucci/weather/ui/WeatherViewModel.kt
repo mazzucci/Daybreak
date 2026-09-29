@@ -8,6 +8,7 @@ import com.mazzucci.weather.data.SettingsRepository
 import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Countdown
 import com.mazzucci.weather.domain.comingUp
 import com.mazzucci.weather.domain.countryCodeOf
@@ -417,6 +418,9 @@ class WeatherViewModel(
             contents.update { map -> map.mapValues { (_, c) -> if (c is PageContent.Loaded) c.copy(comingUp = emptyList()) else c } }
         }
     }
+
+    /** Like the activity, the commute line is computed from the cached forecast: nothing to refetch. */
+    fun setCommute(commute: CommuteSettings?) = settingsRepo.update { it.copy(commute = commute) }
 
     fun setMemesEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(memesEnabled = enabled) }

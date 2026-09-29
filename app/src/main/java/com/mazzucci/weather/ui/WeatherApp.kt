@@ -98,6 +98,7 @@ fun WeatherApp(vm: WeatherViewModel) {
             onToneChange = vm::setTone,
             onAboutMeChange = vm::setAboutMe,
             onActivityChange = vm::setActivity,
+            onCommuteChange = vm::setCommute,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,
             onImportModel = { modelPicker.launch(arrayOf("*/*")) },

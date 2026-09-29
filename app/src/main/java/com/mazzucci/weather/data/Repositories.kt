@@ -2,6 +2,7 @@ package com.mazzucci.weather.data
 
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.TempUnit
@@ -105,6 +106,7 @@ class SettingsRepository(
         store.putString(KEY_TONE, s.tone.name)
         privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
+        store.putString(KEY_COMMUTE, s.commute?.let { "${it.leaveHour}-${it.returnHour}" } ?: COMMUTE_OFF)
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -116,6 +118,11 @@ class SettingsRepository(
         comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
         aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
+        commute = when (val v = store.getString(KEY_COMMUTE)) {
+            null, COMMUTE_OFF -> defaults.commute
+            else -> v.split("-").mapNotNull { it.toIntOrNull() }.takeIf { it.size == 2 && it.all { h -> h in 0..23 } }
+                ?.let { (leave, back) -> CommuteSettings(leave, back) } ?: defaults.commute
+        },
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
             null -> defaults.activity
             ACTIVITY_OFF -> null
@@ -132,6 +139,8 @@ class SettingsRepository(
         const val KEY_TONE = "tone"
         const val KEY_ABOUT_ME = "about_me"
         const val KEY_ACTIVITY = "activity"
+        const val KEY_COMMUTE = "commute"
+        const val COMMUTE_OFF = "OFF"
         const val ACTIVITY_OFF = "OFF"
     }
 }

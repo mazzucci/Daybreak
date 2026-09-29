@@ -81,6 +81,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import com.mazzucci.weather.domain.Activity
+import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.formatHour
+import androidx.compose.ui.text.style.TextAlign
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelSource
@@ -101,6 +104,7 @@ fun SettingsScreen(
     onToneChange: (Tone) -> Unit,
     onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
+    onCommuteChange: (CommuteSettings?) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -192,6 +196,9 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(12.dp))
+            CommuteSettingsCard(settings.commute, onCommuteChange)
 
             SectionTitle("Summary style")
             SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
@@ -377,6 +384,56 @@ private fun VoicePreview(tone: Tone) {
 private fun capAboutMeDraft(text: String): String {
     val capped = text.take(ABOUT_ME_MAX_CHARS)
     return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
+}
+
+/** The office-or-home check: a switch, then the two weekday travel times. */
+@Composable
+private fun CommuteSettingsCard(commute: CommuteSettings?, onChange: (CommuteSettings?) -> Unit) {
+    SettingsCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Office or home?", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Checks your weekday trips on the first page's forecast, using the activity above (walking if it's off).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Switch(
+                checked = commute != null,
+                onCheckedChange = { onChange(if (it) CommuteSettings() else null) },
+                modifier = Modifier.semantics { contentDescription = "Office or home check" },
+            )
+        }
+        if (commute != null) {
+            Spacer(Modifier.height(12.dp))
+            HourStepper("Leave for work", commute.leaveHour) { onChange(commute.copy(leaveHour = it)) }
+            HourStepper("Head home", commute.returnHour) { onChange(commute.copy(returnHour = it)) }
+        }
+    }
+}
+
+/** "Leave for work   – 8 AM +": an hour picker that wraps around midnight. */
+@Composable
+private fun HourStepper(label: String, hour: Int, onChange: (Int) -> Unit) {
+    val text = formatHour(java.time.LocalDate.of(2000, 1, 1).atTime(hour, 0), Locale.US)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        IconButton(onClick = { onChange((hour + 23) % 24) }) {
+            Text("−", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = "$label earlier" })
+        }
+        Text(
+            text,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(64.dp).semantics { contentDescription = "$label at $text" },
+        )
+        IconButton(onClick = { onChange((hour + 1) % 24) }) {
+            Text("+", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = "$label later" })
+        }
+    }
 }
 
 @Composable

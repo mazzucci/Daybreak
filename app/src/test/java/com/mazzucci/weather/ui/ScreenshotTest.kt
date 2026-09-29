@@ -31,6 +31,11 @@ import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.Activity
+import com.mazzucci.weather.domain.CommuteAdvice
+import com.mazzucci.weather.domain.HourForecast
+import com.mazzucci.weather.domain.HourScore
+import com.mazzucci.weather.domain.Limit
+import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.data.parseLongWeekends
 import com.mazzucci.weather.data.parsePublicHolidays
@@ -150,7 +155,7 @@ class ScreenshotTest {
         SettingsScreen(
             settings = settings,
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
@@ -345,7 +350,7 @@ class ScreenshotTest {
     @Test fun settingsVoice() = snap("settings_voice", tall = true) {
         Settings(
             ModelStatus.Installed(529L shl 20),
-            AppSettings(tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
+            AppSettings(commute = CommuteSettings(8, 17), tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
         )
     }
 
@@ -361,6 +366,23 @@ class ScreenshotTest {
     }
 
     /** The card on its own, with all three kinds of row; the holiday is inside the forecast so it shows the weather. */
+    @Test fun commuteCards() = snap("commute_cards", tall = true) {
+        val today = forecast.current.time.toLocalDate()
+        fun trip(hour: Int, precip: Int, code: Int = 1, limits: Set<Limit> = emptySet(), score: Int = 95) =
+            HourScore(HourForecast(today.plusDays(1).atTime(hour, 0), 16.0, precip, code, 10.0, 15.0), score, limits)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            CommuteCard(CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.OFFICE, trip(8, 0), trip(17, 5)), Activity.CYCLING, TempUnit.F, today)
+            CommuteCard(
+                CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, trip(8, 0), trip(17, 35, limits = setOf(Limit.RAIN), score = 55)),
+                Activity.CYCLING, TempUnit.F, today,
+            )
+            CommuteCard(
+                CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.WORK_FROM_HOME, trip(8, 80, 63, setOf(Limit.RAIN), 10), trip(17, 20)),
+                Activity.WALKING, TempUnit.C, today,
+            )
+        }
+    }
+
     @Test fun comingUpCard() = snap("coming_up") {
         Column(Modifier.padding(vertical = 16.dp)) {
             ComingUpCard(sanFranciscoComingUp, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))

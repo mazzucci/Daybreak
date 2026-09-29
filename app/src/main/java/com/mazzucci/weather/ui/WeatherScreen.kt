@@ -85,7 +85,9 @@ import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
+import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Countdown
+import com.mazzucci.weather.domain.commuteAdvice
 import com.mazzucci.weather.domain.DaySummary
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.domain.Daylight
@@ -132,6 +134,8 @@ fun WeatherPagerScreen(
                     page = page,
                     unit = state.settings.primaryUnit,
                     activity = state.settings.activity,
+                    // The commute is about one place: the first page (your location, or your first saved place).
+                    commute = state.settings.commute.takeIf { index == 0 },
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -203,6 +207,7 @@ fun WeatherPage(
     page: PageUi,
     unit: TempUnit,
     activity: Activity? = null,
+    commute: CommuteSettings? = null,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -259,7 +264,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp, commute)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -395,8 +400,18 @@ private fun BodyForecast(
     meme: Meme?,
     activity: Activity?,
     comingUp: List<Countdown>,
+    commute: CommuteSettings? = null,
 ) {
     val cur = forecast.current
+    if (commute != null) {
+        // Walking is the fallback mode when outdoor plans are off; the card says which in its detail line.
+        val mode = activity ?: Activity.WALKING
+        val advice = remember(forecast, mode, commute) { commuteAdvice(forecast, mode, commute) }
+        if (advice != null) {
+            Spacer(Modifier.height(20.dp))
+            CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
+        }
+    }
     Spacer(Modifier.height(20.dp))
     TileRow {
         StatTile(
