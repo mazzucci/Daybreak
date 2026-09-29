@@ -191,6 +191,15 @@ class ScreenshotTest {
         }
     }
 
+    /** Dark theme: the heat and cold backdrops must dim like the hero, and the Gemma tag must read on the surface. */
+    @Test fun memeMoodsDark() = snap("meme_moods_dark", night = true, tall = true) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(MemeMood.HEAT, MemeMood.COLD, MemeMood.WIND, MemeMood.SUN).forEach { mood ->
+                MemeCard(TemplateMemes.pick(mood, 0).copy(source = NarrationSource.GEMMA))
+            }
+        }
+    }
+
     @Test fun weatherGemma() = snap("weather_gemma") {
         Weather(weatherState(PageContent.Loaded(forecast, gemmaSummary)))
     }

@@ -122,8 +122,8 @@ fun SettingsScreen(
                         Text("Daily weather meme", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "A silly caption about each place's day, made on this phone with no internet. " +
-                                "With Gemma set up and switched on below, it writes a fresh one each day.",
+                            "A silly two-line caption under each forecast, made on this phone. " +
+                                "Switch Gemma on below for a fresh one every day.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

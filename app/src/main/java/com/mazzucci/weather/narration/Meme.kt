@@ -33,7 +33,7 @@ private val RAIN_CODES = setOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 8
 /** Same place and day → same number, so the fallback meme and Gemma's sampling are stable for the day. */
 fun memeSeed(placeKey: String, date: LocalDate): Int = "$placeKey|$date".hashCode()
 
-/** Hand-written captions, always available. No numbers, so they can never contradict the forecast. */
+/** Hand-written captions (six per mood), always available. No numbers, so they can never contradict the forecast. */
 object TemplateMemes {
     fun pick(mood: MemeMood, seed: Int): Meme {
         val pool = CAPTIONS.getValue(mood)
@@ -45,52 +45,82 @@ object TemplateMemes {
         MemeMood.STORM to listOf(
             "Thunder rolls" to "My dog under the bed",
             "Today's plans" to "Cancelled by thunder",
-            "Nature said" to "Turn it up to eleven",
+            "The sky today" to "Free light show",
+            "Thunder outside" to "Blanket fort inside",
+            "Me: a quick walk" to "Lightning: absolutely not",
+            "Storm rolls in" to "Plans roll out",
         ),
         MemeMood.SNOW to listOf(
             "Snow day?" to "Snow day.",
-            "Everyone today" to "Professional snowman architect",
+            "Job title today" to "Snowman architect",
             "Roads: icy" to "Hot chocolate: mandatory",
+            "Snow outside" to "Hot cocoa inside",
+            "Me: a short drive" to "The snow: hold my mittens",
+            "Everything is white" to "Except my nose",
         ),
         MemeMood.RAIN to listOf(
             "Me: I'll just run to the car" to "The sky: bold of you",
             "Leaves umbrella at home" to "Rain has entered the chat",
             "Cloudy with a chance" to "Of wet socks",
+            "Umbrella: forgotten" to "Hair: ruined",
+            "The clouds today" to "Crying for no reason",
+            "Puddles everywhere" to "Choose your jump wisely",
         ),
         MemeMood.HEAT to listOf(
             "It's not the heat" to "Okay it's the heat",
             "Me stepping outside" to "Instant rotisserie chicken",
-            "Ice cream melting" to "Faster than my plans",
+            "Today's ice cream" to "Now a beverage",
+            "Stepped outside" to "Instantly toasted",
+            "The sidewalk today" to "Basically a frying pan",
+            "Shade is" to "The best real estate",
         ),
         MemeMood.COLD to listOf(
             "Layers?" to "Yes. All of them.",
             "My fingers" to "Filed a formal complaint",
-            "Outside: freezing" to "Blanket: stay",
+            "Outside: freezing" to "Blanket: never letting go",
+            "Me: one more layer" to "Me: now a burrito",
+            "Car windshield" to "Frozen solid",
+            "Warm coffee" to "My only friend today",
         ),
         MemeMood.WIND to listOf(
-            "My hair today" to "Chose violence",
+            "My hair today" to "Styled by the wind",
             "Umbrella opens" to "Umbrella leaves forever",
             "Hold onto your hat" to "Literally",
+            "Me: nice hat" to "The wind: my hat now",
+            "Trash bins today" to "Going on an adventure",
+            "Walking to work" to "Mostly sideways",
         ),
         MemeMood.FOG to listOf(
             "Where did the city go" to "Fog: it's mine now",
             "Visibility" to "Vibes only",
-            "Mysterious fog" to "But make it breakfast",
+            "Thick fog today" to "The city is buffering",
+            "Is it fog" to "Or did I forget my glasses",
+            "Low clouds" to "Came to say hello",
+            "The view today" to "Loading, please wait",
         ),
         MemeMood.GLOOM to listOf(
             "Grey sky" to "Great coffee",
-            "The sun" to "Is on vacation",
+            "The sun today" to "Out of office",
             "Cloudy all day" to "Blanket fort weather",
+            "Grey skies" to "Cozy sweater energy",
+            "No sun today" to "Extra coffee instead",
+            "The sky" to "Set to grayscale",
         ),
         MemeMood.SUN to listOf(
             "The sun woke up" to "And chose happiness",
-            "Sunscreen exists" to "Me: I'll be fine",
+            "Sunscreen: exists" to "Me: I'll be fine",
             "Today's forecast" to "Main character energy",
+            "Clear skies" to "Big smile energy",
+            "Sunglasses" to "Finally earning their keep",
+            "Me after a sunny day" to "Human solar panel",
         ),
         MemeMood.MIXED to listOf(
             "Sun or clouds?" to "Why not both",
             "The sky can't decide" to "Neither can I",
             "Partly cloudy" to "Fully fine",
+            "Sunglasses or umbrella?" to "Bring both",
+            "The clouds" to "Playing peekaboo with the sun",
+            "Weather today" to "A little bit of everything",
         ),
     )
 }

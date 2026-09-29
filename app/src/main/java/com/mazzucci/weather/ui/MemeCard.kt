@@ -20,11 +20,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,7 +40,8 @@ import com.mazzucci.weather.narration.NarrationSource
  */
 @Composable
 fun MemeCard(meme: Meme, modifier: Modifier = Modifier) {
-    val shape = MaterialTheme.shapes.large
+    // Same corners as the tiles and the 7-day card above it, so it reads as one of the page's cards.
+    val shape = MaterialTheme.shapes.medium
     Column(modifier) {
         // Stacked rather than overlaid, so a caption that wraps pushes the icon down instead of covering it.
         Column(
@@ -80,6 +83,8 @@ private fun MemeText(text: String, modifier: Modifier = Modifier) {
         fontWeight = FontWeight.Black,
         letterSpacing = 0.5.sp,
         textAlign = TextAlign.Center,
+        // Balanced wrapping: a long line splits into two even halves instead of leaving one word orphaned.
+        lineBreak = LineBreak.Heading,
     )
     val upper = text.uppercase()
     val outline = with(LocalDensity.current) { 2.5.dp.toPx() }
@@ -104,8 +109,16 @@ private fun moodCode(mood: MemeMood): Int = when (mood) {
     MemeMood.MIXED -> 2
 }
 
+/**
+ * Heat and cold get their own warm and icy backdrops; every other mood reuses the hero gradient of its sky.
+ * In dark mode the two custom ones are pulled towards the dark surface exactly like [heroGradient] does,
+ * so the card doesn't glow against the rest of the page.
+ */
 private fun memeGradient(mood: MemeMood, dark: Boolean): List<Color> = when (mood) {
-    MemeMood.HEAT -> listOf(Color(0xFFF08C2E), Color(0xFFB8360B))
-    MemeMood.COLD -> listOf(Color(0xFF5B8DBE), Color(0xFF26486E))
+    MemeMood.HEAT -> listOf(Color(0xFFF08C2E), Color(0xFFB8360B)).dimmed(dark)
+    MemeMood.COLD -> listOf(Color(0xFF5B8DBE), Color(0xFF26486E)).dimmed(dark)
     else -> heroGradient(skyOf(moodCode(mood)), night = false, darkTheme = dark)
 }
+
+private fun List<Color>.dimmed(dark: Boolean): List<Color> =
+    if (dark) map { lerp(it, Color(0xFF0B101B), 0.35f) } else this
