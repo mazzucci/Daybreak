@@ -28,4 +28,16 @@ class OpenMeteoApiTest {
         val url = requested.single()
         assertTrue(url.startsWith("https://geocoding-api.open-meteo.com/v1/search?name=S%C3%A3o+Paulo&"))
     }
+
+    @Test fun `HTTP errors name the service`() = runTest {
+        val failing = OpenMeteoApi { throw HttpException(503) }
+        val e = runCatching { failing.forecast(1.0, 2.0) }.exceptionOrNull()
+        assertEquals("Weather service returned HTTP 503", e?.message)
+        assertEquals("Place search returned HTTP 503", runCatching { failing.searchPlaces("Rome") }.exceptionOrNull()?.message)
+    }
+
+    @Test fun `geocoding keeps the country code`() {
+        val place = parseGeocoding("""{"results":[{"id":1,"name":"Rome","latitude":41.9,"longitude":12.5,"country":"Italy","country_code":"it"}]}""").single()
+        assertEquals("IT", place.countryCode)
+    }
 }

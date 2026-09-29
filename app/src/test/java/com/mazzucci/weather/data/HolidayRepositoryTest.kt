@@ -37,12 +37,49 @@ class HolidayRepositoryTest {
         assertEquals(4, api.calls.size)
     }
 
-    @Test fun `a failure returns nothing and isn't cached`() = runTest {
+    @Test fun `a failure returns nothing, waits a few minutes, then retries`() = runTest {
         val api = FakeHolidays().apply { fail = true }
-        val repo = HolidayRepository(api, InMemoryStore())
+        var clock = 0L
+        val repo = HolidayRepository(api, InMemoryStore(), now = { clock })
         assertTrue(repo.around(today, "US").holidays.isEmpty())
         api.fail = false
+        val calls = api.calls.size
+        assertTrue(repo.around(today, "US").holidays.isEmpty()) // too soon to retry
+        assertEquals(calls, api.calls.size)
+        clock += 11 * 60_000
         assertEquals(2, repo.around(today, "US").holidays.size)
+    }
+
+    @Test fun `cached years are refreshed after a month and last year's is dropped`() = runTest {
+        val api = FakeHolidays()
+        val store = InMemoryStore(mapOf("holidays:US:2025" to "{}"))
+        var clock = 0L
+        val repo = HolidayRepository(api, store, now = { clock })
+        repo.around(today, "US")
+        assertEquals(null, store.getString("holidays:US:2025"))
+        clock += 29L * 24 * 3600_000
+        repo.around(today, "US")
+        assertEquals(4, api.calls.size)
+        clock += 2L * 24 * 3600_000
+        repo.around(today, "US")
+        assertEquals(8, api.calls.size)
+    }
+
+    @Test fun `countries Nager doesn't cover mean no holidays, not an error`() = runTest {
+        val api = NagerHolidayApi { url -> if ("PublicHolidays" in url) throw HttpException(204) else throw HttpException(404) }
+        assertTrue(api.publicHolidays(2026, "IN").isEmpty())
+        assertTrue(api.longWeekends(2026, "XK").isEmpty())
+        val broken = NagerHolidayApi { throw HttpException(500) }
+        assertThrowsIo { broken.publicHolidays(2026, "US") }
+    }
+
+    private suspend fun assertThrowsIo(block: suspend () -> Unit) {
+        try {
+            block()
+            throw AssertionError("expected an IOException")
+        } catch (e: IOException) {
+            // expected
+        }
     }
 
     @Test fun `requests go to Nager with just the year and country`() = runTest {

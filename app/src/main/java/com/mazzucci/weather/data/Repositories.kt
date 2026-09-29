@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
+import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,9 +46,10 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         return try {
             val array = JSONArray(raw)
             val stored = (0 until array.length()).map { array.getJSONObject(it) }
-            val places = stored.map { it.toPlace() }
-            // Places saved before ids were prefixed ("4409896" → "geo:4409896"): persist the migration once.
-            if (stored.zip(places).any { (json, place) -> json.getString("id") != place.id }) {
+            // Places saved before country codes were stored get one from their country name, once.
+            val places = stored.map { it.toPlace() }.map { p -> if (p.countryCode == null) p.copy(countryCode = countryCodeOf(p)) else p }
+            // Places saved before ids were prefixed ("4409896" → "geo:4409896") or before country codes: persist once.
+            if (stored.zip(places).any { (json, place) -> json.getString("id") != place.id || (!json.has("cc") && place.countryCode != null) }) {
                 store.putString(KEY, JSONArray(places.map { it.toJson() }).toString())
             }
             places

@@ -69,8 +69,8 @@ class ComingUpTest {
 
     @Test fun `country code comes from the geocoder or the country name`() {
         assertEquals("GB", countryCodeOf(TestData.london.copy(countryCode = "GB")))
-        assertEquals("GB", countryCodeOf(TestData.london)) // "United Kingdom"
-        assertEquals("US", countryCodeOf(TestData.sanFrancisco)) // "United States"
-        assertNull(countryCodeOf(TestData.london.copy(country = null)))
+        assertEquals("GB", countryCodeOf(TestData.london.copy(countryCode = null))) // "United Kingdom"
+        assertEquals("US", countryCodeOf(TestData.sanFrancisco.copy(countryCode = null))) // "United States"
+        assertNull(countryCodeOf(TestData.london.copy(country = null, countryCode = null)))
     }
 }

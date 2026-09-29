@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.domain.FORECAST_DAYS
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
+import java.io.IOException
 import java.net.URLEncoder
 
 interface WeatherApi {
@@ -14,10 +15,16 @@ interface WeatherApi {
 class OpenMeteoApi(private val http: HttpClient) : WeatherApi {
 
     override suspend fun forecast(latitude: Double, longitude: Double): Forecast =
-        parseForecast(http.get(forecastUrl(latitude, longitude)))
+        parseForecast(get(forecastUrl(latitude, longitude), "Weather service"))
 
     override suspend fun searchPlaces(query: String): List<Place> =
-        parseGeocoding(http.get(searchUrl(query)))
+        parseGeocoding(get(searchUrl(query), "Place search"))
+
+    private suspend fun get(url: String, service: String): String = try {
+        http.get(url)
+    } catch (e: HttpException) {
+        throw IOException("$service returned HTTP ${e.code}")
+    }
 
     companion object {
         fun forecastUrl(latitude: Double, longitude: Double): String =

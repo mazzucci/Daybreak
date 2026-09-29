@@ -10,13 +10,22 @@ interface HolidayApi {
     suspend fun longWeekends(year: Int, countryCode: String): List<LongWeekend>
 }
 
-/** Nager.Date (free, no API key, HTTPS). Only the country code and year are sent. */
+/**
+ * Nager.Date (free, no API key, HTTPS). Requests carry the country code and year (and, like any request, the
+ * phone's IP address). Countries Nager doesn't cover answer 204 or 404, which means "no holidays", not an error.
+ */
 class NagerHolidayApi(private val http: HttpClient) : HolidayApi {
     override suspend fun publicHolidays(year: Int, countryCode: String): List<Holiday> =
-        parsePublicHolidays(http.get("$BASE/PublicHolidays/$year/${countryCode.uppercase()}"))
+        getOrEmpty("$BASE/PublicHolidays/$year/${countryCode.uppercase()}")?.let(::parsePublicHolidays).orEmpty()
 
     override suspend fun longWeekends(year: Int, countryCode: String): List<LongWeekend> =
-        parseLongWeekends(http.get("$BASE/LongWeekend/$year/${countryCode.uppercase()}"))
+        getOrEmpty("$BASE/LongWeekend/$year/${countryCode.uppercase()}")?.let(::parseLongWeekends).orEmpty()
+
+    private suspend fun getOrEmpty(url: String): String? = try {
+        http.get(url).ifBlank { null }
+    } catch (e: HttpException) {
+        if (e.code == 204 || e.code == 404) null else throw e
+    }
 
     private companion object {
         const val BASE = "https://date.nager.at/api/v3"

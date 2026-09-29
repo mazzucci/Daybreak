@@ -200,7 +200,8 @@ class WeatherViewModel(
         val input = narrationInput(place, forecast)
         val quickMeme = if (settings.memesEnabled) savedOrTemplateMeme(key, place, input).meme else null
         setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
-        showComingUp(key, place, forecast) // before Gemma: it's a quick, usually cached lookup
+        // Alongside Gemma rather than before it: a slow holiday lookup must never hold up the summary.
+        viewModelScope.launch { showComingUp(key, place, forecast) }
         if (gemmaReady()) {
             val narration = llm!!.narrate(input)
             if (narration.source == NarrationSource.GEMMA) updateLoaded(key, forecast) { it.copy(summary = narration) }
@@ -406,11 +407,11 @@ class WeatherViewModel(
     fun setComingUpEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(comingUpEnabled = enabled) }
         if (enabled) {
+            // Not through launchFor: a page busy with Gemma still gets its card, and nothing gets cancelled. A page
+            // that's refetching drops this result (updateLoaded checks the forecast) and adds its own.
             visiblePlaces().forEach { (key, place) ->
                 val content = contents.value[key]
-                if (content is PageContent.Loaded && key !in jobs) {
-                    launchFor(key, fetch = false) { showComingUp(key, place, content.forecast) }
-                }
+                if (content is PageContent.Loaded) viewModelScope.launch { showComingUp(key, place, content.forecast) }
             }
         } else {
             contents.update { map -> map.mapValues { (_, c) -> if (c is PageContent.Loaded) c.copy(comingUp = emptyList()) else c } }

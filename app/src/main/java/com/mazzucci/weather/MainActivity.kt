@@ -58,7 +58,8 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
             llm = ValidatingNarrator(gemma),
             memeWriter = MemeWriter(gemma),
             memes = MemeRepository(store),
-            holidays = HolidayRepository(NagerHolidayApi(http), store),
+            // Its own short timeout: holidays are a nice-to-have and shouldn't keep a page waiting.
+            holidays = HolidayRepository(NagerHolidayApi(UrlConnectionHttpClient(timeoutMs = 5_000)), store),
         )
     }
 }

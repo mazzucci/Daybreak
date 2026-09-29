@@ -15,9 +15,9 @@ object TestData {
 
     val now: LocalDateTime = LocalDateTime.of(2026, 9, 28, 14, 30)
 
-    val sanFrancisco = Place("geo:5391959", "San Francisco", "California", "United States", 37.7749, -122.4194)
-    val london = Place("geo:2643743", "London", "England", "United Kingdom", 51.5085, -0.1257)
-    val tokyo = Place("geo:1850147", "Tokyo", "Tokyo", "Japan", 35.6895, 139.6917)
+    val sanFrancisco = Place("geo:5391959", "San Francisco", "California", "United States", 37.7749, -122.4194, countryCode = "US")
+    val london = Place("geo:2643743", "London", "England", "United Kingdom", 51.5085, -0.1257, countryCode = "GB")
+    val tokyo = Place("geo:1850147", "Tokyo", "Tokyo", "Japan", 35.6895, 139.6917, countryCode = "JP")
 
     /** 21.4°C (71°F) partly cloudy now; high 23.6 (74°F), low 13.2 (56°F); rain likely at 6 PM. */
     fun forecast(

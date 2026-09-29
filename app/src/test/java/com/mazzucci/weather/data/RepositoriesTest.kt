@@ -73,6 +73,14 @@ class SavedPlacesRepositoryTest {
         val repo = SavedPlacesRepository(InMemoryStore(mapOf("saved_places" to "not json")))
         assertTrue(repo.places.value.isEmpty())
     }
+
+    @Test fun `country codes are saved, and older places get one from their country name`() {
+        val store = InMemoryStore(mapOf("saved_places" to """[{"id":"geo:1","name":"London","country":"United Kingdom","lat":51.5,"lon":-0.1}]"""))
+        assertEquals("GB", SavedPlacesRepository(store).places.value.single().countryCode)
+        assertTrue(store.getString("saved_places")!!.contains("\"cc\":\"GB\"")) // persisted once
+        SavedPlacesRepository(store).add(tokyo.copy(countryCode = "JP"))
+        assertEquals(listOf("GB", "JP"), SavedPlacesRepository(store).places.value.map { it.countryCode })
+    }
 }
 
 class SettingsRepositoryTest {
