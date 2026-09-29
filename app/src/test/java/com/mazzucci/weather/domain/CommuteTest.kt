@@ -34,6 +34,7 @@ class CommuteTest {
         val midday = commuteAdvice(forecast(monday7am.withHour(10)), Activity.CYCLING, settings)!!
         assertEquals(monday7am.toLocalDate(), midday.day)
         assertNull(midday.outbound)
+        assertEquals("A dry ride home · 61°", describeCommute(midday, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()).detail)
         // After the trip home: tomorrow.
         assertEquals(DayOfWeek.TUESDAY, commuteAdvice(forecast(monday7am.withHour(18)), Activity.CYCLING, settings)!!.day.dayOfWeek)
     }
@@ -54,10 +55,9 @@ class CommuteTest {
         val winter = forecast(monday7am).let { f -> f.copy(days = f.days.map { it.copy(sunrise = it.date.atTime(7, 30), sunset = it.date.atTime(16, 50)) }) }
         val advice = commuteAdvice(winter, Activity.CYCLING, settings)!!
         assertEquals(CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, advice.verdict)
-        assertEquals(
-            "Office day, with a catch" to "Dark on the way home at 5 PM: take lights.",
-            describeCommute(advice, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()),
-        )
+        val copy = describeCommute(advice, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate())
+        assertEquals("Office day, with a catch", copy.headline)
+        assertEquals("Dark on the way home · take lights at 5 PM", copy.detail)
     }
 
     @Test fun `public holidays are skipped like weekends`() {
@@ -85,8 +85,8 @@ class CommuteTest {
         val showery = commuteAdvice(forecast(monday7am) { if (it.hour == 8) 35 else 0 }, Activity.CYCLING, settings)!!
         assertEquals(CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, showery.verdict)
         assertEquals(
-            "A chance of rain (35%) on the way in at 8 AM.",
-            describeCommute(showery, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()).second,
+            "Rain possible on the way in · 35% at 8 AM",
+            describeCommute(showery, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()).detail,
         )
     }
 
@@ -100,13 +100,30 @@ class CommuteTest {
         val today = monday7am.toLocalDate()
         val dry = commuteAdvice(forecast(monday7am), Activity.CYCLING, settings)!!
         assertEquals(
-            "Office day" to "Good to ride both ways: dry, 61° going in, dry, 61° coming home.",
+            CommuteCopy("Today's commute", "Office day", "A dry ride both ways · 61°", "A dry ride both ways, 61°F (16°C)"),
             describeCommute(dry, Activity.CYCLING, TempUnit.F, today),
         )
         val rainHome = commuteAdvice(forecast(monday7am.withHour(18)) { if (it.hour == 17) 80 else 0 }, Activity.CYCLING, settings)!!
         assertEquals(
-            "Tomorrow: maybe work from home" to "Rain likely (80%) on the way home at 5 PM.",
+            CommuteCopy("Tomorrow's commute", "Maybe work from home", "Rain likely on the way home · 80% at 5 PM", "Rain likely on the way home, 80% at 5 PM"),
             describeCommute(rainHome, Activity.CYCLING, TempUnit.F, today),
         )
+        val showery = commuteAdvice(forecast(monday7am) { if (it.hour == 8) 35 else 0 }, Activity.CYCLING, settings)!!
+        assertEquals(
+            CommuteCopy("Today's commute", "Office day, with a catch", "Rain possible on the way in · 35% at 8 AM", "Rain possible on the way in, 35% at 8 AM"),
+            describeCommute(showery, Activity.CYCLING, TempUnit.F, today),
+        )
+    }
+
+    /** A wider spread between the trips shows as a range, in both units when spoken; Friday's check names the day. */
+    @Test fun `office day gives the temperature range and names a later day`() {
+        val today = monday7am.toLocalDate()
+        val friday = commuteAdvice(forecast(LocalDateTime.of(2026, 10, 1, 18, 0)), Activity.WALKING, settings)!!
+        assertEquals("Friday's commute", describeCommute(friday, Activity.WALKING, TempUnit.F, today).eyebrow)
+        val f = forecast(monday7am)
+        val warmer = f.copy(hours = f.hours.map { if (it.time.hour == 17) it.copy(tempC = 20.0) else it })
+        val copy = describeCommute(commuteAdvice(warmer, Activity.WALKING, settings)!!, Activity.WALKING, TempUnit.C, today)
+        assertEquals("A dry walk both ways · 16–20°", copy.detail)
+        assertEquals("A dry walk both ways, 16 to 20°C (61 to 68°F)", copy.spokenDetail)
     }
 }

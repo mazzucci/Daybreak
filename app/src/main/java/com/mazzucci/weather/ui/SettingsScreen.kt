@@ -2,8 +2,13 @@
 
 package com.mazzucci.weather.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -415,23 +420,40 @@ private fun CommuteSettingsCard(commute: CommuteSettings, onChange: (CommuteSett
     }
 }
 
-/** "Leave for work   – 8 AM +": an hour picker that wraps around midnight. */
+/**
+ * "Leave for work   − 8 AM +": an hour picker that wraps around midnight. A stepper rather than a time picker
+ * because the check only knows whole hours and the usual edit is a nudge of one; the value is a live region so
+ * TalkBack reads the new hour after each press.
+ */
 @Composable
 private fun HourStepper(label: String, hour: Int, onChange: (Int) -> Unit) {
     val text = formatHour(java.time.LocalDate.of(2000, 1, 1).atTime(hour, 0), Locale.US)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        IconButton(onClick = { onChange((hour + 23) % 24) }) {
-            Text("−", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = "$label earlier" })
-        }
+        StepButton("$label, an hour earlier", plus = false) { onChange((hour + 23) % 24) }
         Text(
             text,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(64.dp).semantics { contentDescription = "$label at $text" },
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 64.dp).semantics {
+                contentDescription = "$label, $text"
+                liveRegion = LiveRegionMode.Polite
+            },
         )
-        IconButton(onClick = { onChange((hour + 1) % 24) }) {
-            Text("+", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { contentDescription = "$label later" })
+        StepButton("$label, an hour later", plus = true) { onChange((hour + 1) % 24) }
+    }
+}
+
+/** A drawn − or +, since the core icon set has no minus; the label goes on the button, where TalkBack reads it. */
+@Composable
+private fun StepButton(description: String, plus: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = description }) {
+        val color = LocalContentColor.current
+        Canvas(Modifier.size(16.dp)) {
+            val w = 2.dp.toPx()
+            drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), w, StrokeCap.Round)
+            if (plus) drawLine(color, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), w, StrokeCap.Round)
         }
     }
 }

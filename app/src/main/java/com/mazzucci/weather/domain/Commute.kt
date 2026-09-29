@@ -4,6 +4,8 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * When the user travels to and from work, on weekdays. Hours are local to the commute page's place. A return
@@ -76,51 +78,94 @@ private fun hourAt(forecast: Forecast, time: LocalDateTime): HourForecast? =
 /** Below this, a trip isn't worth it: suggest working from home. */
 private const val POOR = 40
 
-/** "Office day" / "Office day, with a catch" / "Maybe work from home", plus a line saying why. */
-fun describeCommute(advice: CommuteAdvice, activity: Activity, unit: TempUnit, today: LocalDate): Pair<String, String> {
-    val whenLabel = when (advice.day) {
-        today -> ""
-        today.plusDays(1) -> "Tomorrow: "
-        else -> "${advice.day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)}: "
+/**
+ * The card's three lines, in the shape of the "best time" card: which commute this is about ([eyebrow]), the
+ * verdict ([headline]) and why ([detail], dot-separated fragments). [spokenDetail] is the same for screen
+ * readers: commas for pauses, "to" for ranges, and both temperature units like the rest of the app.
+ */
+data class CommuteCopy(val eyebrow: String, val headline: String, val detail: String, val spokenDetail: String)
+
+/** "Tomorrow's commute" / "Office day" / "A dry ride both ways · 61–64°", or the worse trip's problem and when. */
+fun describeCommute(advice: CommuteAdvice, activity: Activity, unit: TempUnit, today: LocalDate): CommuteCopy {
+    val day = when (advice.day) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        else -> advice.day.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.US)
     }
-    val headline = whenLabel + when (advice.verdict) {
-        CommuteAdvice.Verdict.OFFICE -> "office day"
-        CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT -> "office day, with a catch"
-        CommuteAdvice.Verdict.WORK_FROM_HOME -> "maybe work from home"
-    }.let { if (whenLabel.isEmpty()) it.replaceFirstChar { c -> c.uppercase() } else it }
-    val mode = activity.verb
-    val out = advice.outbound
-    val trips = listOfNotNull(out?.let { "in" to it }, "home" to advice.inbound)
-    val detail = when {
-        advice.verdict == CommuteAdvice.Verdict.OFFICE && out == null ->
-            "Good to $mode home: ${tripSummary(advice.inbound, unit)}."
-        advice.verdict == CommuteAdvice.Verdict.OFFICE ->
-            "Good to $mode both ways: ${tripSummary(out!!, unit)} going in, ${tripSummary(advice.inbound, unit)} coming home."
-        else -> {
-            // Name the worse trip and what's wrong with it; darkness alone only ever makes it a caveat.
-            val (label, trip) = trips.minBy { it.second.score }
-            val darkOnly = trip.score >= ActivityScorer.GOOD
-            val (darkLabel, darkTrip) = trips.firstOrNull { Limit.DARK in it.second.limits } ?: (label to trip)
-            if (darkOnly) "Dark on the way $darkLabel at ${formatHour(darkTrip.hour.time, java.util.Locale.US)}: take lights."
-            else "${reasonFor(trip).replaceFirstChar { it.uppercase() }} on the way $label at ${formatHour(trip.hour.time, java.util.Locale.US)}."
+    val headline = when (advice.verdict) {
+        CommuteAdvice.Verdict.OFFICE -> "Office day"
+        CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT -> "Office day, with a catch"
+        CommuteAdvice.Verdict.WORK_FROM_HOME -> "Maybe work from home"
+    }
+    val detail = commuteDetail(advice, activity, unit, separator = " · ") { lo, hi ->
+        if (lo == hi) formatDegrees(lo, unit) else "${degrees(lo, unit)}–${degrees(hi, unit)}°"
+    }
+    val spoken = commuteDetail(advice, activity, unit, separator = ", ") { lo, hi ->
+        if (lo == hi) formatBothUnits(lo, unit) else "${spokenRange(lo, hi, unit)} (${spokenRange(lo, hi, unit.other())})"
+    }
+    return CommuteCopy("$day's commute", headline, detail, spoken)
+}
+
+private fun spokenRange(lo: Double, hi: Double, unit: TempUnit) = "${degrees(lo, unit)} to ${formatTemp(hi, unit)}"
+
+/**
+ * Office day: "A dry ride both ways · 61–64°", or which trip has a rain chance when one does. Otherwise the worse
+ * trip's problem, then the measure and the hour: "Rain likely on the way home · 80% at 5 PM".
+ */
+private fun commuteDetail(
+    advice: CommuteAdvice,
+    activity: Activity,
+    unit: TempUnit,
+    separator: String,
+    temps: (lo: Double, hi: Double) -> String,
+): String {
+    val out = advice.outbound?.hour
+    val back = advice.inbound.hour
+    val trips = listOfNotNull(advice.outbound?.let { "in" to it }, "home" to advice.inbound)
+    if (advice.verdict == CommuteAdvice.Verdict.OFFICE) {
+        val rain = when {
+            // Already on the way in: only the trip home is left to judge.
+            out == null -> if (back.precipChance < DRY) "A dry ${activity.verb} home" else "${rainWord(back)} coming home".replaceFirstChar { it.uppercase() }
+            out.precipChance < DRY && back.precipChance < DRY -> "A dry ${activity.verb} both ways"
+            else -> "${rainWord(out)} going in, ${rainWord(back)} coming home".replaceFirstChar { it.uppercase() }
         }
+        val all = listOfNotNull(out, back)
+        return "$rain$separator${temps(all.minOf { it.tempC }, all.maxOf { it.tempC })}"
     }
-    return headline to detail
+    val worst = trips.minBy { it.second.score }
+    // Darkness is only ever a caveat: when it's the only catch, say so and suggest lights.
+    val (leg, trip) = if (worst.second.score >= ActivityScorer.GOOD) trips.firstOrNull { Limit.DARK in it.second.limits } ?: worst else worst
+    val hour = formatHour(trip.hour.time, Locale.US)
+    val l = trip.limits
+    val h = trip.hour
+    val (problem, measure) = when {
+        Limit.STORM in l -> "Storms" to null
+        Limit.SNOW in l -> "Snow" to null
+        Limit.RAIN in l -> (if (h.precipChance >= LIKELY) "Rain likely" else "Rain possible") to "${h.precipChance}%"
+        Limit.WIND in l -> "Strong wind" to windMeasure(h, unit)
+        Limit.COLD in l -> "Cold" to temps(h.tempC, h.tempC)
+        Limit.HEAT in l -> "Heat" to temps(h.tempC, h.tempC)
+        Limit.DARK in l -> "Dark" to "take lights"
+        else -> "Iffy weather" to null
+    }
+    return "$problem on the way $leg$separator${if (measure != null) "$measure at $hour" else hour}"
 }
 
-private fun tripSummary(h: HourScore, unit: TempUnit): String =
-    "${if (h.hour.precipChance < 15) "dry" else "${h.hour.precipChance}% rain"}, ${formatDegrees(h.hour.tempC, unit)}"
+private fun rainWord(h: HourForecast) = if (h.precipChance < DRY) "dry" else "${h.precipChance}% rain chance"
 
-private fun reasonFor(h: HourScore): String {
-    val l = h.limits
+/** Gusts when they're what's notable, otherwise the sustained wind; null when the forecast has neither. */
+private fun windMeasure(h: HourForecast, unit: TempUnit): String? {
+    val wind = h.windKmh
+    val gust = h.gustKmh
     return when {
-        Limit.STORM in l -> "storms"
-        Limit.SNOW in l -> "snow"
-        Limit.RAIN in l -> if (h.hour.precipChance >= 50) "rain likely (${h.hour.precipChance}%)" else "a chance of rain (${h.hour.precipChance}%)"
-        Limit.WIND in l -> "strong wind"
-        Limit.COLD in l -> "cold"
-        Limit.HEAT in l -> "heat"
-        Limit.DARK in l -> "darkness"
-        else -> "iffy weather"
+        gust != null && (wind == null || gust > wind) -> "gusts ${formatWind(gust, unit)}"
+        wind != null -> formatWind(wind, unit)
+        else -> null
     }
 }
+
+/** Under this rain chance a trip counts as dry, matching the "best time" card. */
+private const val DRY = 15
+
+/** From this rain chance on, "rain likely" rather than "rain possible". */
+private const val LIKELY = 60

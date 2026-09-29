@@ -406,15 +406,6 @@ private fun BodyForecast(
     holidays: Set<LocalDate> = emptySet(),
 ) {
     val cur = forecast.current
-    if (commute != null) {
-        // Walking is the fallback mode when outdoor plans are off.
-        val mode = activity ?: Activity.WALKING
-        val advice = remember(forecast, mode, commute, holidays) { commuteAdvice(forecast, mode, commute, holidays) }
-        if (advice != null) {
-            Spacer(Modifier.height(20.dp))
-            CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
-        }
-    }
     Spacer(Modifier.height(20.dp))
     TileRow {
         StatTile(
@@ -429,6 +420,16 @@ private fun BodyForecast(
             Modifier.weight(1f),
             detail = gust?.takeIf { it > cur.windKmh }?.let { "Gusts ${formatWind(it, unit)}" },
         )
+    }
+    if (commute != null) {
+        // The hero and its tiles are "now"; the commute verdict opens the planning part of the page, still
+        // above the fold. Walking is the fallback mode when outdoor plans are off.
+        val mode = activity ?: Activity.WALKING
+        val advice = remember(forecast, mode, commute, holidays) { commuteAdvice(forecast, mode, commute, holidays) }
+        if (advice != null) {
+            Spacer(Modifier.height(16.dp))
+            CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
+        }
     }
     Spacer(Modifier.height(24.dp))
     Text(
