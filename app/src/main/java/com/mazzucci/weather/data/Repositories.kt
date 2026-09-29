@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
+import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,9 +46,10 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         return try {
             val array = JSONArray(raw)
             val stored = (0 until array.length()).map { array.getJSONObject(it) }
-            val places = stored.map { it.toPlace() }
-            // Places saved before ids were prefixed ("4409896" → "geo:4409896"): persist the migration once.
-            if (stored.zip(places).any { (json, place) -> json.getString("id") != place.id }) {
+            // Places saved before country codes were stored get one from their country name, once.
+            val places = stored.map { it.toPlace() }.map { p -> if (p.countryCode == null) p.copy(countryCode = countryCodeOf(p)) else p }
+            // Places saved before ids were prefixed ("4409896" → "geo:4409896") or before country codes: persist once.
+            if (stored.zip(places).any { (json, place) -> json.getString("id") != place.id || (!json.has("cc") && place.countryCode != null) }) {
                 store.putString(KEY, JSONArray(places.map { it.toJson() }).toString())
             }
             places
@@ -61,6 +63,7 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         .put("name", name)
         .putOpt("region", region)
         .putOpt("country", country)
+        .putOpt("cc", countryCode)
         .put("lat", latitude)
         .put("lon", longitude)
 
@@ -71,6 +74,7 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         country = optString("country").ifBlank { null },
         latitude = getDouble("lat"),
         longitude = getDouble("lon"),
+        countryCode = optString("cc").ifBlank { null },
     )
 
     private companion object {
@@ -97,6 +101,7 @@ class SettingsRepository(
         store.putString(KEY_CURRENT, s.useCurrentLocation.toString())
         store.putString(KEY_GEMMA, s.gemmaEnabled.toString())
         store.putString(KEY_MEMES, s.memesEnabled.toString())
+        store.putString(KEY_COMING_UP, s.comingUpEnabled.toString())
         store.putString(KEY_TONE, s.tone.name)
         privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
@@ -108,6 +113,7 @@ class SettingsRepository(
         useCurrentLocation = store.getString(KEY_CURRENT)?.toBooleanStrictOrNull() ?: defaults.useCurrentLocation,
         gemmaEnabled = store.getString(KEY_GEMMA)?.toBooleanStrictOrNull() ?: defaults.gemmaEnabled,
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
+        comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
         aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
@@ -122,6 +128,7 @@ class SettingsRepository(
         const val KEY_CURRENT = "use_current_location"
         const val KEY_GEMMA = "gemma_enabled"
         const val KEY_MEMES = "memes_enabled"
+        const val KEY_COMING_UP = "coming_up_enabled"
         const val KEY_TONE = "tone"
         const val KEY_ABOUT_ME = "about_me"
         const val KEY_ACTIVITY = "activity"

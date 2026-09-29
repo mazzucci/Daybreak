@@ -85,6 +85,7 @@ import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
+import com.mazzucci.weather.domain.Countdown
 import com.mazzucci.weather.domain.DaySummary
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.domain.Daylight
@@ -258,7 +259,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -387,7 +388,14 @@ private fun SummaryBlock(summary: Narration) {
 
 /** Detail tiles and the hourly strip, on the normal surface below the hero. */
 @Composable
-private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, meme: Meme?, activity: Activity?) {
+private fun BodyForecast(
+    forecast: Forecast,
+    unit: TempUnit,
+    night: Boolean,
+    meme: Meme?,
+    activity: Activity?,
+    comingUp: List<Countdown>,
+) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
     TileRow {
@@ -430,6 +438,16 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, mem
         )
         Spacer(Modifier.height(12.dp))
         DailyList(week, forecast.today.date, unit)
+    }
+    if (comingUp.isNotEmpty()) {
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "Coming up",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = PageMargin).semantics { heading() },
+        )
+        Spacer(Modifier.height(12.dp))
+        ComingUpCard(comingUp, forecast, unit, Modifier.padding(horizontal = PageMargin))
     }
     if (meme != null) {
         Spacer(Modifier.height(24.dp))

@@ -97,6 +97,7 @@ fun SettingsScreen(
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
+    onComingUpEnabledChange: (Boolean) -> Unit,
     onToneChange: (Tone) -> Unit,
     onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
@@ -138,8 +139,29 @@ fun SettingsScreen(
                 }
             }
 
-            SectionTitle("Summary style")
-            SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
+            // Planning information, not a joke, so it sits with the forecast-page settings rather than under "Fun";
+            // the section title matches the card's heading so the switch is easy to find.
+            SectionTitle("Coming up")
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Holidays and countdowns", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "The next public holiday, long weekend and season for each place, with the forecast when " +
+                                "it's within the week. Holidays come from Nager.Date online, which sees your IP address and each place's country.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = settings.comingUpEnabled,
+                        onCheckedChange = onComingUpEnabledChange,
+                        modifier = Modifier.semantics { contentDescription = "Holidays and countdowns" },
+                    )
+                }
+            }
 
             SectionTitle("Outdoor plans")
             SettingsCard {
@@ -170,6 +192,9 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            SectionTitle("Summary style")
+            SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
 
             SectionTitle("Fun")
             SettingsCard {

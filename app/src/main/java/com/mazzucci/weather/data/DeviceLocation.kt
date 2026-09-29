@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Address
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
@@ -34,11 +35,13 @@ class DeviceLocationProvider(private val context: Context) : LocationProvider {
 
     override suspend fun currentPlace(): Place? {
         val loc = getLocation() ?: return null
+        val address = address(loc)
         return Place(
             id = Place.CURRENT_LOCATION_ID,
-            name = placeName(loc) ?: "Current location",
+            name = address?.let { it.locality ?: it.subAdminArea ?: it.adminArea }?.ifBlank { null } ?: "Current location",
             latitude = loc.latitude,
             longitude = loc.longitude,
+            countryCode = address?.countryCode?.uppercase(),
         )
     }
 
@@ -67,15 +70,12 @@ class DeviceLocationProvider(private val context: Context) : LocationProvider {
             .maxByOrNull { it.time }
     }
 
-    /** Best-effort "City" label for a location; null if the device can't resolve it. */
+    /** Best-effort address (city, country) for a location; null if the device can't resolve it. */
     @Suppress("DEPRECATION")
-    private suspend fun placeName(loc: Location): String? = withContext(Dispatchers.IO) {
+    private suspend fun address(loc: Location): Address? = withContext(Dispatchers.IO) {
         if (!Geocoder.isPresent()) return@withContext null
         runCatching {
-            Geocoder(context, Locale.getDefault()).getFromLocation(loc.latitude, loc.longitude, 1)
-                ?.firstOrNull()
-                ?.let { it.locality ?: it.subAdminArea ?: it.adminArea }
-                ?.ifBlank { null }
+            Geocoder(context, Locale.getDefault()).getFromLocation(loc.latitude, loc.longitude, 1)?.firstOrNull()
         }.getOrNull()
     }
 }

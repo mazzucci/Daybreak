@@ -32,6 +32,11 @@ import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
+import com.mazzucci.weather.data.parseLongWeekends
+import com.mazzucci.weather.data.parsePublicHolidays
+import com.mazzucci.weather.domain.Holiday
+import com.mazzucci.weather.domain.LongWeekend
+import com.mazzucci.weather.domain.comingUp
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.narration.MemeMood
 import com.mazzucci.weather.narration.TemplateMemes
@@ -65,6 +70,31 @@ class ScreenshotTest {
         TemplateNarrator(Locale.US).describe(NarrationInput(london.name, rainyNight, TempUnit.C)),
         NarrationSource.TEMPLATE,
     )
+
+    /**
+     * The 2026 US calendar from the fixtures plus a made-up holiday two days out, so the card shows all three
+     * rows: a holiday with its forecast, the Thanksgiving weekend with its day of leave, and the next season.
+     */
+    private val sanFranciscoComingUp = run {
+        val today = forecast.current.time.toLocalDate()
+        comingUp(
+            today,
+            parsePublicHolidays(TestData.fixture("holidays_us_2026.json")) + Holiday(today.plusDays(2), "Founders Day"),
+            parseLongWeekends(TestData.fixture("long_weekends_us_2026.json")),
+            latitude = sanFrancisco.latitude,
+        )
+    }
+
+    /** A long weekend a week out (the last day of the forecast) and the next season, for the dark page. */
+    private val londonComingUp = run {
+        val today = rainyNight.current.time.toLocalDate()
+        comingUp(
+            today,
+            listOf(Holiday(today.plusDays(7), "Autumn bank holiday")),
+            listOf(LongWeekend(today.plusDays(5), today.plusDays(7), 3, emptyList())),
+            latitude = london.latitude,
+        )
+    }
 
     private fun weatherState(
         first: PageContent,
@@ -120,7 +150,7 @@ class ScreenshotTest {
         SettingsScreen(
             settings = settings,
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
@@ -136,7 +166,7 @@ class ScreenshotTest {
     }
 
     @Test fun weatherFullPage() = snap("weather_full_page", tall = true) {
-        Weather(weatherState(PageContent.Loaded(forecast, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0))))
+        Weather(weatherState(PageContent.Loaded(forecast, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp)))
     }
 
     @Test fun weatherFullPageDark() = snap("weather_full_page_dark", night = true, tall = true) {
@@ -145,6 +175,7 @@ class ScreenshotTest {
                 PageContent.Loaded(
                     rainyNight, rainyNightSummary,
                     Meme("Me: I'll just run to the car", "London: bold of you", MemeMood.RAIN, NarrationSource.GEMMA),
+                    londonComingUp,
                 ),
                 place = london, key = london.id,
                 settings = AppSettings(primaryUnit = TempUnit.C),
@@ -326,6 +357,20 @@ class ScreenshotTest {
             ActivityCard(ActivityScorer.plan(forecast, Activity.CYCLING), TempUnit.F, forecast.current.time.toLocalDate())
             ActivityCard(ActivityScorer.plan(showery, Activity.RUNNING), TempUnit.C, showery.current.time.toLocalDate())
             ActivityCard(ActivityScorer.plan(wet, Activity.WALKING), TempUnit.C, wet.current.time.toLocalDate())
+        }
+    }
+
+    /** The card on its own, with all three kinds of row; the holiday is inside the forecast so it shows the weather. */
+    @Test fun comingUpCard() = snap("coming_up") {
+        Column(Modifier.padding(vertical = 16.dp)) {
+            ComingUpCard(sanFranciscoComingUp, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))
+        }
+    }
+
+    /** Narrow screen at 1.5x: the detail line wraps without stranding a separator, the countdown stays on one line. */
+    @Test fun comingUpCardLargeFont() = snap("coming_up_large_font", narrow = true, fontScale = 1.5f) {
+        Column(Modifier.padding(vertical = 16.dp)) {
+            ComingUpCard(sanFranciscoComingUp, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))
         }
     }
 
