@@ -89,8 +89,8 @@ fun RideScreen(state: RideUi, unit: TempUnit, onPickFile: () -> Unit, onBack: ()
         ) {
             when (state) {
                 RideUi.Idle -> Intro(onPickFile)
-                is RideUi.Failed -> Failed(state.message, onPickFile)
-                RideUi.Loading -> Loading()
+                is RideUi.Failed -> FailedCard("Couldn't replay that ride", state.message, "Choose another file", onPickFile)
+                RideUi.Loading -> LoadingNote("Looking up the weather on your ride…")
                 is RideUi.Loaded -> {
                     ReplayContent(state.replay, unit)
                     Spacer(Modifier.height(20.dp))
@@ -129,9 +129,12 @@ private fun Intro(onPickFile: () -> Unit) {
     }
 }
 
-/** The same card the forecast page uses when it can't load: icon, title, the reason, one way forward. */
+/**
+ * The same card the forecast page uses when it can't load: icon, title, the reason, one way forward. Shared by
+ * the ride replay and the activity log.
+ */
 @Composable
-private fun Failed(message: String, onPickFile: () -> Unit) {
+internal fun FailedCard(title: String, message: String, action: String, onAction: () -> Unit) {
     Spacer(Modifier.height(24.dp))
     Card(
         Modifier.fillMaxWidth(),
@@ -140,7 +143,7 @@ private fun Failed(message: String, onPickFile: () -> Unit) {
         Column(Modifier.padding(24.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.Warning, contentDescription = null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(12.dp))
-            Text("Couldn't replay that ride", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+            Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
             Text(
                 message,
@@ -149,26 +152,23 @@ private fun Failed(message: String, onPickFile: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            Button(onPickFile) { Text("Choose another file") }
+            Button(onAction) { Text(action) }
         }
     }
 }
 
+/** A spinner with a word about what's taking the time, announced once. [text] ends with an ellipsis. */
 @Composable
-private fun Loading() {
+internal fun LoadingNote(text: String) {
     Column(
         Modifier.fillMaxWidth().padding(vertical = 64.dp).semantics(mergeDescendants = true) {
-            contentDescription = "Looking up the weather on your ride"
+            contentDescription = text.trimEnd('…')
         },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         CircularProgressIndicator()
         Spacer(Modifier.height(16.dp))
-        Text(
-            "Looking up the weather on your ride…",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -381,9 +381,9 @@ private fun LegendItem(label: String, share: Double, color: Color) {
     }
 }
 
-/** The forecast page's stat tile: muted label over a titleLarge value, one announcement for both. */
+/** The forecast page's stat tile: muted label over a titleLarge value, one announcement for both. Shared with the activity log. */
 @Composable
-private fun Stat(label: String, value: String, spoken: String, modifier: Modifier) {
+internal fun Stat(label: String, value: String, spoken: String, modifier: Modifier) {
     Card(
         modifier.fillMaxHeight().semantics(mergeDescendants = true) { contentDescription = "$label $spoken" },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),

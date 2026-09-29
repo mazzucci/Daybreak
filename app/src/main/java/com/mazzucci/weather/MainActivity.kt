@@ -29,6 +29,8 @@ import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.ui.WeatherApp
 import com.mazzucci.weather.domain.ClockFormat
 import android.text.format.DateFormat
+import com.mazzucci.weather.ui.ActivityLogViewModel
+import com.mazzucci.weather.data.HealthConnectExerciseSource
 import java.io.IOException
 import android.net.Uri
 import com.mazzucci.weather.data.OpenMeteoRideWeather
@@ -40,12 +42,22 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
     private val rideVm: RideViewModel by viewModels { rideViewModelFactory(applicationContext) }
+    private val logVm: ActivityLogViewModel by viewModels {
+        viewModelFactory {
+            initializer {
+                ActivityLogViewModel(
+                    HealthConnectExerciseSource(applicationContext),
+                    OpenMeteoRideWeather(UrlConnectionHttpClient(timeoutMs = 15_000)),
+                )
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         syncClockFormat(recreateOnChange = false) // about to compose anyway
-        setContent { WeatherTheme { WeatherApp(vm, rideVm) } }
+        setContent { WeatherTheme { WeatherApp(vm, rideVm, logVm) } }
     }
 
     override fun onResume() {
