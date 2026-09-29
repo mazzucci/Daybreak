@@ -318,11 +318,13 @@ class ScreenshotTest {
         )
     }
 
+    /** A clear window; a showery afternoon with two one-hour windows (amber bars, the marker under the pick); none at all. */
     @Test fun activityCards() = snap("activity_cards", tall = true) {
+        val showery = forecast.copy(hours = forecast.hours.mapIndexed { i, h -> if (i in 1..2) h.copy(precipChance = 50) else h })
         val wet = rainyNight.copy(hours = rainyNight.hours.map { it.copy(precipChance = 90, code = 63) })
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ActivityCard(ActivityScorer.plan(forecast, Activity.CYCLING), TempUnit.F, forecast.current.time.toLocalDate())
-            ActivityCard(ActivityScorer.plan(forecast, Activity.RUNNING), TempUnit.C, forecast.current.time.toLocalDate())
+            ActivityCard(ActivityScorer.plan(showery, Activity.RUNNING), TempUnit.C, showery.current.time.toLocalDate())
             ActivityCard(ActivityScorer.plan(wet, Activity.WALKING), TempUnit.C, wet.current.time.toLocalDate())
         }
     }

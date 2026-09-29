@@ -89,8 +89,9 @@ class ActivityScorerTest {
         )
         val plan = ActivityScorer.plan(polar, Activity.WALKING)
         assertNull(plan.best)
-        assertEquals(listOf(Limit.DARK), plan.blockers)
-        assertEquals("Darkness", describeBlockers(plan.blockers))
+        assertEquals(Limit.DARK, plan.blockers.first())
+        assertTrue(plan.hours.all { it.score < 40 }) // grey bars all night
+        assertEquals("Darkness", describeBlockers(plan.blockers.take(1)))
     }
 
     @Test fun `a big in-band temperature penalty is named`() {
@@ -131,9 +132,13 @@ class ActivityScorerTest {
 
     @Test fun `window text`() {
         val w = ActivityWindow(listOf(HourScore(hour(tempC = 17.0), 90, emptySet()), HourScore(hour(time = noon.plusHours(1), tempC = 21.0, wind = 20.0), 90, emptySet())))
-        assertEquals("12 PM–2 PM", formatWindow(w, java.util.Locale.US))
+        assertEquals("12 PM–2 PM", formatWindow(w, locale = java.util.Locale.US))
+        assertEquals("Now–2 PM", formatWindow(w, startsNow = true, locale = java.util.Locale.US))
+        assertEquals("From 12 PM", formatWindow(w.copy(openEnded = true), locale = java.util.Locale.US))
+        assertEquals("From now on", formatWindow(w.copy(openEnded = true), startsNow = true, locale = java.util.Locale.US))
         assertEquals("Dry · light wind · 63–70°", describeWindow(w, TempUnit.F))
         assertEquals("Dry · light wind · 17–21°", describeWindow(w, TempUnit.C))
+        assertEquals("Dry, light wind, 63 to 70°F (17 to 21°C)", describeWindowSpoken(w, TempUnit.F))
     }
 
     private fun <T> assertNotNullAndGet(value: T?): T {

@@ -104,7 +104,8 @@ object ActivityScorer {
             limits += Limit.WIND
             score -= LIMIT_STEP + (windOver ?: 0.0) * 2 + (gustOver ?: 0.0) * 1.5
         }
-        if (isDark(hour, forecast, isNow)) { limits += Limit.DARK; score -= 50 }
+        // Dark hours are never more than "poor", however nice the weather: grey bars through the night.
+        if (isDark(hour, forecast, isNow)) { limits += Limit.DARK; score = minOf(score - 50, DARK_MAX) }
         return HourScore(hour, score.roundToInt().coerceIn(0, 100), limits)
     }
 
@@ -131,12 +132,15 @@ object ActivityScorer {
 
     /**
      * The most common reasons, most frequent first. Darkness only counts when there's no daylight at all in the
-     * scored hours (polar night, or late evening with the data running out before sunrise).
+     * scored hours (polar night, or late evening with the data running out before sunrise); then it comes first,
+     * followed by whatever else those dark hours have (rain, cold…).
      */
     private fun blockersOf(scored: List<HourScore>): List<Limit> {
         val light = scored.filter { Limit.DARK !in it.limits }
-        if (light.isEmpty()) return if (scored.isEmpty()) emptyList() else listOf(Limit.DARK)
-        return light.flatMap { it.limits }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+        fun byCount(hours: List<HourScore>) =
+            hours.flatMap { it.limits - Limit.DARK }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+        if (light.isEmpty()) return if (scored.isEmpty()) emptyList() else listOf(Limit.DARK) + byCount(scored)
+        return byCount(light)
     }
 
     /** Runs of consecutive hours (in list order) scoring at least [GOOD]. */
@@ -156,6 +160,9 @@ object ActivityScorer {
 
     /** Extra cost for crossing a rain or wind limit at all, so an hour over the limit rarely still counts as good. */
     private const val LIMIT_STEP = 15.0
+
+    /** The best a dark hour can score: below the "fair" tier. */
+    private const val DARK_MAX = 30.0
 
     /** An in-band temperature penalty big enough to be worth naming as a reason. */
     private const val NOTABLE = 15.0

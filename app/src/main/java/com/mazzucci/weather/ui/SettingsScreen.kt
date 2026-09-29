@@ -143,21 +143,29 @@ fun SettingsScreen(
 
             SectionTitle("Outdoor plans")
             SettingsCard {
-                Text("Find the best time to…", style = MaterialTheme.typography.titleMedium)
+                Text("Activity", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "Scores the next 24 hours for rain, wind, temperature and daylight, and shows the best window on each page.",
+                    "Each place's page shows the best time in the next 24 hours for it, judged on rain, wind, temperature and daylight.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(12.dp))
+                // One choice out of four, presented exactly like the voice picker: a radio group with a check on the pick.
                 @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (Activity.entries + null).forEach { activity ->
+                        val selected = settings.activity == activity
                         FilterChip(
-                            selected = settings.activity == activity,
+                            selected = selected,
                             onClick = { onActivityChange(activity) },
+                            modifier = Modifier.semantics { role = Role.RadioButton },
                             label = { Text(activity?.label ?: "Off") },
+                            leadingIcon = if (selected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }

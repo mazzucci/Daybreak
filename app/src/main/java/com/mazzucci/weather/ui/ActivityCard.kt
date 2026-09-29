@@ -23,9 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
@@ -35,25 +38,43 @@ import com.mazzucci.weather.domain.ActivityPlan
 import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.describeBlockers
+import com.mazzucci.weather.domain.Limit
 import com.mazzucci.weather.domain.describeWindow
+import com.mazzucci.weather.domain.describeWindowSpoken
 import com.mazzucci.weather.domain.formatHour
 import com.mazzucci.weather.domain.formatWindow
 import java.time.LocalDate
 
 /**
  * "Best time to ride": the best window in the next day or so for the chosen activity, what it's like, and a bar per
- * hour showing how good each one is (the best window highlighted), or what's in the way when there's none.
+ * hour showing how good each one is, with the chosen window marked underneath. The card keeps the same three-line
+ * shape when there's no window ("Not in the next 24 hours", then what's in the way), so it's recognisable at a glance
+ * in either state.
  */
 @Composable
 fun ActivityCard(plan: ActivityPlan, unit: TempUnit, today: LocalDate, modifier: Modifier = Modifier) {
     val best = plan.best
     val verb = plan.activity.verb
-    val headline = best?.let {
-        val day = if (it.start.toLocalDate() == today) "" else "Tomorrow "
-        "$day${formatWindow(it)}"
+    val eyebrow = "Best time to $verb"
+    val headline = if (best != null) {
+        val startsNow = best.start == plan.hours.first().hour.time
+        val day = if (startsNow || best.start.toLocalDate() == today) "" else "Tomorrow "
+        "$day${formatWindow(best, startsNow)}"
+    } else {
+        val n = plan.hours.size
+        if (n == 1) "Not in the next hour" else "Not in the next $n hours"
     }
-    val detail = if (best != null) describeWindow(best, unit) else "${describeBlockers(plan.blockers)} for the next ${plan.hours.size} hours."
-    val spoken = if (best != null) "Best time to $verb: $headline. $detail." else "No good time to $verb soon. $detail"
+    // A fragment like the window's "Dry · light wind · 17–21°": "Because of rain", "Because it's dark, with rain".
+    val detail = when {
+        best != null -> describeWindow(best, unit)
+        plan.blockers.isEmpty() -> "Not great conditions"
+        plan.blockers.first() == Limit.DARK -> "Because it's dark" +
+            plan.blockers.drop(1).takeIf { it.isNotEmpty() }?.let { ", with ${describeBlockers(it).replaceFirstChar { c -> c.lowercase() }}" }.orEmpty()
+        else -> "Because of ${describeBlockers(plan.blockers).replaceFirstChar { it.lowercase() }}"
+    }
+    // One announcement for the whole card: pauses instead of separators, "to" for ranges, both temperature units.
+    val spokenDetail = if (best != null) describeWindowSpoken(best, unit) else detail
+    val spoken = "$eyebrow: ${headline.replaceFirstChar { it.lowercase() }.replace("–", " to ")}. $spokenDetail."
     Card(
         modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = spoken },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -67,13 +88,9 @@ fun ActivityCard(plan: ActivityPlan, unit: TempUnit, today: LocalDate, modifier:
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        if (best != null) "Best time to $verb" else "No good time to $verb soon",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (headline != null) Text(headline, style = MaterialTheme.typography.titleLarge)
-                    Text(detail, style = MaterialTheme.typography.bodyMedium)
+                    Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(headline, style = MaterialTheme.typography.titleLarge)
+                    Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -82,13 +99,16 @@ fun ActivityCard(plan: ActivityPlan, unit: TempUnit, today: LocalDate, modifier:
     }
 }
 
-/** One bar per hour, height and colour by score; the best window's bars are solid, the rest faded. */
+/**
+ * One bar per hour, height and colour by score (green good, amber fair, grey poor), so a second decent spell
+ * shows as well as the chosen one. The chosen window gets a line under its bars: an explicit marker rather than
+ * dimming everything else, which would make the other hours look worse than they are.
+ */
 @Composable
 private fun ScoreBars(plan: ActivityPlan, barArea: Dp = 32.dp) {
     val good = MaterialTheme.weatherColors.success
     val fair = MaterialTheme.weatherColors.sun
     val poor = MaterialTheme.colorScheme.outlineVariant
-    val bestHours = plan.best?.hours?.map { it.hour.time }?.toSet().orEmpty()
     Row(
         Modifier.fillMaxWidth().height(barArea),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -106,8 +126,22 @@ private fun ScoreBars(plan: ActivityPlan, barArea: Dp = 32.dp) {
                     .weight(1f)
                     .height(barArea * fraction)
                     .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                    .background(if (bestHours.isEmpty() || h.hour.time in bestHours) color else color.copy(alpha = 0.35f)),
+                    .background(color),
             )
+        }
+    }
+    val best = plan.best
+    if (best != null) {
+        // Windows are runs of consecutive hours, so the marker is one span. Weights ignore the 2dp gaps between
+        // bars, which puts its ends within a couple of dp of the bars' edges.
+        val first = plan.hours.indexOf(best.hours.first())
+        val count = best.hours.size
+        val after = plan.hours.size - first - count
+        Spacer(Modifier.height(3.dp))
+        Row(Modifier.fillMaxWidth()) {
+            if (first > 0) Spacer(Modifier.weight(first.toFloat()))
+            Box(Modifier.weight(count.toFloat()).height(3.dp).clip(CircleShape).background(good))
+            if (after > 0) Spacer(Modifier.weight(after.toFloat()))
         }
     }
     Spacer(Modifier.height(4.dp))
@@ -118,43 +152,49 @@ private fun ScoreBars(plan: ActivityPlan, barArea: Dp = 32.dp) {
                 if (i == 0) "Now" else formatHour(chunk.first().hour.time),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
                 modifier = Modifier.weight(chunk.size.toFloat()),
             )
         }
     }
 }
 
-/** A small line drawing: a bicycle for cycling, a pair of footprints for running and walking. */
+/** A small line drawing in the style of the weather icons: a bicycle for cycling, footprints for running and walking. */
 @Composable
 private fun ActivityGlyph(activity: Activity, color: Color, modifier: Modifier = Modifier) {
     Box(modifier.clip(CircleShape).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(22.dp)) {
-            val s = size.minDimension
-            val stroke = Stroke(width = s * 0.08f, cap = StrokeCap.Round)
-            if (activity == Activity.CYCLING) {
-                val r = s * 0.2f
-                val back = Offset(s * 0.22f, s * 0.68f)
-                val front = Offset(s * 0.78f, s * 0.68f)
-                val pedal = Offset(s * 0.48f, s * 0.68f)
-                val seat = Offset(s * 0.38f, s * 0.36f)
-                val bars = Offset(s * 0.68f, s * 0.3f)
-                drawCircle(color, r, back, style = stroke)
-                drawCircle(color, r, front, style = stroke)
-                drawLine(color, back, pedal, stroke.width, StrokeCap.Round)
-                drawLine(color, pedal, seat, stroke.width, StrokeCap.Round)
-                drawLine(color, seat, back, stroke.width, StrokeCap.Round)
-                drawLine(color, seat, Offset(s * 0.64f, s * 0.4f), stroke.width, StrokeCap.Round)
-                drawLine(color, pedal, Offset(s * 0.64f, s * 0.4f), stroke.width, StrokeCap.Round)
-                drawLine(color, Offset(s * 0.64f, s * 0.4f), front, stroke.width, StrokeCap.Round)
-                drawLine(color, Offset(s * 0.64f, s * 0.4f), bars, stroke.width, StrokeCap.Round)
-                drawLine(color, Offset(s * 0.3f, s * 0.3f), Offset(s * 0.46f, s * 0.3f), stroke.width, StrokeCap.Round)
-            } else {
-                // Two offset footprints: a sole oval and a heel dot each.
-                listOf(Offset(s * 0.34f, s * 0.58f), Offset(s * 0.66f, s * 0.36f)).forEach { c ->
-                    drawOval(color, Offset(c.x - s * 0.1f, c.y - s * 0.2f), androidx.compose.ui.geometry.Size(s * 0.2f, s * 0.28f))
-                    drawCircle(color, s * 0.07f, Offset(c.x, c.y + s * 0.18f))
-                }
-            }
+        Canvas(Modifier.size(24.dp)) {
+            if (activity == Activity.CYCLING) bicycle(color) else footprints(color)
+        }
+    }
+}
+
+/** Two wheels and a diamond frame, with a saddle on the left and an angled handlebar on the right. */
+private fun DrawScope.bicycle(color: Color) {
+    val s = size.minDimension
+    val width = s * 0.075f
+    fun p(x: Float, y: Float) = Offset(s * x, s * y)
+    fun line(a: Offset, b: Offset) = drawLine(color, a, b, width, StrokeCap.Round)
+    val back = p(0.23f, 0.71f)
+    val front = p(0.77f, 0.71f)
+    val crank = p(0.50f, 0.74f)
+    val seat = p(0.36f, 0.36f)
+    val head = p(0.66f, 0.36f)
+    drawCircle(color, s * 0.21f, back, style = Stroke(width))
+    drawCircle(color, s * 0.21f, front, style = Stroke(width))
+    line(back, seat); line(seat, crank); line(back, crank) // rear triangle
+    line(seat, head); line(head, crank); line(head, front) // top tube, down tube, fork
+    line(seat, p(0.34f, 0.26f)); line(p(0.26f, 0.26f), p(0.42f, 0.26f)) // seat post and saddle
+    line(head, p(0.70f, 0.26f)); line(p(0.64f, 0.29f), p(0.80f, 0.24f)) // stem and handlebar
+}
+
+/** Two footprints mid-stride, each a sole and a heel, toes turned slightly outward. */
+private fun DrawScope.footprints(color: Color) {
+    val s = size.minDimension
+    listOf(Offset(s * 0.32f, s * 0.62f) to -14f, Offset(s * 0.68f, s * 0.38f) to 14f).forEach { (c, angle) ->
+        rotate(angle, pivot = c) {
+            drawOval(color, Offset(c.x - s * 0.12f, c.y - s * 0.28f), Size(s * 0.24f, s * 0.32f))
+            drawCircle(color, s * 0.08f, Offset(c.x, c.y + s * 0.17f))
         }
     }
 }
