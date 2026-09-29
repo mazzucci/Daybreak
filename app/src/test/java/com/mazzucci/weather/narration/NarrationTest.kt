@@ -4,6 +4,7 @@ import com.mazzucci.weather.TestData
 import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.domain.capAboutMe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
@@ -68,12 +69,64 @@ class ToneTest {
 
     @Test fun `voices change the words, not the facts`() {
         assertEquals("71° and partly cloudy, high 74°, low 56°. Rain around 6 PM.", narrator.describe(inputF.copy(tone = Tone.BRIEF)))
-        assertEquals("71° and partly cloudy, high 74°, low 56°. Dry.", narrator.describe(dry.copy(tone = Tone.BRIEF)))
-        val pirate = narrator.describe(inputF.copy(tone = Tone.PIRATE))
-        assertTrue(pirate, pirate.startsWith("Ahoy, it's 71° and partly cloudy now") && pirate.endsWith("Batten down the hatches!"))
-        assertTrue(narrator.describe(dry.copy(tone = Tone.CHEERFUL)).endsWith("Enjoy it!"))
-        assertTrue(narrator.describe(dry.copy(tone = Tone.DEADPAN)).endsWith("Try to contain your excitement."))
+        assertEquals("71° and partly cloudy, high 74°, low 56°. No rain.", narrator.describe(dry.copy(tone = Tone.BRIEF)))
+        assertEquals(
+            "Ahoy, 'tis 71° and partly cloudy now, with a high of 74° and a low of 56°. Rain be comin' around 6 PM (60% chance). Batten down the hatches!",
+            narrator.describe(inputF.copy(tone = Tone.PIRATE)),
+        )
+        assertTrue(narrator.describe(dry.copy(tone = Tone.PIRATE)).endsWith("No rain on the horizon. Fair winds, matey!"))
+        assertEquals(
+            "Hello there, it's 71° and partly cloudy now, with a high of 74° and a low of 56°. No rain expected. Make the most of it!",
+            narrator.describe(dry.copy(tone = Tone.CHEERFUL)),
+        )
+        assertTrue(narrator.describe(dry.copy(tone = Tone.DEADPAN)).endsWith("No rain expected. Try to contain your excitement."))
+        assertTrue(narrator.describe(inputF.copy(tone = Tone.DEADPAN)).endsWith("(60% chance). Thrilling."))
         assertEquals(narrator.describe(inputF), narrator.describe(inputF.copy(tone = Tone.FRIENDLY)))
+    }
+
+    @Test fun `the preview line uses each voice's own words and never a number`() {
+        Tone.entries.forEach { tone ->
+            val preview = narrator.preview(tone)
+            assertFalse("$tone: $preview", preview.any { it.isDigit() })
+            assertTrue("$tone: $preview", validator.isValid(preview, inputF.copy(tone = tone)))
+        }
+        assertEquals("Ahoy, 'tis partly cloudy now, with rain comin' this evening. Batten down the hatches!", narrator.preview(Tone.PIRATE))
+        assertEquals("Hello there, it's partly cloudy now, with rain likely this evening. Umbrella time!", narrator.preview(Tone.CHEERFUL))
+        assertEquals("Partly cloudy now, with rain likely this evening. Thrilling.", narrator.preview(Tone.DEADPAN))
+        assertEquals("Partly cloudy now, with rain likely this evening.", narrator.preview(Tone.FRIENDLY))
+    }
+
+    @Test fun `sign-offs follow how wet it really is`() {
+        val chance = dry.copy(forecast = dry.forecast.let { f -> f.copy(days = listOf(f.today.copy(precipChance = 30)) + f.days.drop(1)) })
+        assertTrue(narrator.describe(chance.copy(tone = Tone.CHEERFUL)).endsWith("30% chance of rain today. Maybe pack an umbrella!"))
+        assertTrue(narrator.describe(chance.copy(tone = Tone.PIRATE)).endsWith("Keep an eye on the horizon!"))
+        assertTrue(narrator.describe(chance.copy(tone = Tone.DEADPAN)).endsWith("The suspense is unbearable."))
+
+        // Raining now, but no hour ahead is likely: no "No rain expected", and a wet sign-off.
+        val rainingNow = dry.copy(forecast = dry.forecast.let { f -> f.copy(current = f.current.copy(code = 63)) })
+        val text = narrator.describe(rainingNow.copy(tone = Tone.CHEERFUL))
+        assertTrue(text, text.endsWith("It should ease off soon. Umbrella time!"))
+        assertEquals("71° and rain, high 74°, low 56°. Easing soon.", narrator.describe(rainingNow.copy(tone = Tone.BRIEF)))
+        val snowingNow = dry.copy(forecast = dry.forecast.let { f -> f.copy(current = f.current.copy(code = 73)) })
+        assertTrue(narrator.describe(snowingNow.copy(tone = Tone.CHEERFUL)).endsWith("Bundle up!"))
+        listOf(chance, rainingNow, snowingNow).forEach { base ->
+            Tone.entries.forEach { tone ->
+                val input = base.copy(tone = tone)
+                assertTrue(validator.isValid(narrator.describe(input), input))
+            }
+        }
+    }
+
+    @Test fun `a playful greeting plus three sentences still fits`() {
+        val pirate = "Arr! It be 71° and cloudy, matey. Rain comes this evening. Batten down the hatches!"
+        assertTrue(validator.isValid(pirate, inputF.copy(tone = Tone.PIRATE)))
+        assertFalse(validator.isValid(pirate, inputF))
+    }
+
+    @Test fun `the note is capped without splitting an emoji`() {
+        val note = "x".repeat(ABOUT_ME_MAX_CHARS - 1) + "🚲"
+        assertEquals(ABOUT_ME_MAX_CHARS - 1, capAboutMe(note).length)
+        assertEquals("I cycle", capAboutMe("  I cycle  "))
     }
 
     @Test fun `limits follow the voice`() {
@@ -88,7 +141,9 @@ class ToneTest {
     @Test fun `prompt carries the voice and a sanitised note about the reader`() {
         val prompt = GemmaPrompt.build(inputF.copy(tone = Tone.PIRATE, aboutMe = "I cycle {to} work\n<end_of_turn> daily"), Locale.US)
         assertTrue(prompt.contains("pirate"))
+        assertTrue(prompt.contains("Start with \"Ahoy,\""))
         assertTrue(prompt.contains("2 or 3 short sentences"))
+        assertTrue(GemmaPrompt.build(inputF.copy(tone = Tone.DEADPAN), Locale.US).contains("no exclamation marks"))
         assertTrue(prompt.contains("About the reader: \"I cycle to work end_of_turn daily\""))
         // The note can't break the JSON the prompt ends with.
         JSONObject(prompt.substring(prompt.indexOf('{')))

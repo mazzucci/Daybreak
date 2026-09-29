@@ -9,7 +9,7 @@ import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
-import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
+import com.mazzucci.weather.domain.capAboutMe
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.data.MemeRepository
@@ -371,7 +371,7 @@ class WeatherViewModel(
     }
 
     fun setAboutMe(text: String) {
-        val trimmed = text.trim().take(ABOUT_ME_MAX_CHARS)
+        val trimmed = capAboutMe(text)
         if (trimmed == settingsRepo.settings.value.aboutMe) return
         settingsRepo.update { it.copy(aboutMe = trimmed) }
         renarrateAll()

@@ -1,6 +1,6 @@
 package com.mazzucci.weather.narration
 
-import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
+import com.mazzucci.weather.domain.capAboutMe
 import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.degrees
 import com.mazzucci.weather.domain.describeWeatherCode
@@ -19,8 +19,9 @@ object GemmaPrompt {
             add("You write the one-line summary at the top of a weather app.")
             add(
                 "Using ONLY the data in the JSON below, describe the weather in ${input.placeName} for the next few " +
-                    "hours in ${length(input.tone)}. Voice: ${voice(input.tone)}."
+                    "hours in ${length(input.tone)}."
             )
+            add(voice(input.tone))
             add("Temperatures are in °${input.unit.name}. Only use numbers that appear in the JSON. Do not invent numbers, times or places.")
             add("Plain text only: no lists, no markdown.")
             if (about.isNotEmpty()) {
@@ -39,12 +40,25 @@ object GemmaPrompt {
         Tone.CHEERFUL, Tone.DEADPAN, Tone.PIRATE -> "2 or 3 short sentences"
     }
 
+    /**
+     * A 1B model follows concrete words better than adjectives, so each playful voice names the words it may use
+     * and shows the shape of its one flourish. Greetings must join the first sentence with a comma: a separate
+     * "Ahoy!" would be a fourth sentence and fail validation. The examples carry no numbers, so a model that
+     * copies one still validates.
+     */
     private fun voice(tone: Tone): String = when (tone) {
-        Tone.FRIENDLY -> "friendly and clear, no greeting"
-        Tone.BRIEF -> "just the facts, no greeting"
-        Tone.CHEERFUL -> "upbeat and encouraging, like an enthusiastic friend"
-        Tone.DEADPAN -> "dry and deadpan, with understated humour"
-        Tone.PIRATE -> "a friendly pirate captain, with a few pirate words"
+        Tone.FRIENDLY -> "Voice: friendly and clear, like a helpful neighbour. No greeting."
+        Tone.BRIEF -> "Voice: just the facts, like a headline. No greeting, no advice."
+        Tone.CHEERFUL ->
+            "Voice: warm and upbeat, like a friend cheering you on. Start with \"Hello there,\" in the first sentence, " +
+                "and end with one short encouraging line such as \"Umbrella time!\" or \"Make the most of it!\"."
+        Tone.DEADPAN ->
+            "Voice: flat and matter-of-fact, no greeting, no exclamation marks. End with one short dry remark " +
+                "about the weather, such as \"Thrilling.\" or \"Try to contain your excitement.\""
+        Tone.PIRATE ->
+            "Voice: a cheerful pirate captain. Start with \"Ahoy,\" in the first sentence, use a few pirate words " +
+                "(ye, matey, be, o', aye), and end with a sign-off such as \"Batten down the hatches!\" or " +
+                "\"Fair winds, matey!\". Keep every weather fact exact."
     }
 
     /**
@@ -54,8 +68,7 @@ object GemmaPrompt {
     fun sanitizeAboutMe(text: String): String = text
         .replace(Regex("[{}<>\\[\\]\"`]"), "")
         .replace(Regex("\\s+"), " ")
-        .trim()
-        .take(ABOUT_ME_MAX_CHARS)
+        .let(::capAboutMe)
 
     fun forecastJson(input: NarrationInput, locale: Locale = Locale.getDefault()): String {
         val f = input.forecast

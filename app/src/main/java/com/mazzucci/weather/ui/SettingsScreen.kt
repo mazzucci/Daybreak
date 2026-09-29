@@ -65,11 +65,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import com.mazzucci.weather.narration.TemplateNarrator
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelSource
@@ -206,42 +216,110 @@ private fun SummaryStyleCard(
         Text("Voice", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(2.dp))
         Text(
-            if (gemmaOn) "Gemma writes the summary in this voice." else "Adds a touch of character to the summary; with Gemma on, it writes the whole line in this voice.",
+            if (gemmaOn) {
+                "Gemma writes the whole summary in this voice."
+            } else {
+                "Adds a greeting or sign-off to the summary. With Gemma on, the whole line is written in this voice."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // One choice out of five: a radio group to TalkBack, not five independent checkboxes.
+        FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Tone.entries.forEach { tone ->
+                val selected = settings.tone == tone
                 FilterChip(
-                    selected = settings.tone == tone,
+                    selected = selected,
                     onClick = { onToneChange(tone) },
+                    modifier = Modifier.semantics { role = Role.RadioButton },
                     label = { Text(tone.label) },
+                    // The check makes the choice readable without relying on the fill colour alone.
+                    leadingIcon = if (selected) {
+                        { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
+                    } else {
+                        null
+                    },
                 )
             }
         }
+        Spacer(Modifier.height(12.dp))
+        VoicePreview(settings.tone)
         Spacer(Modifier.height(16.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(16.dp))
         var draft by rememberSaveable(settings.aboutMe) { mutableStateOf(settings.aboutMe) }
+        val focusManager = LocalFocusManager.current
+        val save = {
+            onAboutMeChange(draft)
+            focusManager.clearFocus() // also hides the keyboard, so saving visibly finishes the edit
+        }
+        // Leaving Settings with an unsaved note keeps it rather than silently dropping it.
+        val latestDraft by rememberUpdatedState(draft)
+        val latestSaved by rememberUpdatedState(settings.aboutMe)
+        val latestOnChange by rememberUpdatedState(onAboutMeChange)
+        DisposableEffect(Unit) {
+            onDispose { if (latestDraft.trim() != latestSaved) latestOnChange(latestDraft) }
+        }
         OutlinedTextField(
             value = draft,
-            onValueChange = { draft = it.take(ABOUT_ME_MAX_CHARS) },
+            onValueChange = { draft = it.take(ABOUT_ME_MAX_CHARS + 1).let(::capAboutMeDraft) },
             label = { Text("About me (optional)") },
             placeholder = { Text("e.g. I cycle to work and hate the cold") },
             supportingText = {
-                Text("Stays on this phone. Gemma uses it to pick what to mention. ${draft.length}/$ABOUT_ME_MAX_CHARS")
+                Row {
+                    Text(
+                        if (gemmaOn) "Stays on this phone. Gemma uses it to pick what to mention." else "Stays on this phone. Gemma will use it to pick what to mention.",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "${draft.length}/$ABOUT_ME_MAX_CHARS",
+                        modifier = Modifier.semantics { contentDescription = "${draft.length} of $ABOUT_ME_MAX_CHARS characters" },
+                    )
+                }
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onAboutMeChange(draft) }),
+            keyboardActions = KeyboardActions(onDone = { save() }),
             modifier = Modifier.fillMaxWidth(),
             maxLines = 3,
         )
         if (draft.trim() != settings.aboutMe) {
             Spacer(Modifier.height(8.dp))
-            Button(onClick = { onAboutMeChange(draft) }, modifier = Modifier.align(Alignment.End)) { Text("Save") }
+            Button(onClick = save, modifier = Modifier.align(Alignment.End)) { Text("Save") }
         }
     }
+}
+
+/**
+ * What the chosen voice sounds like, before leaving Settings to find out. A fixed sample with no numbers, so it
+ * can't be mistaken for today's forecast; it is announced when the selection changes.
+ */
+@Composable
+private fun VoicePreview(tone: Tone) {
+    val narrator = remember { TemplateNarrator() }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Text(
+            "Example",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(narrator.preview(tone), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** Caps the draft like the saved note, but keeps leading and trailing spaces so typing isn't disrupted. */
+private fun capAboutMeDraft(text: String): String {
+    val capped = text.take(ABOUT_ME_MAX_CHARS)
+    return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
 }
 
 @Composable

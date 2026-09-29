@@ -46,7 +46,10 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
         WeatherViewModel(
             api = OpenMeteoApi(UrlConnectionHttpClient()),
             places = SavedPlacesRepository(store),
-            settingsRepo = SettingsRepository(store, AppSettings(primaryUnit = defaultUnit())),
+            settingsRepo = SettingsRepository(
+                store, AppSettings(primaryUnit = defaultUnit()),
+                privateStore = SharedPrefsStore(context, PRIVATE_PREFS),
+            ),
             location = DeviceLocationProvider(context),
             model = modelStore,
             llm = ValidatingNarrator(gemma),
@@ -55,6 +58,9 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
         )
     }
 }
+
+/** Preferences that must never leave the phone; excluded in res/xml/backup_rules.xml and data_extraction_rules.xml. */
+private const val PRIVATE_PREFS = "private"
 
 /** °F first in the few countries that use it, °C everywhere else. */
 private fun defaultUnit(): TempUnit =

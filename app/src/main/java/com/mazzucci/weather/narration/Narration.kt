@@ -20,7 +20,7 @@ enum class NarrationSource { TEMPLATE, GEMMA }
 
 data class Narration(val text: String, val source: NarrationSource)
 
-/** Turns a forecast into a short, human-readable description (1–2 sentences). */
+/** Turns a forecast into a short, human-readable description (1–2 sentences; up to 4 for the playful voices). */
 fun interface WeatherNarrator {
     /** May throw (model missing, timeout, …); callers that need a guaranteed answer use [ValidatingNarrator]. */
     suspend fun narrate(input: NarrationInput): String

@@ -161,6 +161,12 @@ enum class Tone(val label: String) {
 /** Longest "About me" note; it goes into Gemma's prompt, which has a small token budget. */
 const val ABOUT_ME_MAX_CHARS = 160
 
+/** The note trimmed and capped at [ABOUT_ME_MAX_CHARS] without splitting an emoji (a surrogate pair) in two. */
+fun capAboutMe(text: String): String {
+    val capped = text.trim().take(ABOUT_ME_MAX_CHARS)
+    return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
+}
+
 data class AppSettings(
     /** The unit shown large; the other one is shown small next to it. */
     val primaryUnit: TempUnit = TempUnit.F,

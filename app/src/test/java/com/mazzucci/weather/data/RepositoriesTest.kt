@@ -115,6 +115,15 @@ class SettingsRepositoryTest {
         assertNull(repo.get("geo:3", date, "SF", MemeMood.RAIN))
     }
 
+    @Test fun `the note is kept in the private store only`() {
+        val store = InMemoryStore()
+        val private = InMemoryStore()
+        SettingsRepository(store, privateStore = private).update { it.copy(aboutMe = "I cycle") }
+        assertNull(store.getString("about_me"))
+        assertEquals("I cycle", private.getString("about_me"))
+        assertEquals("I cycle", SettingsRepository(store, privateStore = private).settings.value.aboutMe)
+    }
+
     @Test fun `voice and note are saved, and an unknown voice falls back`() {
         val store = InMemoryStore()
         SettingsRepository(store).update { it.copy(tone = Tone.PIRATE, aboutMe = "I cycle") }

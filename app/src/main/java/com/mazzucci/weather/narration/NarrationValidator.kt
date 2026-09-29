@@ -12,11 +12,11 @@ import kotlin.math.roundToInt
  */
 class NarrationValidator(private val maxChars: Int = 280) {
 
-    /** Playful voices get a little more room: a greeting or sign-off is part of the character. */
+    /** Playful voices get a little more room: a greeting ("Arr!") and a sign-off are part of the character. */
     private fun limits(tone: Tone): Pair<Int, Int> = when (tone) {
         Tone.FRIENDLY -> maxChars to 2
         Tone.BRIEF -> minOf(maxChars, 160) to 2
-        Tone.CHEERFUL, Tone.DEADPAN, Tone.PIRATE -> maxChars + 60 to 3
+        Tone.CHEERFUL, Tone.DEADPAN, Tone.PIRATE -> maxChars + 80 to 4
     }
 
     /** Strips wrapping quotes, markdown emphasis and extra whitespace the model tends to add. */

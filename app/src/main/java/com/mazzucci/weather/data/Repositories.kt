@@ -77,7 +77,15 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
     }
 }
 
-class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings = AppSettings()) {
+/**
+ * App settings. The "About me" note lives in [privateStore], a separate file that's excluded from Android backup
+ * and device transfer (see res/xml/backup_rules.xml), so it really stays on this phone.
+ */
+class SettingsRepository(
+    private val store: KeyValueStore,
+    defaults: AppSettings = AppSettings(),
+    private val privateStore: KeyValueStore = store,
+) {
     private val _settings = MutableStateFlow(load(defaults))
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
@@ -89,7 +97,7 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
         store.putString(KEY_GEMMA, s.gemmaEnabled.toString())
         store.putString(KEY_MEMES, s.memesEnabled.toString())
         store.putString(KEY_TONE, s.tone.name)
-        store.putString(KEY_ABOUT_ME, s.aboutMe)
+        privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -99,7 +107,7 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
         gemmaEnabled = store.getString(KEY_GEMMA)?.toBooleanStrictOrNull() ?: defaults.gemmaEnabled,
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
         tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
-        aboutMe = store.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
+        aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
     )
 
     private companion object {
