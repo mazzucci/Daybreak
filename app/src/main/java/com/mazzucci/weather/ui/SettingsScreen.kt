@@ -5,6 +5,7 @@ package com.mazzucci.weather.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,24 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import com.mazzucci.weather.narration.TemplateNarrator
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.Arrangement
+import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelSource
@@ -77,6 +96,8 @@ fun SettingsScreen(
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
+    onToneChange: (Tone) -> Unit,
+    onAboutMeChange: (String) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -114,6 +135,9 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            SectionTitle("Summary style")
+            SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
 
             SectionTitle("Fun")
             SettingsCard {
@@ -179,6 +203,125 @@ fun SettingsScreen(
     }
 }
 
+/** Voice chips and the optional "About me" note, which is saved explicitly so each keystroke doesn't re-narrate. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SummaryStyleCard(
+    settings: AppSettings,
+    gemmaOn: Boolean,
+    onToneChange: (Tone) -> Unit,
+    onAboutMeChange: (String) -> Unit,
+) {
+    SettingsCard {
+        Text("Voice", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            if (gemmaOn) {
+                "Gemma writes the whole summary in this voice."
+            } else {
+                "Adds a greeting or sign-off to the summary. With Gemma on, the whole line is written in this voice."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        // One choice out of five: a radio group to TalkBack, not five independent checkboxes.
+        FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Tone.entries.forEach { tone ->
+                val selected = settings.tone == tone
+                FilterChip(
+                    selected = selected,
+                    onClick = { onToneChange(tone) },
+                    modifier = Modifier.semantics { role = Role.RadioButton },
+                    label = { Text(tone.label) },
+                    // The check makes the choice readable without relying on the fill colour alone.
+                    leadingIcon = if (selected) {
+                        { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        VoicePreview(settings.tone)
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(Modifier.height(16.dp))
+        var draft by rememberSaveable(settings.aboutMe) { mutableStateOf(settings.aboutMe) }
+        val focusManager = LocalFocusManager.current
+        val save = {
+            onAboutMeChange(draft)
+            focusManager.clearFocus() // also hides the keyboard, so saving visibly finishes the edit
+        }
+        // Leaving Settings with an unsaved note keeps it rather than silently dropping it.
+        val latestDraft by rememberUpdatedState(draft)
+        val latestSaved by rememberUpdatedState(settings.aboutMe)
+        val latestOnChange by rememberUpdatedState(onAboutMeChange)
+        DisposableEffect(Unit) {
+            onDispose { if (latestDraft.trim() != latestSaved) latestOnChange(latestDraft) }
+        }
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it.take(ABOUT_ME_MAX_CHARS + 1).let(::capAboutMeDraft) },
+            label = { Text("About me (optional)") },
+            placeholder = { Text("e.g. I cycle to work and hate the cold") },
+            supportingText = {
+                Row {
+                    Text(
+                        if (gemmaOn) "Stays on this phone. Gemma uses it to pick what to mention." else "Stays on this phone. Gemma will use it to pick what to mention.",
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "${draft.length}/$ABOUT_ME_MAX_CHARS",
+                        modifier = Modifier.semantics { contentDescription = "${draft.length} of $ABOUT_ME_MAX_CHARS characters" },
+                    )
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { save() }),
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 3,
+        )
+        if (draft.trim() != settings.aboutMe) {
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = save, modifier = Modifier.align(Alignment.End)) { Text("Save") }
+        }
+    }
+}
+
+/**
+ * What the chosen voice sounds like, before leaving Settings to find out. A fixed sample with no numbers, so it
+ * can't be mistaken for today's forecast; it is announced when the selection changes.
+ */
+@Composable
+private fun VoicePreview(tone: Tone) {
+    val narrator = remember { TemplateNarrator() }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Text(
+            "Example",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(narrator.preview(tone), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** Caps the draft like the saved note, but keeps leading and trailing spaces so typing isn't disrupted. */
+private fun capAboutMeDraft(text: String): String {
+    val capped = text.take(ABOUT_ME_MAX_CHARS)
+    return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
+}
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -190,12 +333,12 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(Modifier.padding(16.dp)) { content() }
+        Column(Modifier.padding(16.dp), content = content)
     }
 }
 

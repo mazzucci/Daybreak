@@ -146,6 +146,27 @@ data class HourForecast(
 
 enum class TempUnit { F, C }
 
+/**
+ * The summary's voice. The standard summary gets a light touch (a greeting or a sign-off without numbers);
+ * Gemma writes the whole line in this voice.
+ */
+enum class Tone(val label: String) {
+    FRIENDLY("Friendly"),
+    BRIEF("Brief"),
+    CHEERFUL("Cheerful"),
+    DEADPAN("Deadpan"),
+    PIRATE("Pirate"),
+}
+
+/** Longest "About me" note; it goes into Gemma's prompt, which has a small token budget. */
+const val ABOUT_ME_MAX_CHARS = 160
+
+/** The note trimmed and capped at [ABOUT_ME_MAX_CHARS] without splitting an emoji (a surrogate pair) in two. */
+fun capAboutMe(text: String): String {
+    val capped = text.trim().take(ABOUT_ME_MAX_CHARS)
+    return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
+}
+
 data class AppSettings(
     /** The unit shown large; the other one is shown small next to it. */
     val primaryUnit: TempUnit = TempUnit.F,
@@ -153,6 +174,10 @@ data class AppSettings(
     val useCurrentLocation: Boolean = true,
     /** Whether to try the on-device Gemma model for the summary line (needs an imported model). */
     val gemmaEnabled: Boolean = true,
+    /** Voice of the summary line. */
+    val tone: Tone = Tone.FRIENDLY,
+    /** Optional note about the user ("I cycle to work"), used by Gemma to pick what to mention. Stays on the phone. */
+    val aboutMe: String = "",
     /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */
     val memesEnabled: Boolean = true,
 )

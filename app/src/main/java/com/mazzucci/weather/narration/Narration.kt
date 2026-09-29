@@ -2,19 +2,25 @@ package com.mazzucci.weather.narration
 
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.domain.Tone
 
-/** What a narrator describes: one place's forecast, in the unit the user reads first. */
+/**
+ * What a narrator describes: one place's forecast, in the unit the user reads first, in the chosen [tone].
+ * [aboutMe] is the user's optional note about themselves, for Gemma to decide what matters.
+ */
 data class NarrationInput(
     val placeName: String,
     val forecast: Forecast,
     val unit: TempUnit,
+    val tone: Tone = Tone.FRIENDLY,
+    val aboutMe: String = "",
 )
 
 enum class NarrationSource { TEMPLATE, GEMMA }
 
 data class Narration(val text: String, val source: NarrationSource)
 
-/** Turns a forecast into a short, human-readable description (1–2 sentences). */
+/** Turns a forecast into a short, human-readable description (1–2 sentences; up to 4 for the playful voices). */
 fun interface WeatherNarrator {
     /** May throw (model missing, timeout, …); callers that need a guaranteed answer use [ValidatingNarrator]. */
     suspend fun narrate(input: NarrationInput): String

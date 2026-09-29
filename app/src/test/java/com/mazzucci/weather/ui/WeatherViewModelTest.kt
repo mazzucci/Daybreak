@@ -10,6 +10,9 @@ import com.mazzucci.weather.data.SavedPlacesRepository
 import com.mazzucci.weather.data.SettingsRepository
 import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.narration.NarrationInput
+import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
+import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
@@ -87,7 +90,11 @@ class WeatherViewModelTest {
     private val places = SavedPlacesRepository(store)
     private var gemmaReply = "71° and cloudy, with rain by 6 PM."
     private val gemmaPlaces = mutableListOf<String>()
-    private val llm = ValidatingNarrator({ input -> gemmaPlaces += input.placeName; gemmaReply }, TemplateNarrator(Locale.US))
+    private var lastGemmaInput: NarrationInput? = null
+    private val llm = ValidatingNarrator(
+        { input -> gemmaPlaces += input.placeName; lastGemmaInput = input; gemmaReply },
+        TemplateNarrator(Locale.US),
+    )
 
     private var memeReply = "TOP: Fog rolls in\nBOTTOM: Bridge has left"
     private var memeCalls = 0
@@ -330,6 +337,33 @@ class WeatherViewModelTest {
         model.status.value = ModelStatus.Installed(500L shl 20) // DownloadManager reports completion later
         advanceUntilIdle()
         assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
+    }
+
+    @Test fun `changing the voice rewrites summaries without refetching`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        val fetches = api.forecastCalls
+        vm.setTone(Tone.PIRATE)
+        advanceUntilIdle()
+        val summary = (vm.content(sanFrancisco.id) as PageContent.Loaded).summary.text
+        assertTrue(summary, summary.startsWith("Ahoy"))
+        assertEquals(fetches, api.forecastCalls)
+    }
+
+    @Test fun `the note about me reaches Gemma, trimmed and capped`() = runTest(dispatcher) {
+        places.add(sanFrancisco)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        val calls = gemmaPlaces.size
+        vm.setAboutMe("  I cycle to work  ")
+        advanceUntilIdle()
+        assertEquals("I cycle to work", lastGemmaInput?.aboutMe)
+        assertEquals(calls + 1, gemmaPlaces.size)
+        vm.setAboutMe("I cycle to work") // unchanged: nothing to redo
+        advanceUntilIdle()
+        assertEquals(calls + 1, gemmaPlaces.size)
+        vm.setAboutMe("x".repeat(400))
+        advanceUntilIdle()
+        assertEquals(ABOUT_ME_MAX_CHARS, vm.uiState.value.settings.aboutMe.length)
     }
 
     @Test fun `each page gets a template meme without the model`() = runTest(dispatcher) {
