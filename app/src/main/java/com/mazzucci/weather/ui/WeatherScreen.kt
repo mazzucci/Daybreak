@@ -58,6 +58,14 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.foundation.clickable
+import com.mazzucci.weather.domain.explain
+import com.mazzucci.weather.domain.Term
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -217,11 +225,19 @@ fun WeatherPage(
     val dark = MaterialTheme.isDark
     val content = page.content
     val loaded = content as? PageContent.Loaded
+    // Which term's explanation is open; kept across rotation, cleared when the page has no forecast.
+    var explaining by rememberSaveable { mutableStateOf<Term?>(null) }
+    val explainTerm = explaining
+    if (explainTerm != null && loaded != null) {
+        ExplainSheet(explain(explainTerm, loaded.forecast, unit)) { explaining = null }
+    }
     val night = loaded?.forecast?.isNightNow ?: false
     val gradient = loaded?.let { heroGradient(skyOf(it.forecast.current.code), night, dark) } ?: neutralGradient(dark)
 
     val refreshing = page.refreshing && loaded != null
     val refreshState = rememberPullToRefreshState()
+    // Tiles and pills anywhere on the page open their explanation through this.
+    CompositionLocalProvider(LocalExplain provides { t: Term -> explaining = t }) {
     PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = onRefresh,
@@ -272,6 +288,7 @@ fun WeatherPage(
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         }
+    }
     }
 }
 
@@ -352,15 +369,17 @@ private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit,
     ) {
         HeroPill("High", formatDegrees(forecast.today.highC, unit), formatBothUnits(forecast.today.highC, unit))
         HeroPill("Low", formatDegrees(forecast.today.lowC, unit), formatBothUnits(forecast.today.lowC, unit))
-        HeroPill("Rain", "${forecast.today.precipChance}%")
+        HeroPill("Rain", "${forecast.today.precipChance}%", term = Term.RAIN_CHANCE)
     }
 }
 
 @Composable
-private fun HeroPill(label: String, value: String, spoken: String = value) {
+private fun HeroPill(label: String, value: String, spoken: String = value, term: Term? = null) {
+    val explain = LocalExplain.current
     Row(
         Modifier
             .clip(CircleShape)
+            .then(if (term != null && explain != null) Modifier.clickable(onClickLabel = "Explain") { explain(term) } else Modifier)
             .background(Color.Black.copy(alpha = 0.18f))
             .padding(horizontal = 14.dp, vertical = 8.dp)
             .semantics(mergeDescendants = true) { contentDescription = "$label $spoken" },
@@ -411,14 +430,16 @@ private fun BodyForecast(
         StatTile(
             "Feels like", formatDegrees(cur.feelsLikeC, unit), Modifier.weight(1f),
             detail = formatTemp(cur.feelsLikeC, unit.other()),
+            term = Term.FEELS_LIKE,
         )
-        StatTile("Humidity", "${cur.humidity}%", Modifier.weight(1f))
+        StatTile("Humidity", "${cur.humidity}%", Modifier.weight(1f), term = Term.HUMIDITY)
         val gust = forecast.nextHours.firstOrNull()?.gustKmh
         StatTile(
             "Wind",
             formatWind(cur.windKmh, unit),
             Modifier.weight(1f),
             detail = gust?.takeIf { it > cur.windKmh }?.let { "Gusts ${formatWind(it, unit)}" },
+            term = Term.WIND,
         )
     }
     if (commute != null) {
@@ -492,17 +513,18 @@ private fun SunAndUv(today: DaySummary, unit: TempUnit) {
             Daylight.NORMAL -> {
                 val sunrise = today.sunrise!!
                 val sunset = today.sunset!!
-                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true)
+                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true, term = Term.SUN)
                 StatTile(
                     "Sunset", formatClock(sunset), Modifier.weight(1f), compact = true,
                     detail = "next day".takeIf { sunset.toLocalDate() != today.date },
+                    term = Term.SUN,
                 )
             }
-            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night")
-            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun")
+            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night", term = Term.DAYLIGHT)
+            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun", term = Term.DAYLIGHT)
             Daylight.UNKNOWN -> Unit
         }
-        if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv))
+        if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv), term = Term.UV)
     }
 }
 
@@ -688,13 +710,26 @@ private fun StatTile(
     modifier: Modifier = Modifier,
     detail: String? = null,
     compact: Boolean = false,
+    term: Term? = null,
 ) {
-    Card(
-        modifier.fillMaxHeight().semantics(mergeDescendants = true) {
-            contentDescription = listOfNotNull(label, value, detail).joinToString(" ")
-        },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
+    val explain = LocalExplain.current
+    val onClick = if (term != null && explain != null) ({ explain(term) }) else null
+    val tileModifier = modifier.fillMaxHeight().semantics(mergeDescendants = true) {
+        contentDescription = listOfNotNull(label, value, detail).joinToString(" ")
+    }
+    val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    if (onClick != null) {
+        Card(onClick = onClick, modifier = tileModifier.semantics { onClick(label = "Explain", action = null) }, colors = colors) {
+            StatTileContent(label, value, detail, compact)
+        }
+    } else {
+        Card(tileModifier, colors = colors) { StatTileContent(label, value, detail, compact) }
+    }
+}
+
+@Composable
+private fun StatTileContent(label: String, value: String, detail: String?, compact: Boolean) {
+    run {
         Column(Modifier.padding(vertical = 14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(6.dp))

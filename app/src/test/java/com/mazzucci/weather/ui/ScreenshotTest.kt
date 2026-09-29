@@ -30,6 +30,8 @@ import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.domain.Term
+import com.mazzucci.weather.domain.explain
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.CommuteAdvice
 import com.mazzucci.weather.domain.HourForecast
@@ -418,6 +420,14 @@ class ScreenshotTest {
     @Test fun comingUpCardLargeFont() = snap("coming_up_large_font", narrow = true, fontScale = 1.5f) {
         Column(Modifier.padding(vertical = 16.dp)) {
             ComingUpCard(sanFranciscoComingUp, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))
+        }
+    }
+
+    @Test fun explainSheets() = snap("explain_sheets", tall = true) {
+        Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            ExplainContent(explain(Term.FEELS_LIKE, forecast, TempUnit.F))
+            ExplainContent(explain(Term.UV, forecast, TempUnit.F))
+            ExplainContent(explain(Term.SUN, forecast, TempUnit.F))
         }
     }
 
