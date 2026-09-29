@@ -32,6 +32,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,6 +47,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -58,6 +64,18 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import java.util.Locale
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.foundation.clickable
+import com.mazzucci.weather.domain.explain
+import com.mazzucci.weather.domain.Term
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -111,6 +129,8 @@ private val TopBarHeight = 56.dp
 private const val MAX_DOTS = 6
 private val PageMargin = 20.dp
 private val HeroCorner = 28.dp
+/** Inline-content id of the "tap to explain" glyph in a tile's label. */
+private const val INFO_GLYPH = "info"
 
 /** Stateless main screen: one swipeable page per place. Kept free of ViewModel so screenshot tests can render it. */
 @Composable
@@ -129,7 +149,11 @@ fun WeatherPagerScreen(
             EmptyState(onOpenSearch, onUseCurrentLocation)
         } else {
             val commutePage = state.pages.indexOfFirst { it.content !is PageContent.NeedsPermission && it.content !is PageContent.Failed }
-            HorizontalPager(pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { index ->
+            // Keyed by place, so per-page state (an open explanation) stays with its place when places move.
+            HorizontalPager(
+                pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
+                key = { state.pages[it].key },
+            ) { index ->
                 val page = state.pages[index]
                 WeatherPage(
                     page = page,
@@ -217,11 +241,22 @@ fun WeatherPage(
     val dark = MaterialTheme.isDark
     val content = page.content
     val loaded = content as? PageContent.Loaded
+    // Which term's explanation is open; kept across rotation, cleared when the page has no forecast.
+    var explaining by rememberSaveable { mutableStateOf<Term?>(null) }
+    val explainTerm = explaining
+    if (explainTerm != null && loaded != null) {
+        ExplainSheet(explain(explainTerm, loaded.forecast, unit, Locale.getDefault())) { explaining = null }
+    }
     val night = loaded?.forecast?.isNightNow ?: false
     val gradient = loaded?.let { heroGradient(skyOf(it.forecast.current.code), night, dark) } ?: neutralGradient(dark)
 
     val refreshing = page.refreshing && loaded != null
     val refreshState = rememberPullToRefreshState()
+    // Tiles and pills anywhere on the page open their explanation through this.
+    // Close the sheet for good when the forecast goes away (a failed refresh), so it can't reappear by itself later.
+    LaunchedEffect(loaded == null) { if (loaded == null) explaining = null }
+    val openExplanation = remember { { t: Term -> explaining = t } }
+    CompositionLocalProvider(LocalExplain provides openExplanation) {
     PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = onRefresh,
@@ -272,6 +307,7 @@ fun WeatherPage(
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         }
+    }
     }
 }
 
@@ -352,15 +388,18 @@ private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit,
     ) {
         HeroPill("High", formatDegrees(forecast.today.highC, unit), formatBothUnits(forecast.today.highC, unit))
         HeroPill("Low", formatDegrees(forecast.today.lowC, unit), formatBothUnits(forecast.today.lowC, unit))
-        HeroPill("Rain", "${forecast.today.precipChance}%")
+        HeroPill("Rain", "${forecast.today.precipChance}%", term = Term.RAIN_CHANCE)
     }
 }
 
 @Composable
-private fun HeroPill(label: String, value: String, spoken: String = value) {
+private fun HeroPill(label: String, value: String, spoken: String = value, term: Term? = null) {
+    val explain = LocalExplain.current
+    val onClick = if (term != null && explain != null) ({ explain(term) }) else null
     Row(
         Modifier
             .clip(CircleShape)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = "Explain", role = Role.Button, onClick = onClick) else Modifier)
             .background(Color.Black.copy(alpha = 0.18f))
             .padding(horizontal = 14.dp, vertical = 8.dp)
             .semantics(mergeDescendants = true) { contentDescription = "$label $spoken" },
@@ -369,7 +408,19 @@ private fun HeroPill(label: String, value: String, spoken: String = value) {
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Text(value, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        if (onClick != null) {
+            // Marks this pill as the one that opens something; High and Low next to it don't.
+            Spacer(Modifier.width(5.dp))
+            InfoGlyph(LocalContentColor.current.copy(alpha = 0.8f), MaterialTheme.typography.labelLarge)
+        }
     }
+}
+
+/** The "tap to explain" mark beside a label, sized to that label's text so it grows with the font setting. */
+@Composable
+private fun InfoGlyph(tint: Color, style: TextStyle) {
+    val size = with(LocalDensity.current) { style.fontSize.toDp() }
+    Icon(Icons.Outlined.Info, contentDescription = null, Modifier.size(size), tint = tint)
 }
 
 @Composable
@@ -411,14 +462,16 @@ private fun BodyForecast(
         StatTile(
             "Feels like", formatDegrees(cur.feelsLikeC, unit), Modifier.weight(1f),
             detail = formatTemp(cur.feelsLikeC, unit.other()),
+            term = Term.FEELS_LIKE,
         )
-        StatTile("Humidity", "${cur.humidity}%", Modifier.weight(1f))
+        StatTile("Humidity", "${cur.humidity}%", Modifier.weight(1f), term = Term.HUMIDITY)
         val gust = forecast.nextHours.firstOrNull()?.gustKmh
         StatTile(
             "Wind",
             formatWind(cur.windKmh, unit),
             Modifier.weight(1f),
             detail = gust?.takeIf { it > cur.windKmh }?.let { "Gusts ${formatWind(it, unit)}" },
+            term = Term.WIND,
         )
     }
     if (commute != null) {
@@ -492,17 +545,18 @@ private fun SunAndUv(today: DaySummary, unit: TempUnit) {
             Daylight.NORMAL -> {
                 val sunrise = today.sunrise!!
                 val sunset = today.sunset!!
-                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true)
+                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true, term = Term.SUN)
                 StatTile(
                     "Sunset", formatClock(sunset), Modifier.weight(1f), compact = true,
                     detail = "next day".takeIf { sunset.toLocalDate() != today.date },
+                    term = Term.SUN,
                 )
             }
-            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night")
-            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun")
+            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night", term = Term.DAYLIGHT)
+            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun", term = Term.DAYLIGHT)
             Daylight.UNKNOWN -> Unit
         }
-        if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv))
+        if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv), term = Term.UV)
     }
 }
 
@@ -688,15 +742,53 @@ private fun StatTile(
     modifier: Modifier = Modifier,
     detail: String? = null,
     compact: Boolean = false,
+    term: Term? = null,
 ) {
-    Card(
-        modifier.fillMaxHeight().semantics(mergeDescendants = true) {
-            contentDescription = listOfNotNull(label, value, detail).joinToString(" ")
-        },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
+    val explain = LocalExplain.current
+    val onClick = if (term != null && explain != null) ({ explain(term) }) else null
+    val tileModifier = modifier.fillMaxHeight().semantics(mergeDescendants = true) {
+        contentDescription = listOfNotNull(label, value, detail).joinToString(" ")
+    }
+    val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    if (onClick != null) {
+        // Card's own click has no role; TalkBack should say "button" and offer "Explain".
+        val explainable = tileModifier.semantics {
+            role = Role.Button
+            onClick(label = "Explain", action = null)
+        }
+        Card(onClick = onClick, modifier = explainable, colors = colors) {
+            StatTileContent(label, value, detail, compact, explainable = true)
+        }
+    } else {
+        Card(tileModifier, colors = colors) { StatTileContent(label, value, detail, compact, explainable = false) }
+    }
+}
+
+@Composable
+private fun StatTileContent(label: String, value: String, detail: String?, compact: Boolean, explainable: Boolean) {
+    run {
         Column(Modifier.padding(vertical = 14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // The glyph is part of the label's text, so on a narrow tile at a large font size the line breaks
+            // fall between words ("Feels" / "like ⓘ") rather than the glyph squeezing the label mid-word.
+            val labelStyle = MaterialTheme.typography.labelMedium
+            val glyphTint = MaterialTheme.colorScheme.outline
+            Text(
+                buildAnnotatedString {
+                    append(label)
+                    if (explainable) {
+                        append(' ')
+                        appendInlineContent(INFO_GLYPH)
+                    }
+                },
+                style = labelStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                inlineContent = mapOf(
+                    INFO_GLYPH to InlineTextContent(
+                        Placeholder(labelStyle.fontSize, labelStyle.fontSize, PlaceholderVerticalAlign.TextCenter),
+                    ) { Icon(Icons.Outlined.Info, contentDescription = null, Modifier.fillMaxSize(), tint = glyphTint) },
+                ),
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 value,
