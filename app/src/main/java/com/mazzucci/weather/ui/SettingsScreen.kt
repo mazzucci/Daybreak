@@ -5,6 +5,7 @@ package com.mazzucci.weather.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.Arrangement
+import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelSource
@@ -77,6 +86,8 @@ fun SettingsScreen(
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
+    onToneChange: (Tone) -> Unit,
+    onAboutMeChange: (String) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -114,6 +125,9 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            SectionTitle("Summary style")
+            SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
 
             SectionTitle("Fun")
             SettingsCard {
@@ -179,6 +193,57 @@ fun SettingsScreen(
     }
 }
 
+/** Voice chips and the optional "About me" note, which is saved explicitly so each keystroke doesn't re-narrate. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SummaryStyleCard(
+    settings: AppSettings,
+    gemmaOn: Boolean,
+    onToneChange: (Tone) -> Unit,
+    onAboutMeChange: (String) -> Unit,
+) {
+    SettingsCard {
+        Text("Voice", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            if (gemmaOn) "Gemma writes the summary in this voice." else "Adds a touch of character to the summary; with Gemma on, it writes the whole line in this voice.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Tone.entries.forEach { tone ->
+                FilterChip(
+                    selected = settings.tone == tone,
+                    onClick = { onToneChange(tone) },
+                    label = { Text(tone.label) },
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(Modifier.height(16.dp))
+        var draft by rememberSaveable(settings.aboutMe) { mutableStateOf(settings.aboutMe) }
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it.take(ABOUT_ME_MAX_CHARS) },
+            label = { Text("About me (optional)") },
+            placeholder = { Text("e.g. I cycle to work and hate the cold") },
+            supportingText = {
+                Text("Stays on this phone. Gemma uses it to pick what to mention. ${draft.length}/$ABOUT_ME_MAX_CHARS")
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onAboutMeChange(draft) }),
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 3,
+        )
+        if (draft.trim() != settings.aboutMe) {
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { onAboutMeChange(draft) }, modifier = Modifier.align(Alignment.End)) { Text("Save") }
+        }
+    }
+}
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -190,12 +255,12 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(Modifier.padding(16.dp)) { content() }
+        Column(Modifier.padding(16.dp), content = content)
     }
 }
 

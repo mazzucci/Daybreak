@@ -1,5 +1,6 @@
 package com.mazzucci.weather.narration
 
+import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.describeWeatherCode
 import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.formatHour
@@ -14,9 +15,29 @@ class TemplateNarrator(private val locale: Locale = Locale.getDefault()) : Weath
         val f = input.forecast
         val u = input.unit
         val condition = describeWeatherCode(f.current.code).lowercase(locale)
-        val first = "${formatDegrees(f.current.tempC, u)} and $condition now, " +
-            "with a high of ${formatDegrees(f.today.highC, u)} and a low of ${formatDegrees(f.today.lowC, u)}."
-        return "$first ${rainSentence(input)}"
+        val now = formatDegrees(f.current.tempC, u)
+        val high = formatDegrees(f.today.highC, u)
+        val low = formatDegrees(f.today.lowC, u)
+        if (input.tone == Tone.BRIEF) return "$now and $condition, high $high, low $low. ${briefRain(input)}"
+        val first = "$now and $condition now, with a high of $high and a low of $low."
+        val wet = rainLikely(input)
+        // The voices only add words around the facts, never numbers, so the result still passes validation.
+        return when (input.tone) {
+            Tone.FRIENDLY, Tone.BRIEF -> "$first ${rainSentence(input)}"
+            Tone.CHEERFUL -> "Hello there, it's ${first.replaceFirstChar { it.lowercase(locale) }} ${rainSentence(input)} " +
+                if (wet) "Umbrella time!" else "Enjoy it!"
+            Tone.DEADPAN -> "$first ${rainSentence(input)} " + if (wet) "Thrilling." else "Try to contain your excitement."
+            Tone.PIRATE -> "Ahoy, it's ${first.replaceFirstChar { it.lowercase(locale) }} ${rainSentence(input)} " +
+                if (wet) "Batten down the hatches!" else "Fair winds, matey!"
+        }
+    }
+
+    private fun rainLikely(input: NarrationInput): Boolean =
+        input.forecast.nextHours.any { it.precipChance >= RAIN_LIKELY } || input.forecast.today.precipChance >= RAIN_POSSIBLE
+
+    private fun briefRain(input: NarrationInput): String {
+        val wetHour = input.forecast.nextHours.firstOrNull { it.precipChance >= RAIN_LIKELY }
+        return if (wetHour != null) "Rain around ${formatHour(wetHour.time, locale)}." else if (rainLikely(input)) "Rain possible." else "Dry."
     }
 
     private fun rainSentence(input: NarrationInput): String {

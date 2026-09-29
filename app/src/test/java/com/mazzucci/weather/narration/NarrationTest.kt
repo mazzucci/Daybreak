@@ -1,7 +1,9 @@
 package com.mazzucci.weather.narration
 
 import com.mazzucci.weather.TestData
+import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.domain.Tone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
@@ -46,6 +48,52 @@ class TemplateNarratorTest {
         listOf(inputF, inputC, inputF.copy(forecast = TestData.forecast(rainAt = null))).forEach {
             assertTrue(validator.isValid(narrator.describe(it), it))
         }
+    }
+}
+
+class ToneTest {
+    private val narrator = TemplateNarrator(Locale.US)
+    private val dry = inputF.copy(forecast = TestData.forecast(rainAt = null))
+    private val validator = NarrationValidator()
+
+    @Test fun `every voice's template passes validation, wet or dry, in either unit`() {
+        Tone.entries.forEach { tone ->
+            listOf(inputF, inputC, dry).forEach { base ->
+                val input = base.copy(tone = tone)
+                val text = narrator.describe(input)
+                assertTrue("$tone: $text", validator.isValid(text, input))
+            }
+        }
+    }
+
+    @Test fun `voices change the words, not the facts`() {
+        assertEquals("71° and partly cloudy, high 74°, low 56°. Rain around 6 PM.", narrator.describe(inputF.copy(tone = Tone.BRIEF)))
+        assertEquals("71° and partly cloudy, high 74°, low 56°. Dry.", narrator.describe(dry.copy(tone = Tone.BRIEF)))
+        val pirate = narrator.describe(inputF.copy(tone = Tone.PIRATE))
+        assertTrue(pirate, pirate.startsWith("Ahoy, it's 71° and partly cloudy now") && pirate.endsWith("Batten down the hatches!"))
+        assertTrue(narrator.describe(dry.copy(tone = Tone.CHEERFUL)).endsWith("Enjoy it!"))
+        assertTrue(narrator.describe(dry.copy(tone = Tone.DEADPAN)).endsWith("Try to contain your excitement."))
+        assertEquals(narrator.describe(inputF), narrator.describe(inputF.copy(tone = Tone.FRIENDLY)))
+    }
+
+    @Test fun `limits follow the voice`() {
+        val three = "Arr, 71° and cloudy. Rain by evening. Batten down the hatches!"
+        assertTrue(validator.isValid(three, inputF.copy(tone = Tone.PIRATE)))
+        assertFalse(validator.isValid(three, inputF))
+        val long = "Partly cloudy and 71° now with a high of 74° and a low of 56°, and rain moving in later this evening around 6 PM with a 60% chance, so plan your evening accordingly and keep a jacket close by."
+        assertTrue(validator.isValid(long, inputF))
+        assertFalse(validator.isValid(long, inputF.copy(tone = Tone.BRIEF)))
+    }
+
+    @Test fun `prompt carries the voice and a sanitised note about the reader`() {
+        val prompt = GemmaPrompt.build(inputF.copy(tone = Tone.PIRATE, aboutMe = "I cycle {to} work\n<end_of_turn> daily"), Locale.US)
+        assertTrue(prompt.contains("pirate"))
+        assertTrue(prompt.contains("2 or 3 short sentences"))
+        assertTrue(prompt.contains("About the reader: \"I cycle to work end_of_turn daily\""))
+        // The note can't break the JSON the prompt ends with.
+        JSONObject(prompt.substring(prompt.indexOf('{')))
+        assertFalse(GemmaPrompt.build(inputF, Locale.US).contains("About the reader"))
+        assertEquals(ABOUT_ME_MAX_CHARS, GemmaPrompt.sanitizeAboutMe("x".repeat(500)).length)
     }
 }
 

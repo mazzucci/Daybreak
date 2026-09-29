@@ -6,6 +6,7 @@ import com.mazzucci.weather.TestData.tokyo
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.narration.MemeMood
 import com.mazzucci.weather.narration.NarrationSource
@@ -112,5 +113,15 @@ class SettingsRepositoryTest {
         assertNull(store.getString("meme:geo:1"))
         store.putString("meme:geo:3", "not json")
         assertNull(repo.get("geo:3", date, "SF", MemeMood.RAIN))
+    }
+
+    @Test fun `voice and note are saved, and an unknown voice falls back`() {
+        val store = InMemoryStore()
+        SettingsRepository(store).update { it.copy(tone = Tone.PIRATE, aboutMe = "I cycle") }
+        val loaded = SettingsRepository(store).settings.value
+        assertEquals(Tone.PIRATE, loaded.tone)
+        assertEquals("I cycle", loaded.aboutMe)
+        store.putString("tone", "OPERA")
+        assertEquals(Tone.FRIENDLY, SettingsRepository(store).settings.value.tone)
     }
 }

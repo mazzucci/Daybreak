@@ -9,7 +9,9 @@ import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.Place
+import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.data.MemeRepository
 import com.mazzucci.weather.data.SavedMeme
 import com.mazzucci.weather.narration.LocalModelManager
@@ -183,7 +185,7 @@ class WeatherViewModel(
      */
     private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
         val settings = settingsRepo.settings.value
-        val input = NarrationInput(place.name, forecast, settings.primaryUnit)
+        val input = narrationInput(place, forecast)
         val quickMeme = if (settings.memesEnabled) savedOrTemplateMeme(key, place, input).meme else null
         setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
         if (gemmaReady()) {
@@ -192,6 +194,11 @@ class WeatherViewModel(
         }
         // Re-reads the setting: memes may have been turned on or off while Gemma was busy.
         showMeme(key, place, input)
+    }
+
+    private fun narrationInput(place: Place, forecast: Forecast): NarrationInput {
+        val settings = settingsRepo.settings.value
+        return NarrationInput(place.name, forecast, settings.primaryUnit, settings.tone, settings.aboutMe)
     }
 
     private fun gemmaReady(): Boolean =
@@ -259,11 +266,10 @@ class WeatherViewModel(
      * flight add theirs when that job reaches its meme step.
      */
     private fun showMemesOnLoadedPages() {
-        val unit = settingsRepo.settings.value.primaryUnit
         visiblePlaces().forEach { (key, place) ->
             val content = contents.value[key]
             if (content is PageContent.Loaded && key !in jobs) {
-                launchFor(key, fetch = false) { showMeme(key, place, NarrationInput(place.name, content.forecast, unit)) }
+                launchFor(key, fetch = false) { showMeme(key, place, narrationInput(place, content.forecast)) }
             }
         }
     }
@@ -356,6 +362,19 @@ class WeatherViewModel(
             contents.update { it - CURRENT }
             fetching.update { it - CURRENT }
         }
+    }
+
+    fun setTone(tone: Tone) {
+        if (tone == settingsRepo.settings.value.tone) return
+        settingsRepo.update { it.copy(tone = tone) }
+        renarrateAll()
+    }
+
+    fun setAboutMe(text: String) {
+        val trimmed = text.trim().take(ABOUT_ME_MAX_CHARS)
+        if (trimmed == settingsRepo.settings.value.aboutMe) return
+        settingsRepo.update { it.copy(aboutMe = trimmed) }
+        renarrateAll()
     }
 
     fun setMemesEnabled(enabled: Boolean) {

@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.domain.Tone
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,6 +88,8 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
         store.putString(KEY_CURRENT, s.useCurrentLocation.toString())
         store.putString(KEY_GEMMA, s.gemmaEnabled.toString())
         store.putString(KEY_MEMES, s.memesEnabled.toString())
+        store.putString(KEY_TONE, s.tone.name)
+        store.putString(KEY_ABOUT_ME, s.aboutMe)
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -95,6 +98,8 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
         useCurrentLocation = store.getString(KEY_CURRENT)?.toBooleanStrictOrNull() ?: defaults.useCurrentLocation,
         gemmaEnabled = store.getString(KEY_GEMMA)?.toBooleanStrictOrNull() ?: defaults.gemmaEnabled,
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
+        tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
+        aboutMe = store.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
     )
 
     private companion object {
@@ -102,5 +107,7 @@ class SettingsRepository(private val store: KeyValueStore, defaults: AppSettings
         const val KEY_CURRENT = "use_current_location"
         const val KEY_GEMMA = "gemma_enabled"
         const val KEY_MEMES = "memes_enabled"
+        const val KEY_TONE = "tone"
+        const val KEY_ABOUT_ME = "about_me"
     }
 }

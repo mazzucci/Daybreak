@@ -1,6 +1,7 @@
 package com.mazzucci.weather.narration
 
 import com.mazzucci.weather.domain.TempUnit
+import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.domain.degrees
 import com.mazzucci.weather.domain.kmhToMph
 import kotlin.math.roundToInt
@@ -10,6 +11,13 @@ import kotlin.math.roundToInt
  * that appears in the forecast we gave it, and the text has to look like a short plain-text summary.
  */
 class NarrationValidator(private val maxChars: Int = 280) {
+
+    /** Playful voices get a little more room: a greeting or sign-off is part of the character. */
+    private fun limits(tone: Tone): Pair<Int, Int> = when (tone) {
+        Tone.FRIENDLY -> maxChars to 2
+        Tone.BRIEF -> minOf(maxChars, 160) to 2
+        Tone.CHEERFUL, Tone.DEADPAN, Tone.PIRATE -> maxChars + 60 to 3
+    }
 
     /** Strips wrapping quotes, markdown emphasis and extra whitespace the model tends to add. */
     fun clean(raw: String): String = raw
@@ -21,14 +29,15 @@ class NarrationValidator(private val maxChars: Int = 280) {
         .trim()
 
     fun isValid(text: String, input: NarrationInput): Boolean {
-        if (text.isBlank() || text.length > maxChars) return false
+        val (chars, sentences) = limits(input.tone)
+        if (text.isBlank() || text.length > chars) return false
         if (text.contains('<') || text.contains('{')) return false // leaked template tokens or JSON
 
         // Hour labels ("3 PM", "15:00") are fine as long as they're real clock times.
         val withoutTimes = TIME.replace(text) { m ->
             if (m.groupValues[1].toInt() in 0..23) "TIME" else m.value
         }
-        if (SENTENCE_END.findAll(withoutTimes).count() > 2) return false
+        if (SENTENCE_END.findAll(withoutTimes).count() > sentences) return false
         // "70–74°" is two temperatures: give the first one the unit too.
         val expanded = RANGE.replace(withoutTimes) { m -> "${m.groupValues[1]}${m.groupValues[3]} to ${m.groupValues[2]}${m.groupValues[3]}" }
 

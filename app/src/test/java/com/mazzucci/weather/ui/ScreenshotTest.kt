@@ -29,6 +29,7 @@ import com.mazzucci.weather.narration.ModelStatus
 import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
+import com.mazzucci.weather.domain.Tone
 import com.mazzucci.weather.narration.Meme
 import com.mazzucci.weather.narration.MemeMood
 import com.mazzucci.weather.narration.TemplateMemes
@@ -113,11 +114,11 @@ class ScreenshotTest {
     }
 
     @Composable
-    private fun Settings(status: ModelStatus) {
+    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings()) {
         SettingsScreen(
-            settings = AppSettings(),
+            settings = settings,
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
@@ -306,6 +307,18 @@ class ScreenshotTest {
 
     @Test fun settingsInstalled() = snap("settings_installed") {
         Settings(ModelStatus.Installed(529L shl 20))
+    }
+
+    @Test fun settingsVoice() = snap("settings_voice", tall = true) {
+        Settings(
+            ModelStatus.Installed(529L shl 20),
+            AppSettings(tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
+        )
+    }
+
+    @Test fun weatherPirate() = snap("weather_pirate") {
+        val input = NarrationInput(sanFrancisco.name, forecast, TempUnit.F, Tone.PIRATE)
+        Weather(weatherState(PageContent.Loaded(forecast, Narration(TemplateNarrator(Locale.US).describe(input), NarrationSource.TEMPLATE))))
     }
 
     /** The adaptive launcher icon, composited the way a circular launcher mask would show it. */
