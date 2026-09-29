@@ -3,6 +3,7 @@ package com.mazzucci.weather.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,14 +24,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.mazzucci.weather.domain.Countdown
+import com.mazzucci.weather.domain.DaySummary
 import com.mazzucci.weather.domain.Forecast
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.describeWeatherCode
+import com.mazzucci.weather.domain.formatBothUnits
 import com.mazzucci.weather.domain.formatCountdown
 import com.mazzucci.weather.domain.formatDegrees
 import java.time.format.DateTimeFormatter
@@ -54,40 +64,104 @@ fun ComingUpCard(items: List<Countdown>, forecast: Forecast, unit: TempUnit, mod
                 val day = forecast.days.firstOrNull { it.date == item.date }
                 val date = item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))
                 val countdown = formatCountdown(item.daysFrom(today))
-                val weather = day?.let { "${describeWeatherCode(it.code)}, high ${formatDegrees(it.highC, unit)}" }
-                Row(
+                // TalkBack gets the full weekday and month (the short form's comma would split the list) and the
+                // high in both units, like the 7-day rows.
+                val spokenDate = item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+                val spokenWeather = day?.let { "${describeWeatherCode(it.code)}, high ${formatBothUnits(it.highC, unit)}" }
+                CountdownRow(
+                    item, day, unit, palette,
+                    date = date,
+                    countdown = countdown,
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .clearAndSetSemantics {
-                            contentDescription = listOfNotNull(item.title, date, item.note, countdown, weather).joinToString(", ")
+                            contentDescription = listOfNotNull(item.title, spokenDate, item.note, countdown, spokenWeather).joinToString(", ")
                         },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    KindGlyph(item.kind)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(item.title, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            listOfNotNull(date, item.note).joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(countdown, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        if (day != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                WeatherIcon(day.code, night = false, palette, size = 18.dp, contentDescription = null)
-                                Spacer(Modifier.width(4.dp))
-                                Text(formatDegrees(day.highC, unit), style = MaterialTheme.typography.labelMedium)
-                            }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * One row: glyph, then the name over "date · note", with the countdown (and that day's high, when the forecast
+ * has it) on the right. The name leads, since it's what you're counting to; the countdown is the accent.
+ *
+ * On a narrow screen or at a large font size the countdown would squeeze the name into a sliver, so when it
+ * needs more than its fair share of the row it moves under the details instead, as one left-aligned line.
+ */
+@Composable
+private fun CountdownRow(
+    item: Countdown,
+    day: DaySummary?,
+    unit: TempUnit,
+    palette: IconPalette,
+    date: String,
+    countdown: String,
+    modifier: Modifier = Modifier,
+) {
+    val titleStyle = MaterialTheme.typography.titleSmall
+    val detailStyle = MaterialTheme.typography.bodySmall
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val high = day?.let { formatDegrees(it.highC, unit) }
+    BoxWithConstraints(modifier) {
+        val measurer = rememberTextMeasurer()
+        val trailingWidth = with(LocalDensity.current) {
+            maxOf(
+                measurer.measure(countdown, titleStyle, maxLines = 1, softWrap = false).size.width.toDp(),
+                high?.let { measurer.measure(it, detailStyle, maxLines = 1, softWrap = false).size.width.toDp() + WeatherIconSize + 4.dp } ?: 0.dp,
+            )
+        }
+        // The text column must keep at least 1.6x the countdown's width, or the countdown goes underneath.
+        val textWidth = maxWidth - GlyphSize - 12.dp - 12.dp - trailingWidth
+        val stacked = trailingWidth > textWidth * 0.6f
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            KindGlyph(item.kind)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.title, style = titleStyle)
+                // Non-breaking spaces around every separator (the note can carry one of its own), so a wrapped
+                // line never ends or starts with a dot.
+                Text(
+                    listOfNotNull(date, item.note).joinToString(" · ").replace(" · ", " · "),
+                    style = detailStyle,
+                    color = secondary,
+                )
+                if (stacked) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CountdownText(countdown, titleStyle)
+                        if (day != null && high != null) {
+                            Spacer(Modifier.width(10.dp))
+                            DayWeather(day, high, palette, detailStyle, secondary)
                         }
                     }
                 }
             }
+            if (!stacked) {
+                Spacer(Modifier.width(12.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    CountdownText(countdown, titleStyle)
+                    if (day != null && high != null) DayWeather(day, high, palette, detailStyle, secondary)
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun CountdownText(countdown: String, style: TextStyle) {
+    Text(countdown, style = style, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
+}
+
+/** That day's forecast, as quiet as the date line: the promise is "and it'll be sunny". */
+@Composable
+private fun DayWeather(day: DaySummary, high: String, palette: IconPalette, style: TextStyle, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        WeatherIcon(day.code, night = false, palette, size = WeatherIconSize, contentDescription = null)
+        Spacer(Modifier.width(4.dp))
+        Text(high, style = style, color = color, maxLines = 1, softWrap = false)
     }
 }
 
@@ -95,26 +169,38 @@ fun ComingUpCard(items: List<Countdown>, forecast: Forecast, unit: TempUnit, mod
 @Composable
 private fun KindGlyph(kind: Countdown.Kind) {
     val color = if (kind == Countdown.Kind.SEASON) MaterialTheme.weatherColors.success else MaterialTheme.colorScheme.primary
-    Box(Modifier.size(36.dp).clip(CircleShape).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(GlyphSize).clip(CircleShape).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(18.dp)) {
             val s = size.minDimension
-            val stroke = Stroke(width = s * 0.1f)
+            val width = s * 0.1f
             if (kind == Countdown.Kind.SEASON) {
-                // A leaf: two arcs meeting at the tips, and a vein.
-                drawArc(color, 200f, 140f, false, Offset(s * 0.05f, s * 0.15f), Size(s * 0.9f, s * 0.9f), style = stroke)
-                drawArc(color, 20f, 140f, false, Offset(s * 0.05f, -s * 0.05f), Size(s * 0.9f, s * 0.9f), style = stroke)
-                drawLine(color, Offset(s * 0.15f, s * 0.85f), Offset(s * 0.85f, s * 0.15f), stroke.width)
+                // A leaf on the diagonal: a pointed blade (two curves bulging away from the midrib), the midrib
+                // running most of the way to the apex, and a short stem past the base.
+                val base = Offset(s * 0.2f, s * 0.8f)
+                val apex = Offset(s * 0.86f, s * 0.14f)
+                val blade = Path().apply {
+                    moveTo(base.x, base.y)
+                    quadraticTo(s * 0.16f, s * 0.1f, apex.x, apex.y)
+                    quadraticTo(s * 0.9f, s * 0.84f, base.x, base.y)
+                    close()
+                }
+                drawPath(blade, color, style = Stroke(width, join = StrokeJoin.Miter))
+                drawLine(color, base, Offset(s * 0.73f, s * 0.27f), width, StrokeCap.Round)
+                drawLine(color, base, Offset(s * 0.08f, s * 0.92f), width, StrokeCap.Round)
             } else {
+                val stroke = Stroke(width)
                 drawRoundRect(
                     color, Offset(s * 0.1f, s * 0.18f), Size(s * 0.8f, s * 0.72f),
                     androidx.compose.ui.geometry.CornerRadius(s * 0.12f), style = stroke,
                 )
-                drawLine(color, Offset(s * 0.1f, s * 0.4f), Offset(s * 0.9f, s * 0.4f), stroke.width)
-                drawLine(color, Offset(s * 0.32f, s * 0.08f), Offset(s * 0.32f, s * 0.26f), stroke.width)
-                drawLine(color, Offset(s * 0.68f, s * 0.08f), Offset(s * 0.68f, s * 0.26f), stroke.width)
+                drawLine(color, Offset(s * 0.1f, s * 0.4f), Offset(s * 0.9f, s * 0.4f), width)
+                drawLine(color, Offset(s * 0.32f, s * 0.08f), Offset(s * 0.32f, s * 0.26f), width)
+                drawLine(color, Offset(s * 0.68f, s * 0.08f), Offset(s * 0.68f, s * 0.26f), width)
                 drawCircle(color, s * 0.08f, Offset(s * 0.5f, s * 0.64f))
             }
         }
     }
 }
 
+private val GlyphSize = 36.dp
+private val WeatherIconSize = 18.dp

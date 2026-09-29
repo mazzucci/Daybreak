@@ -43,15 +43,34 @@ class ComingUpTest {
         val items = comingUp(LocalDate.of(2026, 11, 20), holidays, weekends, latitude = 37.8)
         val thanksgiving = items.first()
         assertEquals("Thanksgiving Day", thanksgiving.title)
-        assertEquals("Take Friday off", thanksgiving.note)
+        assertEquals("Take Friday off for a 4-day weekend", thanksgiving.note)
         assertTrue(items.none { it.kind == Countdown.Kind.LONG_WEEKEND && it.date == LocalDate.of(2026, 11, 26) })
+    }
+
+    @Test fun `a long weekend under way says when it ends, not which day to take off`() {
+        val saturday = LocalDate.of(2026, 11, 28)
+        val items = comingUp(saturday, holidays, weekends, latitude = 37.8)
+        val weekend = items.first { it.kind == Countdown.Kind.LONG_WEEKEND }
+        assertEquals("Thanksgiving Day · ends Sunday", weekend.note)
+        assertEquals(saturday, weekend.date)
+    }
+
+    @Test fun `a season starting today is shown as today`() {
+        val solstice = LocalDate.of(2026, 12, 21)
+        assertEquals(solstice, nextSeason(solstice, 40.0)?.date)
+        assertEquals("Today", formatCountdown(nextSeason(solstice, 40.0)!!.daysFrom(solstice)))
+    }
+
+    @Test fun `country name aliases`() {
+        listOf("Ivory Coast" to "CI", "DR Congo" to "CD", "Hong Kong" to "HK", "Türkiye" to "TR", "Bosnia and Herzegovina" to "BA", "Japan" to "JP")
+            .forEach { (name, code) -> assertEquals(name, code, countryCodeOf(TestData.tokyo.copy(country = name, countryCode = null))) }
     }
 
     @Test fun `seasons follow the hemisphere and skip the tropics`() {
         assertEquals("First day of winter", nextSeason(today, 51.5)?.title)
         assertEquals("First day of summer", nextSeason(today, -33.9)?.title)
         assertNull(nextSeason(today, 1.3))
-        assertEquals(LocalDate.of(2027, 3, 20), nextSeason(LocalDate.of(2026, 12, 21), 40.0)?.date)
+        assertEquals(LocalDate.of(2027, 3, 20), nextSeason(LocalDate.of(2026, 12, 22), 40.0)?.date)
     }
 
     @Test fun `only things within the horizon count`() {

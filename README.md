@@ -9,7 +9,7 @@ A simple Android app that shows the weather for your current location and any pl
 - Temperatures in both units: the primary one large, the other small alongside or underneath (current, feels-like, hourly strip and 7-day list); screen readers hear both
 - "Best time to ride" (or run, or walk): each of the next 24 hours is scored for rain, wind and gusts, temperature and daylight, and the page shows the best window with a bar per hour, or what's in the way
 - Pick the summary's voice (Friendly, Brief, Cheerful, Deadpan, Pirate) and optionally tell it a little about yourself ("I cycle to work"), which Gemma uses to choose what to mention. The note never leaves the phone
-- "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the week. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; only the country code and year are sent) and are cached
+- "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the week. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; it sees your IP address and each place's country, and nothing else) and are cached for a month. Only nationwide holidays are shown, so countries whose holidays are mostly regional (the UK, for example) show fewer. Turn it off in Settings → Coming up
 - A daily weather meme per place, made entirely on the phone (no network): a hand-written caption for the day's mood, or a fresh one from Gemma once it's set up. Turn it off in Settings
 - Optional on-device AI summary written by [Gemma](https://ai.google.dev/gemma), run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
 - Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 8 days of hourly and daily data per place, including wind, gusts, sun times and UV
@@ -72,9 +72,11 @@ How it works:
 
 ```
 app/src/main/java/com/mazzucci/weather/
-  domain/     Place, Forecast, AppSettings; unit conversion and formatting; WMO code descriptions
+  domain/     Place, Forecast, AppSettings; unit conversion and formatting; WMO code descriptions;
+              ActivityScorer (best time to ride/run/walk); ComingUp (holidays, long weekends, seasons)
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
-              saved places, settings and daily meme repositories (SharedPreferences), device location
+              saved places, settings and daily meme repositories (SharedPreferences), device location,
+              Nager.Date holiday API + HolidayRepository (cached per country and year)
   narration/  WeatherNarrator: TemplateNarrator, GemmaNarrator (MediaPipe), GemmaPrompt,
               NarrationValidator, ValidatingNarrator, GemmaModelStore (model download + import),
               Meme (mood, template captions, prompt, validator, MemeWriter)
