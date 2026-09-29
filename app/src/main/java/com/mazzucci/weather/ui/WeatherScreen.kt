@@ -105,6 +105,10 @@ import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.Countdown
+import androidx.compose.material3.minimumInteractiveComponentSize
+import java.time.DayOfWeek
+import com.mazzucci.weather.domain.countryCodeOf
+import com.mazzucci.weather.domain.weekendDays
 import com.mazzucci.weather.domain.commuteAdvice
 import com.mazzucci.weather.domain.DaySummary
 import com.mazzucci.weather.narration.Meme
@@ -301,7 +305,10 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays)
+                    is PageContent.Loaded -> BodyForecast(
+                        content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays,
+                        weekend = weekendDays(page.place?.let(::countryCodeOf)),
+                    )
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -380,11 +387,14 @@ private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit,
         Spacer(Modifier.width(8.dp))
         Text(cur.description, style = MaterialTheme.typography.titleLarge)
     }
-    Spacer(Modifier.height(16.dp))
+    // Each pill's 48dp touch target adds 4dp of empty space above and below the visible pill, so the spacer
+    // and the row gap below are 4dp smaller than they look: 16dp between the condition and the pills, 8dp
+    // between wrapped rows.
+    Spacer(Modifier.height(12.dp))
     // Wraps onto a second line on narrow screens or with large text, rather than squeezing a pill.
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         HeroPill("High", formatDegrees(forecast.today.highC, unit), formatBothUnits(forecast.today.highC, unit))
         HeroPill("Low", formatDegrees(forecast.today.lowC, unit), formatBothUnits(forecast.today.lowC, unit))
@@ -398,6 +408,8 @@ private fun HeroPill(label: String, value: String, spoken: String = value, term:
     val onClick = if (term != null && explain != null) ({ explain(term) }) else null
     Row(
         Modifier
+            // A 48dp touch target around every pill (they line up whether or not they're tappable).
+            .minimumInteractiveComponentSize()
             .clip(CircleShape)
             .then(if (onClick != null) Modifier.clickable(onClickLabel = "Explain", role = Role.Button, onClick = onClick) else Modifier)
             .background(Color.Black.copy(alpha = 0.18f))
@@ -455,6 +467,7 @@ private fun BodyForecast(
     comingUp: List<Countdown>,
     commute: CommuteSettings? = null,
     holidays: Set<LocalDate> = emptySet(),
+    weekend: Set<DayOfWeek> = weekendDays(null),
 ) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
@@ -478,7 +491,7 @@ private fun BodyForecast(
         // The hero and its tiles are "now"; the commute verdict opens the planning part of the page, still
         // above the fold. Walking is the fallback mode when outdoor plans are off.
         val mode = activity ?: Activity.WALKING
-        val advice = remember(forecast, mode, commute, holidays) { commuteAdvice(forecast, mode, commute, holidays) }
+        val advice = remember(forecast, mode, commute, holidays, weekend) { commuteAdvice(forecast, mode, commute, holidays, weekend) }
         if (advice != null) {
             Spacer(Modifier.height(16.dp))
             CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))

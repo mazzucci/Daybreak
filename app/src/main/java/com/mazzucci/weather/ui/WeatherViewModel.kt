@@ -453,6 +453,9 @@ class WeatherViewModel(
         }
     }
 
+    /** The phone switched between 12- and 24-hour time: summaries mention times, so rewrite them. */
+    fun onClockFormatChanged() = renarrateAll()
+
     fun setTone(tone: Tone) {
         if (tone == settingsRepo.settings.value.tone) return
         settingsRepo.update { it.copy(tone = tone) }

@@ -4,6 +4,7 @@ import com.mazzucci.weather.TestData
 import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
+import com.mazzucci.weather.domain.ClockFormat
 import com.mazzucci.weather.domain.capAboutMe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -48,6 +49,20 @@ class TemplateNarratorTest {
         val validator = NarrationValidator()
         listOf(inputF, inputC, inputF.copy(forecast = TestData.forecast(rainAt = null))).forEach {
             assertTrue(validator.isValid(narrator.describe(it), it))
+        }
+    }
+}
+
+class ClockTest {
+    @Test fun `templates on the 24-hour clock still pass validation`() {
+        ClockFormat.use24Hour = true
+        try {
+            val narrator = TemplateNarrator(Locale.US)
+            val text = narrator.describe(inputF)
+            assertTrue(text, text.contains("18:00"))
+            assertTrue(NarrationValidator().isValid(text, inputF))
+        } finally {
+            ClockFormat.use24Hour = false
         }
     }
 }

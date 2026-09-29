@@ -60,6 +60,17 @@ class CommuteTest {
         assertEquals("Dark on the way home · take lights at 5 PM", copy.detail)
     }
 
+    @Test fun `the weekend follows the country`() {
+        assertEquals(setOf(DayOfWeek.FRIDAY, DayOfWeek.SATURDAY), weekendDays("SA"))
+        assertEquals(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), weekendDays("GB"))
+        assertEquals(setOf(DayOfWeek.FRIDAY), weekendDays("af"))
+        assertEquals(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), weekendDays(null))
+        // Thursday evening in Riyadh: the next workday is Sunday.
+        val thursday = LocalDateTime.of(2026, 10, 1, 18, 0)
+        val advice = commuteAdvice(forecast(thursday), Activity.CYCLING, settings, weekend = weekendDays("SA"))!!
+        assertEquals(DayOfWeek.SUNDAY, advice.day.dayOfWeek)
+    }
+
     @Test fun `public holidays are skipped like weekends`() {
         val tuesday = monday7am.toLocalDate().plusDays(1)
         val advice = commuteAdvice(forecast(monday7am.withHour(18)), Activity.CYCLING, settings, holidays = setOf(tuesday))!!

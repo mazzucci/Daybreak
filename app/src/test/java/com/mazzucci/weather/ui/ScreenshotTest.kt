@@ -23,6 +23,7 @@ import com.mazzucci.weather.TestData.london
 import com.mazzucci.weather.TestData.sanFrancisco
 import com.mazzucci.weather.TestData.tokyo
 import com.mazzucci.weather.domain.AppSettings
+import com.mazzucci.weather.domain.ClockFormat
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.ModelStatus
@@ -414,9 +415,33 @@ class ScreenshotTest {
         Weather(
             weatherState(
                 PageContent.Loaded(withTomorrow, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp),
-                settings = AppSettings(commute = CommuteSettings(8, 17)),
+                settings = AppSettings(commute = CommuteSettings(8, 17, enabled = true)),
             )
         )
+    }
+
+    /**
+     * The phone on the 24-hour clock: "15:00" in the 52dp hourly cards, "07:02" in the sun tiles, and the copy that
+     * names an hour (the summary, "Now–18:00", "60% at 18:00"). The check comes home at 18:00, the rainy hour.
+     */
+    @Test fun weather24Hour() {
+        ClockFormat.use24Hour = true
+        try {
+            snap("weather_24_hour", tall = true) {
+                val summary = Narration(
+                    TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F)),
+                    NarrationSource.TEMPLATE,
+                )
+                Weather(
+                    weatherState(
+                        PageContent.Loaded(forecast, summary, comingUp = sanFranciscoComingUp),
+                        settings = AppSettings(commute = CommuteSettings(8, 18, enabled = true)),
+                    )
+                )
+            }
+        } finally {
+            ClockFormat.use24Hour = false
+        }
     }
 
     @Test fun comingUpCard() = snap("coming_up") {

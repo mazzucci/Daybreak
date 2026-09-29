@@ -27,6 +27,8 @@ import com.mazzucci.weather.widget.GlanceWidgetPublisher
 import com.mazzucci.weather.data.NagerHolidayApi
 import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.ui.WeatherApp
+import com.mazzucci.weather.domain.ClockFormat
+import android.text.format.DateFormat
 import java.io.IOException
 import android.net.Uri
 import com.mazzucci.weather.data.OpenMeteoRideWeather
@@ -42,7 +44,25 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
+        syncClockFormat(recreateOnChange = false) // about to compose anyway
         setContent { WeatherTheme { WeatherApp(vm, rideVm) } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncClockFormat(recreateOnChange = true)
+    }
+
+    /**
+     * Follows the phone's 12/24-hour setting. On a change (in onCreate too: a locale change recreates the activity
+     * but keeps the ViewModel and its summaries) the summaries are rewritten; on resume the screen is redrawn.
+     */
+    private fun syncClockFormat(recreateOnChange: Boolean) {
+        val use24Hour = DateFormat.is24HourFormat(this)
+        if (use24Hour == ClockFormat.use24Hour) return
+        ClockFormat.use24Hour = use24Hour
+        vm.onClockFormatChanged()
+        if (recreateOnChange) recreate() // every time on screen was formatted with the old clock
     }
 }
 
