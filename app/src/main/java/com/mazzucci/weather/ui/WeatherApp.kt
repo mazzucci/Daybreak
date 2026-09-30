@@ -131,6 +131,8 @@ fun WeatherApp(vm: WeatherViewModel) {
             onGemmaEnabledChange = vm::setGemmaEnabled,
             onMemesEnabledChange = vm::setMemesEnabled,
             onComingUpEnabledChange = vm::setComingUpEnabled,
+            onAddPersonalDate = vm::addPersonalDate,
+            onRemovePersonalDate = vm::removePersonalDate,
             onToneChange = vm::setTone,
             onAboutMeChange = vm::setAboutMe,
             onActivityChange = vm::setActivity,

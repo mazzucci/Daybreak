@@ -92,4 +92,64 @@ class ComingUpTest {
         assertEquals("US", countryCodeOf(TestData.sanFrancisco.copy(countryCode = null))) // "United States"
         assertNull(countryCodeOf(TestData.london.copy(country = null, countryCode = null)))
     }
+
+    @Test fun `days off count down with the break they make`() {
+        val wed = LocalDate.of(2026, 9, 30)
+        val friday = LocalDate.of(2026, 10, 2)
+        fun next(vararg d: PersonalDate, holidays: Set<LocalDate> = emptySet()) = upcomingPersonalDates(wed, d.toList(), holidays).first()
+        // A Friday off makes a 3-day weekend; with Monday's holiday, a 4-day one.
+        assertEquals(
+            Countdown(Countdown.Kind.DAY_OFF, "Day off", friday, note = "Makes a 3-day weekend"),
+            next(PersonalDate(friday, dayOff = true)),
+        )
+        assertEquals("Makes a 4-day weekend", next(PersonalDate(friday, dayOff = true), holidays = setOf(friday.plusDays(3))).note)
+        // A working week off, weekends either side: nine days.
+        val week = PersonalDate(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 16), "Lisbon trip", dayOff = true)
+        assertEquals(Countdown(Countdown.Kind.DAY_OFF, "Lisbon trip", week.start, week.end, "9 days in a row"), next(week))
+        // Tuesday to Thursday: nothing to join up with.
+        assertEquals("3 days", next(PersonalDate(LocalDate.of(2026, 10, 6), LocalDate.of(2026, 10, 8), dayOff = true)).note)
+        assertNull(next(PersonalDate(LocalDate.of(2026, 10, 7), dayOff = true)).note)
+    }
+
+    @Test fun `other dates just count down, and only the next three within the horizon show`() {
+        val wed = LocalDate.of(2026, 9, 30)
+        val talk = PersonalDate(LocalDate.of(2026, 10, 8), name = "Board presentation")
+        assertEquals(listOf(Countdown(Countdown.Kind.PERSONAL, "Board presentation", talk.start)), upcomingPersonalDates(wed, listOf(talk)))
+        // Next to a weekend, but not a day off: no break to speak of.
+        assertNull(upcomingPersonalDates(wed, listOf(PersonalDate(LocalDate.of(2026, 10, 2), name = "Launch"))).single().note)
+        val many = (1..5L).map { PersonalDate(wed.plusDays(it * 7), name = "Week $it") } +
+            PersonalDate(wed.minusDays(3), name = "Past") + PersonalDate(wed.plusDays(200), name = "Far")
+        assertEquals(listOf("Week 1", "Week 2", "Week 3"), upcomingPersonalDates(wed, many).map { it.title })
+    }
+
+    @Test fun `yearly dates come round again`() {
+        val birthday = PersonalDate(LocalDate.of(2026, 3, 14), name = "Mum's birthday", yearly = true)
+        val wed = LocalDate.of(2026, 9, 30)
+        assertEquals(LocalDate.of(2027, 3, 14), birthday.next(wed)?.start)
+        assertEquals(LocalDate.of(2026, 3, 14), birthday.next(LocalDate.of(2026, 3, 14))?.start)
+        assertNull(birthday.copy(yearly = false).next(wed))
+        // 29 February falls on the 28th in other years.
+        assertEquals(LocalDate.of(2027, 2, 28), PersonalDate(LocalDate.of(2028, 2, 29), yearly = true).next(LocalDate.of(2027, 1, 1))?.start)
+        assertEquals(LocalDate.of(2027, 3, 14), upcomingPersonalDates(LocalDate.of(2027, 1, 1), listOf(birthday)).single().date)
+    }
+
+    @Test fun `a date under way counts as today and says when it ends`() {
+        val trip = PersonalDate(LocalDate.of(2026, 9, 28), LocalDate.of(2026, 10, 2), "Lisbon trip", dayOff = true)
+        val wed = LocalDate.of(2026, 9, 30)
+        assertEquals(Countdown(Countdown.Kind.DAY_OFF, "Lisbon trip", wed, trip.end, "Until Friday"), upcomingPersonalDates(wed, listOf(trip)).single())
+        assertEquals("Last day", upcomingPersonalDates(trip.end, listOf(trip)).single().note)
+    }
+
+    @Test fun `day off dates cover every day of each day off, including a yearly one's next two`() {
+        val today = LocalDate.of(2026, 9, 30)
+        val dates = dayOffDates(
+            listOf(
+                PersonalDate(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 14), dayOff = true),
+                PersonalDate(LocalDate.of(2026, 12, 24), dayOff = true, yearly = true),
+                PersonalDate(LocalDate.of(2026, 10, 20), name = "Presentation"),
+            ),
+            today,
+        )
+        assertEquals(setOf(12, 13, 14).map { LocalDate.of(2026, 10, it) }.toSet() + LocalDate.of(2026, 12, 24) + LocalDate.of(2027, 12, 24), dates)
+    }
 }

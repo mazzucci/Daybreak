@@ -16,6 +16,7 @@ import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.weekendDays
 import com.mazzucci.weather.domain.with
 import com.mazzucci.weather.domain.Countdown
+import com.mazzucci.weather.domain.PersonalDate
 import com.mazzucci.weather.domain.comingUp
 import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.Forecast
@@ -505,6 +506,16 @@ class WeatherViewModel(
 
     /** Only changes the activity card, which is computed from the cached forecast: nothing to refetch or re-narrate. */
     fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
+
+    /** Adds [date], dropping one-off dates that are over; the card is computed from settings, so nothing to fetch. */
+    fun addPersonalDate(date: PersonalDate) {
+        val today = LocalDate.now()
+        settingsRepo.update { s ->
+            s.copy(personalDates = (s.personalDates.filter { it.next(today) != null } + date).distinct().sortedBy { it.start })
+        }
+    }
+
+    fun removePersonalDate(date: PersonalDate) = settingsRepo.update { s -> s.copy(personalDates = s.personalDates - date) }
 
     fun setComingUpEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(comingUpEnabled = enabled) }

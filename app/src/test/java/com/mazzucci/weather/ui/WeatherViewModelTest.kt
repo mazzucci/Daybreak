@@ -12,6 +12,7 @@ import com.mazzucci.weather.data.WeatherApi
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.CommuteEnd
 import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.PersonalDate
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.domain.ABOUT_ME_MAX_CHARS
 import com.mazzucci.weather.domain.Tone
@@ -491,6 +492,20 @@ class WeatherViewModelTest {
         vm.setCommutePlaceHere(CommuteEnd.OFFICE)
         runCurrent()
         assertEquals(CommuteLocating(CommuteEnd.OFFICE, "Location access is off for this app."), vm.uiState.value.commuteLocating)
+    }
+
+    @Test fun `adding a date keeps them sorted and drops one-off dates that are over`() = runTest(dispatcher) {
+        val today = LocalDate.now()
+        val past = PersonalDate(today.minusDays(10), name = "Old talk")
+        val birthday = PersonalDate(today.minusDays(40), name = "Birthday", yearly = true)
+        val vm = viewModel(AppSettings(personalDates = listOf(past, birthday)))
+        val trip = PersonalDate(today.plusDays(3), today.plusDays(5), "Trip", dayOff = true)
+        vm.addPersonalDate(trip)
+        runCurrent()
+        assertEquals(listOf(birthday, trip), vm.uiState.value.settings.personalDates)
+        vm.removePersonalDate(birthday)
+        runCurrent()
+        assertEquals(listOf(trip), vm.uiState.value.settings.personalDates)
     }
 
     @Test fun `the widget mirrors the first loaded page, and Gemma's summary when it lands`() = runTest(dispatcher) {

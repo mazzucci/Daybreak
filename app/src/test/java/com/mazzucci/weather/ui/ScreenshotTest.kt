@@ -39,6 +39,8 @@ import com.mazzucci.weather.domain.HourForecast
 import com.mazzucci.weather.domain.HourScore
 import com.mazzucci.weather.domain.Limit
 import com.mazzucci.weather.domain.CommuteEnd
+import com.mazzucci.weather.domain.upcomingPersonalDates
+import com.mazzucci.weather.domain.PersonalDate
 import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.data.parseLongWeekends
@@ -162,6 +164,7 @@ class ScreenshotTest {
     @Composable
     private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings(), commuteLocating: CommuteLocating? = null) {
         SettingsScreen(
+            today = forecast.current.time.toLocalDate(),
             settings = settings,
             modelStatus = status,
             commuteLocating = commuteLocating,
@@ -481,6 +484,36 @@ class ScreenshotTest {
     }
 
     /** Narrow screen at 1.5x: the detail line wraps without stranding a separator, the countdown stays on one line. */
+    /** A presentation and a week off (joined to the weekends either side) among the place's holidays. */
+    @Test fun comingUpPersonalDates() = snap("coming_up_personal_dates") {
+        val today = forecast.current.time.toLocalDate()
+        val mine = listOf(
+            PersonalDate(today.plusDays(1), name = "Board presentation"),
+            PersonalDate(today.plusDays(5), today.plusDays(9), "Lisbon trip", dayOff = true),
+        )
+        Column(Modifier.padding(vertical = 16.dp)) {
+            ComingUpCard(
+                (sanFranciscoComingUp + upcomingPersonalDates(today, mine)).sortedBy { it.date },
+                forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp),
+            )
+        }
+    }
+
+    /** A birthday, a presentation and a week off, listed under the holidays switch. */
+    @Test fun settingsPersonalDates() = snap("settings_personal_dates", tall = true) {
+        val today = forecast.current.time.toLocalDate()
+        Settings(
+            ModelStatus.Installed(529L shl 20),
+            AppSettings(
+                personalDates = listOf(
+                    PersonalDate(today.plusDays(1), name = "Board presentation"),
+                    PersonalDate(today.plusDays(12), today.plusDays(16), "Lisbon trip", dayOff = true),
+                    PersonalDate(today.minusDays(40), name = "Mum's birthday", yearly = true),
+                ),
+            ),
+        )
+    }
+
     @Test fun comingUpCardLargeFont() = snap("coming_up_large_font", narrow = true, fontScale = 1.5f) {
         Column(Modifier.padding(vertical = 16.dp)) {
             ComingUpCard(sanFranciscoComingUp, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))

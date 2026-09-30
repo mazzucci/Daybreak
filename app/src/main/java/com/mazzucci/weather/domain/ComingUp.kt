@@ -1,5 +1,6 @@
 package com.mazzucci.weather.domain
 
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.Month
 import java.time.temporal.ChronoUnit
@@ -21,9 +22,98 @@ data class Countdown(
     /** Extra context: "4-day weekend", "Take Friday off for a 4-day weekend". */
     val note: String? = null,
 ) {
-    enum class Kind { HOLIDAY, LONG_WEEKEND, SEASON }
+    enum class Kind { HOLIDAY, LONG_WEEKEND, SEASON, DAY_OFF, PERSONAL }
 
     fun daysFrom(today: LocalDate): Long = ChronoUnit.DAYS.between(today, date)
+}
+
+/**
+ * A date of the user's own: a birthday, a big presentation, leave. One day or a run of them ([end] inclusive), with
+ * their [name] for it. A [dayOff] is skipped by the commute check and counted down with the break it makes; a
+ * [yearly] one comes round every year on the same dates.
+ */
+data class PersonalDate(
+    val start: LocalDate,
+    val end: LocalDate = start,
+    val name: String = "",
+    val dayOff: Boolean = false,
+    val yearly: Boolean = false,
+) {
+    init {
+        require(!end.isBefore(start)) { "A date can't end before it starts" }
+    }
+
+    /** The name, or what it is without one. */
+    val title: String get() = name.ifBlank { if (!dayOff) "Your date" else if (start == end) "Day off" else "Days off" }
+
+    val dayCount: Long get() = ChronoUnit.DAYS.between(start, end) + 1
+
+    fun contains(date: LocalDate) = !date.isBefore(start) && !date.isAfter(end)
+
+    /**
+     * The occurrence that's still ahead of (or under way on) [today]: this one, or for a yearly date this year's or
+     * next year's (a 29 February falls on the 28th in other years). Null once a one-off date is over.
+     */
+    fun next(today: LocalDate): PersonalDate? {
+        if (!yearly) return takeIf { !end.isBefore(today) }
+        val thisYear = start.withYear(today.year)
+        val first = if (thisYear.plusDays(dayCount - 1).isBefore(today)) start.withYear(today.year + 1) else thisYear
+        return copy(start = first, end = first.plusDays(dayCount - 1))
+    }
+}
+
+/** Longest name a date keeps; enough for "Lisbon with the kids". */
+const val PERSONAL_DATE_NAME_MAX = 40
+
+/** Every day off in [dates] from [today] on (this and next year's for yearly ones), for the commute check to skip. */
+fun dayOffDates(dates: List<PersonalDate>, today: LocalDate): Set<LocalDate> =
+    dates.filter { it.dayOff }
+        .flatMap { d -> listOfNotNull(d.next(today), d.next(today)?.takeIf { d.yearly }?.let { n -> d.next(n.end.plusDays(1)) }) }
+        .flatMap { d -> generateSequence(d.start) { it.plusDays(1) }.take(d.dayCount.toInt()).toList() }
+        .toSet()
+
+/**
+ * The user's next dates (up to [max]) within [horizonDays], soonest first: counted down to their first day, or to
+ * today once under way. A day off's note says how long a break it makes with the [weekend], [holidays] and other
+ * days off around it ("Makes a 4-day weekend", "9 days in a row"); once started, any multi-day date says when it
+ * ends.
+ */
+fun upcomingPersonalDates(
+    today: LocalDate,
+    dates: List<PersonalDate>,
+    holidays: Set<LocalDate> = emptySet(),
+    weekend: Set<DayOfWeek> = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY),
+    horizonDays: Long = 120,
+    max: Int = 3,
+    locale: Locale = Locale.US,
+): List<Countdown> {
+    val offDates = dayOffDates(dates, today)
+    fun dayName(d: LocalDate) = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, locale)
+    return dates.mapNotNull { it.next(today) }
+        .filter { !it.start.isAfter(today.plusDays(horizonDays)) }
+        .sortedBy { it.start }
+        .take(max)
+        .map { d ->
+            val kind = if (d.dayOff) Countdown.Kind.DAY_OFF else Countdown.Kind.PERSONAL
+            if (d.start.isBefore(today)) {
+                return@map Countdown(kind, d.title, today, d.end, if (d.end == today) "Last day" else "Until ${dayName(d.end)}")
+            }
+            val end = d.end.takeIf { it != d.start }
+            if (!d.dayOff) return@map Countdown(kind, d.title, d.start, end, if (d.dayCount > 1) "${d.dayCount} days" else null)
+            // The whole break: out past the weekend, holidays and other days off on either side.
+            fun off(x: LocalDate) = x.dayOfWeek in weekend || x in holidays || x in offDates
+            var first = d.start
+            while (off(first.minusDays(1)) && ChronoUnit.DAYS.between(first, d.start) < 30) first = first.minusDays(1)
+            var last = d.end
+            while (off(last.plusDays(1)) && ChronoUnit.DAYS.between(d.end, last) < 30) last = last.plusDays(1)
+            val total = ChronoUnit.DAYS.between(first, last) + 1
+            val note = when {
+                total == d.dayCount -> if (total > 1) "$total days" else null
+                total <= 4 -> "Makes a $total-day weekend"
+                else -> "$total days in a row"
+            }
+            Countdown(kind, d.title, d.start, end, note)
+        }
 }
 
 /**

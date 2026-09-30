@@ -6,6 +6,7 @@ import com.mazzucci.weather.TestData.tokyo
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.PersonalDate
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.domain.Tone
@@ -159,6 +160,20 @@ class SettingsRepositoryTest {
         assertEquals(CommuteSettings(7, 18, true, home, null), SettingsRepository(store, privateStore = private).settings.value.commute)
         private.putString("commute_home", "{not json")
         assertNull(SettingsRepository(store, privateStore = private).settings.value.commute.home)
+    }
+
+    @Test fun `your dates are kept in the private store, sorted, and a bad entry doesn't lose the rest`() {
+        val store = InMemoryStore()
+        val private = InMemoryStore()
+        val trip = PersonalDate(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 16), "Lisbon trip", dayOff = true)
+        val birthday = PersonalDate(LocalDate.of(2026, 10, 2), name = "Mum's birthday", yearly = true)
+        SettingsRepository(store, privateStore = private).update { it.copy(personalDates = listOf(trip, birthday)) }
+        assertNull(store.getString("personal_dates"))
+        assertEquals(listOf(birthday, trip), SettingsRepository(store, privateStore = private).settings.value.personalDates)
+        private.putString("personal_dates", private.getString("personal_dates")!!.replace("2026-10-02", "not a date"))
+        assertEquals(listOf(trip), SettingsRepository(store, privateStore = private).settings.value.personalDates)
+        SettingsRepository(store, privateStore = private).update { it.copy(personalDates = emptyList()) }
+        assertNull(private.getString("personal_dates"))
     }
 
     @Test fun `activity is saved, including off`() {

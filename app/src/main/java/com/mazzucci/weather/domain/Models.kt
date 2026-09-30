@@ -191,6 +191,8 @@ data class AppSettings(
     val commute: CommuteSettings = CommuteSettings(),
     /** Whether pages show upcoming public holidays, long weekends and the next season. */
     val comingUpEnabled: Boolean = true,
+    /** The user's own dates (birthdays, presentations, days off), soonest first, counted down to on the first page. */
+    val personalDates: List<PersonalDate> = emptyList(),
     /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */
     val memesEnabled: Boolean = true,
 )

@@ -104,6 +104,9 @@ import com.mazzucci.weather.domain.formatDegrees
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.PersonalDate
+import com.mazzucci.weather.domain.dayOffDates
+import com.mazzucci.weather.domain.upcomingPersonalDates
 import com.mazzucci.weather.domain.Countdown
 import androidx.compose.material3.minimumInteractiveComponentSize
 import java.time.DayOfWeek
@@ -169,6 +172,9 @@ fun WeatherPagerScreen(
                     commute = state.settings.commute.takeIf { it.enabled && index == commutePage },
                     commuteForecasts = state.commute,
                     commuteUnavailable = state.commuteUnavailable,
+                    // Your own dates aren't a place's: they go on the first page, with the other personal cards.
+                    personalDates = if (index == commutePage) state.settings.personalDates else emptyList(),
+                    showPersonalDates = state.settings.comingUpEnabled,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -243,6 +249,8 @@ fun WeatherPage(
     commute: CommuteSettings? = null,
     commuteForecasts: CommuteForecasts? = null,
     commuteUnavailable: Boolean = false,
+    personalDates: List<PersonalDate> = emptyList(),
+    showPersonalDates: Boolean = true,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -315,6 +323,8 @@ fun WeatherPage(
                         weekend = weekendDays(page.place?.let(::countryCodeOf)),
                         commuteForecasts = commuteForecasts,
                         commuteUnavailable = commuteUnavailable,
+                        personalDates = personalDates,
+                        showPersonalDates = showPersonalDates,
                     )
                 }
                 Spacer(Modifier.height(24.dp))
@@ -477,8 +487,11 @@ private fun BodyForecast(
     weekend: Set<DayOfWeek> = weekendDays(null),
     commuteForecasts: CommuteForecasts? = null,
     commuteUnavailable: Boolean = false,
+    personalDates: List<PersonalDate> = emptyList(),
+    showPersonalDates: Boolean = true,
 ) {
     val cur = forecast.current
+    val offDates = remember(personalDates, cur.time.toLocalDate()) { dayOffDates(personalDates, cur.time.toLocalDate()) }
     Spacer(Modifier.height(20.dp))
     TileRow {
         StatTile(
@@ -503,10 +516,11 @@ private fun BodyForecast(
         // With a home set, home's (and the office's) own forecasts; until they load, nothing, unless home's
         // couldn't be fetched, when this page's forecast is better than no card at all.
         val c = commuteForecasts?.takeIf { commute.home != null && it.home == commute.home && it.office == commute.office }
-        val advice = remember(forecast, mode, commute, holidays, weekend, c, commuteUnavailable) {
+        val advice = remember(forecast, mode, commute, holidays, weekend, c, commuteUnavailable, offDates) {
             when {
-                c != null -> commuteAdvice(c.homeForecast, mode, commute, c.holidays, c.weekend, c.officeForecast)
-                commute.home == null || commuteUnavailable -> commuteAdvice(forecast, mode, commute, holidays, weekend)
+                // Your days off are skipped like public holidays.
+                c != null -> commuteAdvice(c.homeForecast, mode, commute, c.holidays + offDates, c.weekend, c.officeForecast)
+                commute.home == null || commuteUnavailable -> commuteAdvice(forecast, mode, commute, holidays + offDates, weekend)
                 else -> null
             }
         }
@@ -543,7 +557,12 @@ private fun BodyForecast(
         Spacer(Modifier.height(12.dp))
         DailyList(week, forecast.today.date, unit)
     }
-    if (comingUp.isNotEmpty()) {
+    // The place's holidays and seasons, with your own next dates among them.
+    val upcoming = remember(comingUp, personalDates, showPersonalDates, holidays, weekend, cur.time.toLocalDate()) {
+        val mine = if (showPersonalDates) upcomingPersonalDates(cur.time.toLocalDate(), personalDates, holidays, weekend) else emptyList()
+        (comingUp + mine).sortedBy { it.date }
+    }
+    if (upcoming.isNotEmpty()) {
         Spacer(Modifier.height(24.dp))
         Text(
             "Coming up",
@@ -551,7 +570,7 @@ private fun BodyForecast(
             modifier = Modifier.padding(horizontal = PageMargin).semantics { heading() },
         )
         Spacer(Modifier.height(12.dp))
-        ComingUpCard(comingUp, forecast, unit, Modifier.padding(horizontal = PageMargin))
+        ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin))
     }
     if (meme != null) {
         Spacer(Modifier.height(24.dp))
