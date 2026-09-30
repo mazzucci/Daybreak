@@ -148,7 +148,7 @@ fun ClocksScreen(
                 Text(time, style = MaterialTheme.typography.displayMedium)
                 // Non-breaking spaces around the dots, so a wrapped line never ends on one.
                 Text(
-                    "${cityOf(here)} · your phone · ${formatUtc(mine.offset.totalSeconds)}",
+                    "${cityOf(here)} · your phone · ${formatUtc(mine.offset.totalSeconds)}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
