@@ -46,8 +46,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
-    // android.jar's XmlPullParser is a stub in JVM unit tests; kxml2 is the parser Android itself ships.
-    testImplementation("net.sf.kxml:kxml2:2.3.0")
     testImplementation("androidx.glance:glance-appwidget-testing:1.1.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     // android.jar's org.json is a stub in JVM unit tests; use the real implementation there.

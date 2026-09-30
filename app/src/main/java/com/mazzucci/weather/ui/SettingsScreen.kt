@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -120,7 +119,6 @@ fun SettingsScreen(
     commuteLocating: CommuteLocating? = null,
     onCommutePlaceHere: (CommuteEnd) -> Unit = {},
     onCommutePlaceSearch: (CommuteEnd) -> Unit = {},
-    onOpenRideReplay: (() -> Unit)? = null,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -215,34 +213,6 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(12.dp))
             CommuteSettingsCard(settings.commute, commuteLocating, onCommuteChange, onCommutePlaceHere, onCommutePlaceSearch)
-
-            if (onOpenRideReplay != null) {
-                Spacer(Modifier.height(12.dp))
-                // Opens a page rather than changing a setting, so the whole card is the control, with a chevron.
-                Card(
-                    onClick = onOpenRideReplay,
-                    modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                ) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Ride replay", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "See the wind and weather on a past ride or run, from a GPX file.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
 
             SectionTitle("Summary style")
             SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
