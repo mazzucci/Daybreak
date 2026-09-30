@@ -64,6 +64,8 @@ import app.daybreak.domain.describeWeatherCode
 import app.daybreak.domain.formatBothUnits
 import app.daybreak.domain.formatDegrees
 import app.daybreak.domain.upcomingPersonalDates
+import app.daybreak.domain.describeSky
+import app.daybreak.domain.moonPhase
 import app.daybreak.domain.weekendDays
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -144,7 +146,7 @@ fun HomeScreen(
             HomeCards(state, page, loaded, now)
             // Only when every card is switched off (not while they're waiting for a forecast).
             val settings = state.settings
-            if (!settings.commute.enabled && !settings.comingUpEnabled && !settings.memesEnabled) {
+            if (!settings.commute.enabled && !settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Turn on more cards in Settings",
@@ -191,6 +193,15 @@ private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
     if (upcoming.isNotEmpty()) {
         SectionHeading("Coming up")
         ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin), today = today)
+    }
+
+    if (settings.skyEnabled) {
+        val zone = java.time.ZoneId.systemDefault()
+        val instant = now.atZone(zone).toInstant()
+        val phase = remember(instant) { moonPhase(instant) }
+        val sky = remember(instant, forecast) { describeSky(instant, zone, forecast) }
+        SectionHeading("Tonight's sky")
+        SkyCard(phase, sky, Modifier.padding(horizontal = PageMargin))
     }
 
     val meme = loaded?.meme

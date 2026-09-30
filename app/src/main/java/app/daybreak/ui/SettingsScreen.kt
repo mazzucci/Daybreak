@@ -127,6 +127,7 @@ fun SettingsScreen(
     onUnitChange: (TempUnit) -> Unit,
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
+    onSkyEnabledChange: (Boolean) -> Unit = {},
     onComingUpEnabledChange: (Boolean) -> Unit,
     onAddPersonalDate: (PersonalDate) -> Unit = {},
     onRemovePersonalDate: (PersonalDate) -> Unit = {},
@@ -247,7 +248,7 @@ fun SettingsScreen(
                         Text("Daily weather meme", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "A silly two-line caption under each forecast, made on this phone. " +
+                            "A silly two-line caption on Home, made on this phone. " +
                                 "Switch Gemma on below for a fresh one every day.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -258,6 +259,27 @@ fun SettingsScreen(
                         checked = settings.memesEnabled,
                         onCheckedChange = onMemesEnabledChange,
                         modifier = Modifier.semantics { contentDescription = "Daily weather meme" },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Tonight's sky", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "The moon's phase, the next full moon, meteor showers, and whether it's clear enough to " +
+                                "look up. Worked out on this phone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = settings.skyEnabled,
+                        onCheckedChange = onSkyEnabledChange,
+                        modifier = Modifier.semantics { contentDescription = "Tonight's sky" },
                     )
                 }
             }

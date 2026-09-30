@@ -40,6 +40,8 @@ import app.daybreak.domain.HourScore
 import app.daybreak.domain.Limit
 import app.daybreak.domain.Clock
 import app.daybreak.domain.CommuteEnd
+import app.daybreak.domain.describeSky
+import app.daybreak.domain.moonPhase
 import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.CommuteSettings
@@ -236,7 +238,23 @@ class ScreenshotTest {
 
     /** No places yet, and every Home card off: the glance offers a place, and a line points to Settings. */
     @Test fun homeEmpty() = snap("home_empty") {
-        Home(WeatherUiState(settings = AppSettings(comingUpEnabled = false, memesEnabled = false)))
+        Home(WeatherUiState(settings = AppSettings(comingUpEnabled = false, memesEnabled = false, skyEnabled = false)))
+    }
+
+    /** The moon through its cycle, each with its card's words, in both themes' card colours. */
+    @Test fun skyCards() = snap("sky_cards", tall = true) {
+        val zone = java.time.ZoneId.of("America/Los_Angeles")
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf("2026-10-14", "2026-10-18", "2026-10-22", "2026-10-26", "2026-10-31", "2026-11-04", "2026-11-07", "2026-11-09").forEach { d ->
+                val at = java.time.Instant.parse("${d}T20:00:00Z")
+                SkyCard(moonPhase(at), describeSky(at, zone, null, use24Hour = false))
+            }
+        }
+    }
+
+    @Test fun skyCardDark() = snap("sky_card_dark", night = true) {
+        val at = java.time.Instant.parse("2026-10-18T20:00:00Z")
+        Column(Modifier.padding(16.dp)) { SkyCard(moonPhase(at), describeSky(at, java.time.ZoneId.of("America/Los_Angeles"), rainyNight, use24Hour = false)) }
     }
 
     // --- Clocks ---------------------------------------------------------------------------------

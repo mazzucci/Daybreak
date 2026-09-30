@@ -246,6 +246,7 @@ private fun SettingsTab(
             onUnitChange = vm::setPrimaryUnit,
             onGemmaEnabledChange = vm::setGemmaEnabled,
             onMemesEnabledChange = vm::setMemesEnabled,
+            onSkyEnabledChange = vm::setSkyEnabled,
             onComingUpEnabledChange = vm::setComingUpEnabled,
             onAddPersonalDate = vm::addPersonalDate,
             onRemovePersonalDate = vm::removePersonalDate,
