@@ -68,6 +68,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import app.daybreak.domain.Clock
 import app.daybreak.domain.ClockFormat
 import app.daybreak.domain.cityOf
@@ -119,6 +130,12 @@ fun ClocksScreen(
     here: ZoneId = ZoneId.systemDefault(),
     now: Instant? = null,
     initiallyEditing: Boolean = false,
+    ask: AskUi = AskUi.Idle,
+    /** Whether Ask can be used: Gemma installed and switched on (or why not). */
+    gemma: GemmaAvailability = GemmaAvailability.MISSING,
+    onAsk: (String) -> Unit = {},
+    onCancelAsk: () -> Unit = {},
+    onSetUpGemma: () -> Unit = {},
 ) {
     val moment = now ?: rememberMinuteClock()
     var editing by rememberSaveable { mutableStateOf(initiallyEditing) }
@@ -160,8 +177,12 @@ fun ClocksScreen(
                 Spacer(Modifier.height(24.dp))
                 Text("Convert", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Spacer(Modifier.height(12.dp))
-                Converter(clocks, moment, here)
+                Converter(clocks, moment, here, (ask as? AskUi.Answer)?.request)
             }
+            Spacer(Modifier.height(24.dp))
+            Text("Ask", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Spacer(Modifier.height(12.dp))
+            AskCard(ask, gemma, onAsk, onCancelAsk, onSetUpGemma)
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -316,7 +337,7 @@ private fun UnknownDisc() {
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
+private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId, request: ConverterRequest?) {
     // Minutes past midnight, or null for "now"; 0 today, 1 tomorrow; the clock the time is in, null for the phone.
     var minutes by rememberSaveable { mutableStateOf<Int?>(null) }
     var dayOffset by rememberSaveable { mutableStateOf(0) }
@@ -325,6 +346,17 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
     var dayMenu by rememberSaveable { mutableStateOf(false) }
     var fromMenu by rememberSaveable { mutableStateOf(false) }
 
+    // An answer from Ask sets the converter to its moment, so every clock shows it too: the prose is the answer,
+    // the rows are the proof. Once per answer, so coming back to the tab doesn't undo the user's own picks.
+    var appliedId by rememberSaveable { mutableStateOf(0L) }
+    LaunchedEffect(request) {
+        if (request != null && request.id != appliedId) {
+            appliedId = request.id
+            minutes = request.minutes
+            dayOffset = request.dayOffset
+            fromId = request.fromClockId
+        }
+    }
     // A removed clock (or one whose zone is unknown) can't be where the time is: back to your phone, and to now,
     // since the picked time was that clock's.
     val from = clocks.firstOrNull { it.id == fromId && it.zone != null }
@@ -402,6 +434,111 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
             },
             text = { TimePicker(state) },
         )
+    }
+}
+
+/** Whether the Ask box can be used, and if not, what's missing. */
+enum class GemmaAvailability { READY, OFF, DOWNLOADING, MISSING }
+
+/**
+ * "What time is it in Romania at noon my time?": a field and a send button, then the answer in the app's quoted
+ * block with Gemma's credit (Gemma understands the question; the time is worked out by the app). While Gemma
+ * works, a Cancel. Without Gemma, one line on what's missing and, when it helps, a way to fix it.
+ */
+@Composable
+private fun AskCard(
+    ask: AskUi,
+    gemma: GemmaAvailability,
+    onAsk: (String) -> Unit,
+    onCancel: () -> Unit,
+    onSetUpGemma: () -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.padding(16.dp)) {
+            if (gemma != GemmaAvailability.READY) {
+                Text(
+                    when (gemma) {
+                        GemmaAvailability.OFF -> "Ask in plain words once Gemma is switched on."
+                        GemmaAvailability.DOWNLOADING -> "Ask in plain words once Gemma has finished downloading."
+                        else -> "Ask in plain words, \u201cWhat time is it in Romania at noon my time?\u201d, once Gemma is set up on this phone."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (gemma != GemmaAvailability.DOWNLOADING) {
+                    TextButton(onSetUpGemma, Modifier.padding(top = 4.dp)) {
+                        Text(if (gemma == GemmaAvailability.OFF) "Turn on Gemma" else "Set up Gemma")
+                    }
+                }
+                return@Column
+            }
+            val working = ask is AskUi.Working
+            val send = {
+                if (text.isNotBlank() && !working) {
+                    // Out of the way, so the answer below and the converter above can be seen.
+                    keyboard?.hide()
+                    focus.clearFocus()
+                    onAsk(text)
+                }
+            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(app.daybreak.narration.TimeAskPrompt.MAX_QUESTION) },
+                placeholder = { Text("What time is it in Romania at noon my time?", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { send() }),
+                trailingIcon = {
+                    IconButton(send, enabled = text.isNotBlank() && !working) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Ask Gemma")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Ask Gemma about a time" },
+            )
+            // One status area that's always there, so TalkBack hears it change: working, then the answer.
+            Column(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
+                when (ask) {
+                    AskUi.Idle -> Unit
+                    is AskUi.Working -> {
+                        Spacer(Modifier.height(12.dp))
+                        LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Working it out…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onCancel) { Text("Cancel") }
+                        }
+                    }
+                    is AskUi.Answer -> AnswerBlock(ask.question, ask.text, error = false)
+                    is AskUi.Failed -> AnswerBlock(ask.question, ask.message, error = true)
+                }
+            }
+        }
+    }
+}
+
+/** The answer (or why there isn't one) under the question it answers, in the app's quoted-block style. */
+@Composable
+private fun AnswerBlock(question: String, text: String, error: Boolean) {
+    Spacer(Modifier.height(8.dp))
+    Column(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .semantics(mergeDescendants = true) {},
+    ) {
+        Text(question, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(2.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+        if (!error) {
+            Spacer(Modifier.height(4.dp))
+            Text("✦ Understood by Gemma on this device", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.weatherColors.gemma)
+        }
     }
 }
 

@@ -273,11 +273,34 @@ class ScreenshotTest {
     private val clocksNow = java.time.Instant.parse("2026-09-28T21:42:00Z")
 
     @Composable
-    private fun Clocks(list: List<Clock>, editing: Boolean = false) {
+    private fun Clocks(list: List<Clock>, editing: Boolean = false, ask: AskUi = AskUi.Idle, gemmaReady: Boolean = false) {
+        val gemma = if (gemmaReady) GemmaAvailability.READY else GemmaAvailability.MISSING
         ClocksScreen(
             list, onAdd = {}, onRemove = {}, onMove = { _, _ -> },
             here = java.time.ZoneId.of("America/Los_Angeles"), now = clocksNow, initiallyEditing = editing,
+            ask = ask, gemma = gemma,
         )
+    }
+
+    /** An answer from Ask: the words, Gemma's credit, and the converter set to the same moment (noon, your phone). */
+    @Test fun clocksAskAnswer() = snap("clocks_ask_answer", tall = true) {
+        Clocks(
+            clocks.take(3),
+            ask = AskUi.Answer(
+                "What time is it in Romania at noon my time?",
+                "At 12:00 PM on Monday in Los Angeles, it's 10:00 PM in Bucharest.",
+                ConverterRequest(12 * 60, 0, null, 1),
+            ),
+            gemmaReady = true,
+        )
+    }
+
+    @Test fun clocksAskWorkingDark() = snap("clocks_ask_working_dark", night = true, tall = true) {
+        Clocks(clocks.take(2), ask = AskUi.Working("What time is it in Tokyo?"), gemmaReady = true)
+    }
+
+    @Test fun clocksAskFailed() = snap("clocks_ask_failed", tall = true) {
+        Clocks(clocks.take(1), ask = AskUi.Failed("time in Atlantis", "Couldn't find “Atlantis”. Try a city name."), gemmaReady = true)
     }
 
     /** Edit mode, with a clock whose zone this phone doesn't know (it can only be removed). */

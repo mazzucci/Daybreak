@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daybreak.domain.CommuteEnd
+import app.daybreak.narration.isBusy
 
 /** The bottom bar's sections. Home is where the app opens. */
 enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Clocks("Clocks"), Settings("Settings") }
@@ -48,6 +49,7 @@ private enum class Overlay { Search, Places }
 fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val askState = clocksVm?.ask?.collectAsStateWithLifecycle()?.value ?: AskUi.Idle
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
     // Set while Search is adding a clock rather than a page.
@@ -220,6 +222,17 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                             },
                             onRemove = { clocksVm?.remove(it) },
                             onMove = { from, to -> clocksVm?.move(from, to) },
+                            ask = askState,
+                            gemma = when {
+                                clocksVm == null -> GemmaAvailability.MISSING
+                                state.modelStatus.isBusy -> GemmaAvailability.DOWNLOADING
+                                state.modelStatus !is app.daybreak.narration.ModelStatus.Installed -> GemmaAvailability.MISSING
+                                !state.settings.gemmaEnabled -> GemmaAvailability.OFF
+                                else -> GemmaAvailability.READY
+                            },
+                            onAsk = { clocksVm?.ask(it) },
+                            onCancelAsk = { clocksVm?.cancelAsk() },
+                            onSetUpGemma = { tab = Tab.Settings },
                         )
                         Tab.Settings -> SettingsTab(state, vm, commutePlaceHere, modelPicker::launch) { end ->
                             searchingFor = end
