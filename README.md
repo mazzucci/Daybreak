@@ -2,6 +2,8 @@
 
 A personal Android app for the start of your day: the weather for where you are and the places you save (in both °F and °C), your commute, holidays and your own dates, and a few fun things, with an optional on-device Gemma model writing the words. (It began as a weather app; the tabs Home · Weather · Clocks · Settings are on the way, see [docs/design/shell.md](docs/design/shell.md).)
 
+> **Coming from the old "Weather" app?** Daybreak has a new application id (`app.daybreak`), so it installs as a separate app and starts empty: add your places again, import or download the Gemma model again, and re-add your dates and commute. Then uninstall the old Weather app (its widget and background refresh go with it).
+
 - Search for any city and save it; swipe between places, reorder or remove them
 - Current location is optional: turn it off and use saved places only
 - A one-line summary at the top, a large temperature in your preferred unit with the other unit alongside, today's high/low and rain chance, and the next 12 hours
