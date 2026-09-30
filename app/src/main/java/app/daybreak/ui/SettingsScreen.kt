@@ -143,7 +143,8 @@ fun SettingsScreen(
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
     onRemoveModel: () -> Unit,
-    onBack: () -> Unit,
+    /** Null when Settings is a tab rather than a page with a way back. */
+    onBack: (() -> Unit)?,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -151,7 +152,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    if (onBack != null) IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -444,7 +445,7 @@ private fun PersonalDatesCard(
         Text("Your dates", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(2.dp))
         Text(
-            "Birthdays, big days, time off: counted down on your first page alongside the holidays (once within four " +
+            "Birthdays, big days, time off: counted down on Home alongside the holidays (once within four " +
                 "months). Days off count as a break, and the commute check skips them. Kept on this phone, not backed up." +
                 if (shown) "" else " Shown once Holidays and countdowns is on.",
             style = MaterialTheme.typography.bodySmall,
@@ -605,7 +606,7 @@ private fun CommuteSettingsCard(
                 Text(
                     when {
                         commute.home == null ->
-                            "Adds a card to the first page about your weekday trips, judged with the activity above (walking if it's off)."
+                            "Adds a card to Home about your weekday trips, judged with the activity above (walking if it's off)."
                         commute.office == null ->
                             "Checks your weekday trips at home, using the activity above (walking if it's off). Add the office if it's in a different town."
                         else -> "Checks your weekday trips at home and at the office, using the activity above (walking if it's off)."
@@ -668,7 +669,7 @@ private fun CommutePlaceRow(
     val status = when {
         locating != null && error == null -> "Finding where you are…"
         place != null -> listOfNotNull(place.name, place.region).joinToString(", ")
-        end == CommuteEnd.HOME -> "Not set · using your first place for now"
+        end == CommuteEnd.HOME -> "Not set · using Home's place for now"
         enabled -> "Not set · trips are checked at home only"
         else -> "Set your home first"
     }

@@ -55,6 +55,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -157,7 +159,7 @@ class ScreenshotTest {
             state = state,
             pagerState = rememberPagerState { state.pages.size },
             onRefresh = {}, onRequestPermission = {}, onUseCurrentLocation = {},
-            onOpenSearch = {}, onOpenPlaces = {}, onOpenSettings = {},
+            onOpenSearch = {}, onOpenPlaces = {},
         )
     }
 
@@ -169,8 +171,83 @@ class ScreenshotTest {
             modelStatus = status,
             commuteLocating = commuteLocating,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
-            onImportModel = {}, onRemoveModel = {}, onBack = {},
+            onImportModel = {}, onRemoveModel = {}, onBack = null,
         )
+    }
+
+    @Composable
+    private fun Home(state: WeatherUiState, now: java.time.LocalDateTime = forecast.current.time) {
+        HomeScreen(state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {}, now = now)
+    }
+
+    // --- Home -----------------------------------------------------------------------------------
+
+    /** A dry, mild Tuesday after the fixture's Monday, so the commute has trips to look at. */
+    private val withTomorrow by lazy {
+        val tomorrow = forecast.current.time.toLocalDate().plusDays(1)
+        forecast.copy(
+            hours = forecast.hours + (2 until 24).map { h ->
+                HourForecast(tomorrow.atTime(h, 0), tempC = 13.0 + (h - 2) * 0.5, precipChance = 5, code = 1, windKmh = 12.0, gustKmh = 18.0)
+            },
+        )
+    }
+
+    /** Everything on: greeting on the place's sky, the glance, the commute call, what's coming up (with your dates) and the meme. */
+    @Test fun homeFull() = snap("home_full", tall = true) {
+        val today = forecast.current.time.toLocalDate()
+        Home(
+            weatherState(
+                PageContent.Loaded(withTomorrow, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp),
+                settings = AppSettings(
+                    commute = CommuteSettings(8, 17, enabled = true),
+                    personalDates = listOf(PersonalDate(today.plusDays(1), name = "Board presentation")),
+                ),
+            ),
+        )
+    }
+
+    @Test fun homeDark() = snap("home_dark", night = true, tall = true) {
+        Home(
+            weatherState(
+                PageContent.Loaded(
+                    rainyNight, rainyNightSummary,
+                    Meme("Me: I'll just run to the car", "London: bold of you", MemeMood.RAIN, NarrationSource.GEMMA),
+                    londonComingUp,
+                ),
+                place = london, key = london.id,
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            ),
+            now = rainyNight.current.time,
+        )
+    }
+
+    /** The current-location page waiting for permission: the glance asks, the rest of Home waits. */
+    @Test fun homePermission() = snap("home_permission") {
+        Home(
+            weatherState(PageContent.NeedsPermission, place = null, key = Place.CURRENT_LOCATION_ID, settings = AppSettings(comingUpEnabled = false))
+                .let { it.copy(pages = it.pages.take(1)) },
+        )
+    }
+
+    @Test fun homeLoading() = snap("home_loading") {
+        Home(weatherState(PageContent.Loading, settings = AppSettings(comingUpEnabled = false)).let { it.copy(pages = it.pages.take(1)) })
+    }
+
+    /** No places yet, and every Home card off: the glance offers a place, and a line points to Settings. */
+    @Test fun homeEmpty() = snap("home_empty") {
+        Home(WeatherUiState(settings = AppSettings(comingUpEnabled = false, memesEnabled = false)))
+    }
+
+    @Test fun bottomBar() = snap("bottom_bar") {
+        Column(Modifier.padding(vertical = 16.dp)) {
+            DaybreakNavigationBar(Tab.Home) {}
+            Spacer(Modifier.height(16.dp))
+            DaybreakNavigationBar(Tab.Weather) {}
+        }
+    }
+
+    @Test fun bottomBarDark() = snap("bottom_bar_dark", night = true) {
+        Column(Modifier.padding(vertical = 16.dp)) { DaybreakNavigationBar(Tab.Settings) {} }
     }
 
     // --- Weather page ---------------------------------------------------------------------------
@@ -436,26 +513,9 @@ class ScreenshotTest {
         )
     }
 
-    /** The whole first page with the check on: the card sits after the "now" tiles and before the hourly strip. */
-    @Test fun weatherCommute() = snap("weather_commute", tall = true) {
-        // The fixture stops at 1 AM, so give it a dry, mild Tuesday for the two trips to look at.
-        val tomorrow = forecast.current.time.toLocalDate().plusDays(1)
-        val withTomorrow = forecast.copy(
-            hours = forecast.hours + (2 until 24).map { h ->
-                HourForecast(tomorrow.atTime(h, 0), tempC = 13.0 + (h - 2) * 0.5, precipChance = 5, code = 1, windKmh = 12.0, gustKmh = 18.0)
-            },
-        )
-        Weather(
-            weatherState(
-                PageContent.Loaded(withTomorrow, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp),
-                settings = AppSettings(commute = CommuteSettings(8, 17, enabled = true)),
-            )
-        )
-    }
-
     /**
      * The phone on the 24-hour clock: "15:00" in the 52dp hourly cards, "07:02" in the sun tiles, and the copy that
-     * names an hour (the summary, "Now–18:00", "60% at 18:00"). The check comes home at 18:00, the rainy hour.
+     * names an hour (the summary, "Now–18:00").
      */
     @Test fun weather24Hour() {
         ClockFormat.use24Hour = true
@@ -468,7 +528,6 @@ class ScreenshotTest {
                 Weather(
                     weatherState(
                         PageContent.Loaded(forecast, summary, comingUp = sanFranciscoComingUp),
-                        settings = AppSettings(commute = CommuteSettings(8, 18, enabled = true)),
                     )
                 )
             }

@@ -221,7 +221,7 @@ class WeatherViewModel(
     fun refresh(key: String) {
         if (key == CURRENT) refreshCurrentLocation()
         else places.places.value.firstOrNull { it.id == key }?.let { load(key, it) }
-        // The commute card shows on the first page, but pulling any page is a request for fresh weather.
+        // The commute card is on Home, but pulling any page is a request for fresh weather.
         refreshCommute()
     }
 
@@ -282,7 +282,7 @@ class WeatherViewModel(
     private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
         val settings = settingsRepo.settings.value
         val input = narrationInput(place, forecast)
-        val quickMeme = if (settings.memesEnabled) savedOrTemplateMeme(key, place, input).meme else null
+        val quickMeme = if (settings.memesEnabled && key == homePageKey()) savedOrTemplateMeme(key, place, input).meme else null
         setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
         // Alongside Gemma rather than before it: a slow holiday lookup must never hold up the summary.
         viewModelScope.launch { showComingUp(key, place, forecast) }
@@ -341,7 +341,8 @@ class WeatherViewModel(
      * this place, day and mood, and remembers the result so refreshes and restarts show the same meme.
      */
     private suspend fun showMeme(key: String, place: Place, input: NarrationInput) {
-        if (!memesOn()) return
+        // Only Home shows a meme, for the page it follows: don't spend Gemma on places nobody sees one for.
+        if (!memesOn() || key != homePageKey()) return
         val forecast = input.forecast
         val saved = savedOrTemplateMeme(key, place, input)
         updateLoaded(key, forecast) { it.copy(meme = saved.meme) }
@@ -379,6 +380,12 @@ class WeatherViewModel(
                 launchFor(key, fetch = false) { showForecast(key, place, content.forecast) }
             }
         }
+    }
+
+    /** The page Home follows (see glancePageIndex): the first, unless it's waiting for location permission. */
+    private fun homePageKey(): String? {
+        val keys = visiblePlaces().map { it.first }
+        return keys.firstOrNull { contents.value[it] !is PageContent.NeedsPermission } ?: keys.firstOrNull()
     }
 
     /** Page keys and places currently shown, in page order. */
