@@ -4,7 +4,6 @@ import android.Manifest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,17 +21,19 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daybreak.domain.CommuteEnd
 
@@ -48,6 +49,8 @@ fun WeatherApp(vm: WeatherViewModel) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
+    // Whether Search was opened from Places (its "Add"), so back returns there.
+    var searchFromPlaces by rememberSaveable { mutableStateOf(false) }
     // Each tab keeps its own scroll and state while another is shown.
     val tabStates = rememberSaveableStateHolder()
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -95,22 +98,14 @@ fun WeatherApp(vm: WeatherViewModel) {
         }
     }
 
-    // White status bar icons over Home's and Weather's sky; the theme's own on the plain tabs and overlays.
-    val view = LocalView.current
-    val dark = MaterialTheme.isDark
-    val onSky = overlay == null && tab != Tab.Settings
-    if (!view.isInEditMode) {
-        SideEffect {
-            (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars = !dark && !onSky }
-        }
-    }
-
     // An overlay goes back to the one it came from, or to its tab; a tab goes back to Home, and Home exits.
     val back = {
+        val from = overlay
         overlay = when {
-            overlay == Overlay.Search && searchingFor == null && tab == Tab.Weather && state.savedPlaces.isNotEmpty() -> Overlay.Places
+            from == Overlay.Search && searchFromPlaces -> Overlay.Places
             else -> null
         }
+        if (from == Overlay.Search) searchFromPlaces = false
     }
     BackHandler(enabled = overlay != null || tab != Tab.Home) {
         if (overlay != null) {
@@ -121,7 +116,10 @@ fun WeatherApp(vm: WeatherViewModel) {
             tab = Tab.Home
         }
     }
-    val openSearch = { overlay = Overlay.Search }
+    val openSearch = {
+        searchFromPlaces = false
+        overlay = Overlay.Search
+    }
 
     when (overlay) {
         Overlay.Search -> SearchScreen(
@@ -137,6 +135,7 @@ fun WeatherApp(vm: WeatherViewModel) {
                     overlay = null
                 } else {
                     scrollTo = vm.addPlace(place)
+                    searchFromPlaces = false
                     overlay = null
                     tab = Tab.Weather
                 }
@@ -156,7 +155,10 @@ fun WeatherApp(vm: WeatherViewModel) {
             },
             onMove = vm::movePlace,
             onRemove = { vm.removePlace(it.id) },
-            onAdd = { overlay = Overlay.Search },
+            onAdd = {
+                searchFromPlaces = true
+                overlay = Overlay.Search
+            },
             onBack = { overlay = null },
         )
         null -> Scaffold(
@@ -164,7 +166,11 @@ fun WeatherApp(vm: WeatherViewModel) {
             // Each tab handles the status bar itself (Home and Weather draw their sky behind it).
             contentWindowInsets = WindowInsets(0),
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            // Side insets (landscape navigation buttons, cutouts) for every tab; the top is each tab's own.
+            Box(
+                Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+            ) {
                 tabStates.SaveableStateProvider(tab) {
                     when (tab) {
                         Tab.Home -> HomeScreen(
@@ -233,7 +239,7 @@ private fun SettingsTab(
 /** Home · Weather · Settings, labels always shown, flat on the card colour like the cards themselves. */
 @Composable
 fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = androidx.compose.ui.unit.Dp(0f)) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
         Tab.entries.forEach { t ->
             val on = t == selected
             NavigationBarItem(

@@ -508,6 +508,13 @@ class WeatherViewModelTest {
         assertEquals(listOf(trip), vm.uiState.value.settings.personalDates)
     }
 
+    @Test fun `only Home's place gets a meme`() = runTest(dispatcher) {
+        places.add(sanFrancisco); places.add(london)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        assertTrue(vm.meme(sanFrancisco.id) != null)
+        assertNull(vm.meme(london.id))
+    }
+
     @Test fun `the widget mirrors the first loaded page, and Gemma's summary when it lands`() = runTest(dispatcher) {
         places.add(sanFrancisco); places.add(london)
         viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)

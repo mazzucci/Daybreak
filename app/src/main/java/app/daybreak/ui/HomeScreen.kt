@@ -33,7 +33,12 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,13 +72,14 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * The page Home follows (the glance, the commute fallback, the holidays and the meme): the first that can show
- * weather, as the commute card always did, or the first page when none can, so its state (permission, error) shows.
- * -1 with no pages at all.
+ * The page Home follows (the glance, the commute fallback, the holidays and the meme): the first page, unless it's
+ * the current location still waiting for permission and a saved place can stand in. A failed page stays, so a
+ * failed refresh shows its error (and "Try again") rather than quietly switching Home to another city. -1 with no
+ * pages at all.
  */
 fun glancePageIndex(pages: List<PageUi>): Int {
     if (pages.isEmpty()) return -1
-    val ok = pages.indexOfFirst { it.content !is PageContent.NeedsPermission && it.content !is PageContent.Failed }
+    val ok = pages.indexOfFirst { it.content !is PageContent.NeedsPermission }
     return if (ok >= 0) ok else 0
 }
 
@@ -91,9 +97,16 @@ fun HomeScreen(
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
-    /** Drives the date and greeting; fixed in screenshot tests. */
-    now: LocalDateTime = LocalDateTime.now(),
+    /** Drives the date and greeting; fixed in screenshot tests, otherwise the clock, ticking each minute. */
+    now: LocalDateTime? = null,
 ) {
+    val ticking by produceState(LocalDateTime.now()) {
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L)
+            value = LocalDateTime.now()
+        }
+    }
+    val now = now ?: ticking
     val index = glancePageIndex(state.pages)
     val page = state.pages.getOrNull(index)
     val loaded = page?.content as? PageContent.Loaded
@@ -119,7 +132,8 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Hero(gradient, top = 16.dp, alignment = Alignment.Start) {
                 Text(
-                    now.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US)),
+                    // "Monday, September 28" in the phone's own language and order.
+                    now.format(DateTimeFormatter.ofPattern(android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEEMMMMd"), Locale.getDefault())),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.85f),
                 )
@@ -135,15 +149,17 @@ fun HomeScreen(
                 onOpenSearch = onOpenSearch,
                 modifier = Modifier.padding(horizontal = PageMargin),
             )
-            val shown = homeCards(state, page, loaded, now)
-            if (!shown) {
-                Spacer(Modifier.height(16.dp))
+            HomeCards(state, page, loaded, now)
+            // Only when every card is switched off (not while they're waiting for a forecast).
+            val settings = state.settings
+            if (!settings.commute.enabled && !settings.comingUpEnabled && !settings.memesEnabled) {
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    "Turn on more for Home in Settings",
+                    "Turn on more cards in Settings",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
-                        .padding(horizontal = PageMargin)
+                        .padding(horizontal = PageMargin - 4.dp)
                         .clip(MaterialTheme.shapes.small)
                         .clickable(role = Role.Button, onClick = onOpenSettings)
                         .padding(vertical = 8.dp, horizontal = 4.dp),
@@ -154,9 +170,9 @@ fun HomeScreen(
     }
 }
 
-/** The personal cards under the glance, in order; returns whether any showed. */
+/** The personal cards under the glance, in order. */
 @Composable
-private fun homeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.Loaded?, now: LocalDateTime): Boolean {
+private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.Loaded?, now: LocalDateTime) {
     val settings = state.settings
     val unit = settings.primaryUnit
     val forecast = loaded?.forecast
@@ -164,7 +180,6 @@ private fun homeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
     val holidays = loaded?.holidays.orEmpty()
     val weekend = weekendDays(page?.place?.let(::countryCodeOf))
     val offDates = remember(settings.personalDates, today) { dayOffDates(settings.personalDates, today) }
-    var any = false
 
     if (settings.commute.enabled) {
         // Walking is the fallback mode when outdoor plans are off.
@@ -173,7 +188,6 @@ private fun homeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
         if (advice != null) {
             Spacer(Modifier.height(16.dp))
             CommuteCard(advice.first, mode, unit, advice.second, Modifier.padding(horizontal = PageMargin))
-            any = true
         }
     }
 
@@ -185,16 +199,13 @@ private fun homeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
     if (upcoming.isNotEmpty()) {
         SectionHeading("Coming up")
         ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin), today = today)
-        any = true
     }
 
     val meme = loaded?.meme
     if (meme != null) {
         SectionHeading("Today's weather meme")
         MemeCard(meme, Modifier.padding(horizontal = PageMargin))
-        any = true
     }
-    return any
 }
 
 /**
@@ -266,11 +277,11 @@ private fun WeatherGlance(
         val name = page.place?.name ?: "My location"
         val today = f.today
         val rain = today.precipChance.takeIf { it >= 20 }
-        val line = listOfNotNull(
-            describeWeatherCode(f.current.code),
-            "↑${formatDegrees(today.highC, unit)} ↓${formatDegrees(today.lowC, unit)}",
-            rain?.let { "Rain $it%" },
-        ).joinToString(" · ")
+        val condition = describeWeatherCode(f.current.code)
+        val range = "↑${formatDegrees(today.highC, unit)} ↓${formatDegrees(today.lowC, unit)}"
+        // Don't say rain twice: when the sky already is rain (or snow, or storms), the chance stands alone.
+        val chance = rain?.let { if (condition in DRY_SKIES) "Rain $it%" else "$it% chance" }
+        val line = listOfNotNull(condition, range, chance).joinToString(" · ")
         val spoken = listOfNotNull(
             name,
             formatBothUnits(f.current.tempC, unit),
@@ -297,13 +308,16 @@ private fun WeatherGlance(
                         }
                         Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    // Up to two lines, breaking only at a separator, so the rain chance is never cut off.
+                    // One line when it fits; otherwise the chance moves to a second line whole, so no line ends on a dot.
+                    var wrap by remember(line) { mutableStateOf(false) }
                     Text(
-                        line.replace(" · ", "\u00A0· ").replace("↑", "↑").let { it.replace(" ↓", "\u00A0↓") },
+                        if (wrap && chance != null) "$condition · $range\n$chance" else line,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = if (wrap) 2 else 1,
+                        softWrap = wrap,
                         overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { if (!wrap && it.hasVisualOverflow) wrap = true },
                     )
                 }
                 Spacer(Modifier.width(12.dp))
@@ -337,20 +351,24 @@ private fun WeatherGlance(
                 // Loading: bars in the shape of the loaded card, so nothing jumps when it lands.
                 val skeleton = MaterialTheme.weatherColors.skeleton
                 Row(
-                    Modifier.padding(16.dp).semantics { contentDescription = "Loading the weather" },
+                    Modifier.padding(16.dp).heightIn(min = 40.dp).fillMaxWidth().semantics { contentDescription = "Loading the weather" },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.size(36.dp).clip(CircleShape).background(skeleton))
                     Spacer(Modifier.width(12.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.width(120.dp).height(16.dp).clip(CircleShape).background(skeleton))
-                        Box(Modifier.width(200.dp).height(12.dp).clip(CircleShape).background(skeleton))
+                        Box(Modifier.width(200.dp).height(14.dp).clip(CircleShape).background(skeleton))
                     }
+                    Box(Modifier.size(44.dp, 28.dp).clip(MaterialTheme.shapes.small).background(skeleton))
                 }
             }
         }
     }
 }
+
+/** Conditions that aren't precipitation, so the rain chance needs its word. */
+private val DRY_SKIES = setOf("Clear sky", "Mainly clear", "Partly cloudy", "Overcast", "Fog", "Unknown")
 
 @Composable
 private fun GlanceMessage(

@@ -171,7 +171,7 @@ class ScreenshotTest {
             modelStatus = status,
             commuteLocating = commuteLocating,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
-            onImportModel = {}, onRemoveModel = {}, onBack = {},
+            onImportModel = {}, onRemoveModel = {}, onBack = null,
         )
     }
 
