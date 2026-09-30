@@ -135,8 +135,17 @@ class GemmaNarrator(
         }, Runnable::run)
     }
 
-    private companion object {
+    companion object {
         /** Prompt + response budget; our prompt is ~400 tokens and we ask for ~60 back. */
-        const val MAX_TOKENS = 1024
+        private const val MAX_TOKENS = 1024
+
+        @Volatile private var shared: GemmaNarrator? = null
+
+        /**
+         * The process-wide narrator: the summaries, memes and the Clocks Ask box share one engine, since each copy
+         * of the model takes a few hundred MB. Release it with [releaseEngine]; don't [close] it.
+         */
+        fun shared(context: Context, modelFile: () -> File?): GemmaNarrator =
+            shared ?: synchronized(this) { shared ?: GemmaNarrator(context.applicationContext, modelFile).also { shared = it } }
     }
 }

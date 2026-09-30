@@ -68,6 +68,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import app.daybreak.domain.Clock
 import app.daybreak.domain.ClockFormat
 import app.daybreak.domain.cityOf
@@ -119,6 +128,11 @@ fun ClocksScreen(
     here: ZoneId = ZoneId.systemDefault(),
     now: Instant? = null,
     initiallyEditing: Boolean = false,
+    ask: AskUi = AskUi.Idle,
+    /** Whether Gemma is installed, so the Ask box can be used. */
+    gemmaReady: Boolean = false,
+    onAsk: (String) -> Unit = {},
+    onSetUpGemma: () -> Unit = {},
 ) {
     val moment = now ?: rememberMinuteClock()
     var editing by rememberSaveable { mutableStateOf(initiallyEditing) }
@@ -160,8 +174,12 @@ fun ClocksScreen(
                 Spacer(Modifier.height(24.dp))
                 Text("Convert", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Spacer(Modifier.height(12.dp))
-                Converter(clocks, moment, here)
+                Converter(clocks, moment, here, (ask as? AskUi.Answer)?.request)
             }
+            Spacer(Modifier.height(24.dp))
+            Text("Ask", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Spacer(Modifier.height(12.dp))
+            AskCard(ask, gemmaReady, onAsk, onSetUpGemma)
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -316,7 +334,7 @@ private fun UnknownDisc() {
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
+private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId, request: ConverterRequest?) {
     // Minutes past midnight, or null for "now"; 0 today, 1 tomorrow; the clock the time is in, null for the phone.
     var minutes by rememberSaveable { mutableStateOf<Int?>(null) }
     var dayOffset by rememberSaveable { mutableStateOf(0) }
@@ -325,6 +343,15 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
     var dayMenu by rememberSaveable { mutableStateOf(false) }
     var fromMenu by rememberSaveable { mutableStateOf(false) }
 
+    // An answer from Ask sets the converter to its moment, so every clock shows it too: the prose is the answer,
+    // the rows are the proof.
+    LaunchedEffect(request) {
+        if (request != null) {
+            minutes = request.minutes
+            dayOffset = request.dayOffset
+            fromId = request.fromClockId
+        }
+    }
     // A removed clock (or one whose zone is unknown) can't be where the time is: back to your phone, and to now,
     // since the picked time was that clock's.
     val from = clocks.firstOrNull { it.id == fromId && it.zone != null }
@@ -402,6 +429,75 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
             },
             text = { TimePicker(state) },
         )
+    }
+}
+
+/**
+ * "What time is it in Romania at noon my time?": a field and a send button, then the answer in the app's quoted
+ * block with Gemma's credit (Gemma understands the question; the time is worked out by the app). Without Gemma,
+ * a line saying so and a way to set it up.
+ */
+@Composable
+private fun AskCard(ask: AskUi, gemmaReady: Boolean, onAsk: (String) -> Unit, onSetUpGemma: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.padding(16.dp)) {
+            if (!gemmaReady) {
+                Text(
+                    "Ask in plain words (\u201cwhat time is it in Tokyo at 9 tomorrow?\u201d) once Gemma is set up. It runs on this phone.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onSetUpGemma, Modifier.padding(top = 4.dp)) { Text("Set up Gemma") }
+                return@Column
+            }
+            val working = ask is AskUi.Working
+            val send = { if (text.isNotBlank() && !working) onAsk(text) }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(app.daybreak.narration.TimeAskPrompt.MAX_QUESTION) },
+                label = { Text("Ask") },
+                placeholder = { Text("What time is it in Romania at noon my time?") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { send() }),
+                trailingIcon = {
+                    IconButton(send, enabled = text.isNotBlank() && !working) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Ask Gemma")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            when (ask) {
+                AskUi.Idle -> Unit
+                is AskUi.Working -> {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
+                    Spacer(Modifier.height(6.dp))
+                    Text("Working it out…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                is AskUi.Answer -> AnswerBlock(ask.text, error = false)
+                is AskUi.Failed -> AnswerBlock(ask.message, error = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnswerBlock(text: String, error: Boolean) {
+    Spacer(Modifier.height(8.dp))
+    Column(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+    ) {
+        Text(if (error) "No answer" else "Answer", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(2.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+        if (!error) {
+            Spacer(Modifier.height(4.dp))
+            Text("✦ Understood by Gemma on this device", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.weatherColors.gemma)
+        }
     }
 }
 

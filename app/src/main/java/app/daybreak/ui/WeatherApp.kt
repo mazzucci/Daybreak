@@ -48,6 +48,7 @@ private enum class Overlay { Search, Places }
 fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val askState = clocksVm?.ask?.collectAsStateWithLifecycle()?.value ?: AskUi.Idle
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
     // Set while Search is adding a clock rather than a page.
@@ -220,6 +221,10 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                             },
                             onRemove = { clocksVm?.remove(it) },
                             onMove = { from, to -> clocksVm?.move(from, to) },
+                            ask = askState,
+                            gemmaReady = state.modelStatus is app.daybreak.narration.ModelStatus.Installed && clocksVm != null,
+                            onAsk = { clocksVm?.ask(it) },
+                            onSetUpGemma = { tab = Tab.Settings },
                         )
                         Tab.Settings -> SettingsTab(state, vm, commutePlaceHere, modelPicker::launch) { end ->
                             searchingFor = end

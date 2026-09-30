@@ -38,7 +38,17 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
     private val clocksVm: ClocksViewModel by viewModels {
-        viewModelFactory { initializer { ClocksViewModel(ClocksRepository(SharedPrefsStore(applicationContext))) } }
+        viewModelFactory {
+            initializer {
+                val modelStore = GemmaModelStore.get(applicationContext)
+                ClocksViewModel(
+                    ClocksRepository(SharedPrefsStore(applicationContext)),
+                    gemma = GemmaNarrator.shared(applicationContext, modelStore::installedFile),
+                    modelStatus = modelStore.status,
+                    places = OpenMeteoApi(UrlConnectionHttpClient()),
+                )
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +82,7 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
         val store = SharedPrefsStore(context)
         val http = UrlConnectionHttpClient()
         val modelStore = GemmaModelStore.get(context)
-        val gemma = GemmaNarrator(context, modelStore::installedFile) // one engine for the summary and the meme
+        val gemma = GemmaNarrator.shared(context, modelStore::installedFile) // one engine for everything Gemma does
         WeatherViewModel(
             api = OpenMeteoApi(http),
             places = SavedPlacesRepository(store),

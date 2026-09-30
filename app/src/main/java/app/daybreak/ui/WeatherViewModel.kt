@@ -657,8 +657,9 @@ class WeatherViewModel(
         renarrateAll()
     }
 
+    // The engine is shared with Clocks (and outlives this ViewModel), so free its memory rather than close it.
     override fun onCleared() {
-        llm?.close()
+        llm?.releaseResources()
     }
 
     companion object {
