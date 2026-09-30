@@ -143,7 +143,8 @@ fun SettingsScreen(
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
     onRemoveModel: () -> Unit,
-    onBack: () -> Unit,
+    /** Null when Settings is a tab rather than a page with a way back. */
+    onBack: (() -> Unit)?,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -151,7 +152,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    if (onBack != null) IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )

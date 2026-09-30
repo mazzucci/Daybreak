@@ -51,8 +51,14 @@ import java.util.Locale
  * inside the forecast, the row also shows that day's weather, so "Monday off" comes with "and it'll be sunny".
  */
 @Composable
-fun ComingUpCard(items: List<Countdown>, forecast: Forecast, unit: TempUnit, modifier: Modifier = Modifier) {
-    val today = forecast.current.time.toLocalDate()
+fun ComingUpCard(
+    items: List<Countdown>,
+    /** For each date's weather when it's in range; null while the forecast isn't loaded (dates still count down). */
+    forecast: Forecast?,
+    unit: TempUnit,
+    modifier: Modifier = Modifier,
+    today: java.time.LocalDate = forecast?.current?.time?.toLocalDate() ?: java.time.LocalDate.now(),
+) {
     val palette = cardIconPalette()
     Card(
         modifier.fillMaxWidth(),
@@ -61,7 +67,7 @@ fun ComingUpCard(items: List<Countdown>, forecast: Forecast, unit: TempUnit, mod
         Column(Modifier.padding(vertical = 4.dp)) {
             items.forEachIndexed { i, item ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                val day = forecast.days.firstOrNull { it.date == item.date }
+                val day = forecast?.days?.firstOrNull { it.date == item.date }
                 // A range shows both ends ("Oct 12–16"); a single day keeps its weekday.
                 val date = item.endDate?.let { formatRange(item.date, it, spoken = false) }
                     ?: item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))

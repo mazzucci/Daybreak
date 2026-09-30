@@ -134,7 +134,7 @@ import app.daybreak.narration.NarrationSource
 private val TopBarHeight = 56.dp
 /** Up to this many pages the indicator is a row of dots; beyond it a compact "3 / 12" label. */
 private const val MAX_DOTS = 6
-private val PageMargin = 20.dp
+internal val PageMargin = 20.dp
 private val HeroCorner = 28.dp
 /** Inline-content id of the "tap to explain" glyph in a tile's label. */
 private const val INFO_GLYPH = "info"
@@ -149,13 +149,11 @@ fun WeatherPagerScreen(
     onUseCurrentLocation: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenPlaces: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         if (state.pages.isEmpty()) {
             EmptyState(onOpenSearch, onUseCurrentLocation)
         } else {
-            val commutePage = state.pages.indexOfFirst { it.content !is PageContent.NeedsPermission && it.content !is PageContent.Failed }
             // Keyed by place, so per-page state (an open explanation) stays with its place when places move.
             HorizontalPager(
                 pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1,
@@ -166,15 +164,6 @@ fun WeatherPagerScreen(
                     page = page,
                     unit = state.settings.primaryUnit,
                     activity = state.settings.activity,
-                    // The commute card goes on the first page that can show weather (your location, or your first saved
-                    // place when location is off or unavailable). It's judged at home and the office once they're set,
-                    // and on that page's own forecast until then.
-                    commute = state.settings.commute.takeIf { it.enabled && index == commutePage },
-                    commuteForecasts = state.commute,
-                    commuteUnavailable = state.commuteUnavailable,
-                    // Your own dates aren't a place's: they go on the first page, with the other personal cards.
-                    personalDates = if (index == commutePage) state.settings.personalDates else emptyList(),
-                    showPersonalDates = state.settings.comingUpEnabled,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -198,7 +187,6 @@ fun WeatherPagerScreen(
                 }
                 IconButton(onOpenSearch) { Icon(Icons.Default.Add, contentDescription = "Add place") }
                 IconButton(onOpenPlaces) { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Places") }
-                IconButton(onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
             }
         }
     }
@@ -246,11 +234,6 @@ fun WeatherPage(
     page: PageUi,
     unit: TempUnit,
     activity: Activity? = null,
-    commute: CommuteSettings? = null,
-    commuteForecasts: CommuteForecasts? = null,
-    commuteUnavailable: Boolean = false,
-    personalDates: List<PersonalDate> = emptyList(),
-    showPersonalDates: Boolean = true,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -318,14 +301,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(
-                        content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays,
-                        weekend = weekendDays(page.place?.let(::countryCodeOf)),
-                        commuteForecasts = commuteForecasts,
-                        commuteUnavailable = commuteUnavailable,
-                        personalDates = personalDates,
-                        showPersonalDates = showPersonalDates,
-                    )
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, activity)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -335,18 +311,26 @@ fun WeatherPage(
     }
 }
 
-/** The gradient block at the top of every page. Content is drawn in white; the action row floats above it. */
+/**
+ * The gradient block at the top of every page. Content is drawn in white; on Weather the action row floats above
+ * it ([top] leaves room for it), Home's header starts right under the status bar.
+ */
 @Composable
-private fun Hero(colors: List<Color>, content: @Composable () -> Unit) {
+internal fun Hero(
+    colors: List<Color>,
+    top: Dp = TopBarHeight,
+    alignment: Alignment.Horizontal = Alignment.CenterHorizontally,
+    content: @Composable () -> Unit,
+) {
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = HeroCorner, bottomEnd = HeroCorner))
             .background(Brush.verticalGradient(colors))
             .windowInsetsPadding(WindowInsets.statusBars) // gradient extends behind the status bar
-            .padding(top = TopBarHeight, bottom = 24.dp)
+            .padding(top = top, bottom = 24.dp)
             .padding(horizontal = PageMargin),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        horizontalAlignment = alignment,
     ) {
         CompositionLocalProvider(LocalContentColor provides Color.White) { content() }
     }
@@ -453,7 +437,7 @@ private fun InfoGlyph(tint: Color, style: TextStyle) {
 }
 
 @Composable
-private fun SummaryBlock(summary: Narration) {
+internal fun SummaryBlock(summary: Narration) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -475,23 +459,8 @@ private fun SummaryBlock(summary: Narration) {
 
 /** Detail tiles and the hourly strip, on the normal surface below the hero. */
 @Composable
-private fun BodyForecast(
-    forecast: Forecast,
-    unit: TempUnit,
-    night: Boolean,
-    meme: Meme?,
-    activity: Activity?,
-    comingUp: List<Countdown>,
-    commute: CommuteSettings? = null,
-    holidays: Set<LocalDate> = emptySet(),
-    weekend: Set<DayOfWeek> = weekendDays(null),
-    commuteForecasts: CommuteForecasts? = null,
-    commuteUnavailable: Boolean = false,
-    personalDates: List<PersonalDate> = emptyList(),
-    showPersonalDates: Boolean = true,
-) {
+private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, activity: Activity?) {
     val cur = forecast.current
-    val offDates = remember(personalDates, cur.time.toLocalDate()) { dayOffDates(personalDates, cur.time.toLocalDate()) }
     Spacer(Modifier.height(20.dp))
     TileRow {
         StatTile(
@@ -508,27 +477,6 @@ private fun BodyForecast(
             detail = gust?.takeIf { it > cur.windKmh }?.let { "Gusts ${formatWind(it, unit)}" },
             term = Term.WIND,
         )
-    }
-    if (commute != null) {
-        // The hero and its tiles are "now"; the commute verdict opens the planning part of the page, still
-        // above the fold. Walking is the fallback mode when outdoor plans are off.
-        val mode = activity ?: Activity.WALKING
-        // With a home set, home's (and the office's) own forecasts; until they load, nothing, unless home's
-        // couldn't be fetched, when this page's forecast is better than no card at all.
-        val c = commuteForecasts?.takeIf { commute.home != null && it.home == commute.home && it.office == commute.office }
-        val advice = remember(forecast, mode, commute, holidays, weekend, c, commuteUnavailable, offDates) {
-            when {
-                // Your days off are skipped like public holidays.
-                c != null -> commuteAdvice(c.homeForecast, mode, commute, c.holidays + offDates, c.weekend, c.officeForecast)
-                commute.home == null || commuteUnavailable -> commuteAdvice(forecast, mode, commute, holidays + offDates, weekend)
-                else -> null
-            }
-        }
-        if (advice != null) {
-            val today = (c?.homeForecast ?: forecast).current.time.toLocalDate()
-            Spacer(Modifier.height(16.dp))
-            CommuteCard(advice, mode, unit, today, Modifier.padding(horizontal = PageMargin))
-        }
     }
     Spacer(Modifier.height(24.dp))
     Text(
@@ -556,31 +504,6 @@ private fun BodyForecast(
         )
         Spacer(Modifier.height(12.dp))
         DailyList(week, forecast.today.date, unit)
-    }
-    // The place's holidays and seasons, with your own next dates among them.
-    val upcoming = remember(comingUp, personalDates, showPersonalDates, holidays, weekend, cur.time.toLocalDate()) {
-        val mine = if (showPersonalDates) upcomingPersonalDates(cur.time.toLocalDate(), personalDates, holidays, weekend) else emptyList()
-        (comingUp + mine).sortedBy { it.date }
-    }
-    if (upcoming.isNotEmpty()) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Coming up",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = PageMargin).semantics { heading() },
-        )
-        Spacer(Modifier.height(12.dp))
-        ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin))
-    }
-    if (meme != null) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Today's weather meme",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = PageMargin).semantics { heading() },
-        )
-        Spacer(Modifier.height(12.dp))
-        MemeCard(meme, Modifier.padding(horizontal = PageMargin))
     }
 }
 
@@ -627,7 +550,7 @@ private fun TileRow(content: @Composable RowScope.() -> Unit) {
  * labelSmall so it reads as an annotation, not a second value to compare.
  */
 @Composable
-private fun DualTemp(
+internal fun DualTemp(
     c: Double,
     unit: TempUnit,
     primaryStyle: TextStyle,
@@ -941,7 +864,7 @@ private fun LoadingSkeleton() {
 
 /** Message + actions used for the permission prompt and errors. */
 @Composable
-private fun StateCard(
+internal fun StateCard(
     icon: ImageVector,
     title: String,
     text: String,
