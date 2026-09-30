@@ -4,6 +4,7 @@ A personal Android app for the start of your day: the weather for where you are 
 
 > **Coming from the old "Weather" app?** Daybreak has a new application id (`app.daybreak`), so it installs as a separate app and starts empty: add your places again, import or download the Gemma model again, and re-add your dates and commute. Then uninstall the old Weather app (its widget and background refresh go with it).
 
+- Clocks: the places you call or work with, each with its time, whether it's today or tomorrow there, how far ahead or behind you it is and its UTC offset, following daylight saving. A converter shows one moment in every clock ("At 12:00 PM today in Los Angeles it's 10:00 PM in Bucharest"). Places come from the same search as Weather, which gives each one's time zone
 - Search for any city and save it; swipe between places, reorder or remove them
 - Current location is optional: turn it off and use saved places only
 - A one-line summary at the top, a large temperature in your preferred unit with the other unit alongside, today's high/low and rain chance, and the next 12 hours

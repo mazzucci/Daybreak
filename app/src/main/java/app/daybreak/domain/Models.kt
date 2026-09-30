@@ -27,6 +27,8 @@ data class Place(
     val longitude: Double,
     /** ISO 3166-1 alpha-2 code ("US"), for public holidays; null if unknown. */
     val countryCode: String? = null,
+    /** IANA time zone ("Europe/Bucharest"), for clocks; null if unknown (places saved before it was kept). */
+    val zoneId: String? = null,
 ) {
     /** "Region, Country" line shown under the name; null if there's nothing to add. */
     val detail: String? get() = listOfNotNull(region, country).joinToString(", ").ifBlank { null }

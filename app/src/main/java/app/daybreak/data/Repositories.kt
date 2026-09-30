@@ -2,6 +2,7 @@ package app.daybreak.data
 
 import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
+import app.daybreak.domain.Clock
 import app.daybreak.domain.CommuteSettings
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.Place
@@ -72,6 +73,7 @@ private fun Place.toJson() = JSONObject()
     .putOpt("region", region)
     .putOpt("country", country)
     .putOpt("cc", countryCode)
+    .putOpt("tz", zoneId)
     .put("lat", latitude)
     .put("lon", longitude)
 
@@ -83,6 +85,7 @@ private fun JSONObject.toPlace() = Place(
     latitude = getDouble("lat"),
     longitude = getDouble("lon"),
     countryCode = optString("cc").ifBlank { null },
+    zoneId = optString("tz").ifBlank { null },
 )
 
 /**
@@ -201,5 +204,48 @@ class SettingsRepository(
         const val KEY_OFFICE = "commute_office"
         const val KEY_DATES = "personal_dates"
         const val ACTIVITY_OFF = "OFF"
+    }
+}
+
+/** The user's clocks, in display order, persisted as a JSON array. */
+class ClocksRepository(private val store: KeyValueStore) {
+    private val _clocks = MutableStateFlow(load())
+    val clocks: StateFlow<List<Clock>> = _clocks.asStateFlow()
+
+    /** Adds [clock] at the end. Returns false if it's already there. */
+    fun add(clock: Clock): Boolean {
+        if (_clocks.value.any { it.id == clock.id }) return false
+        save(_clocks.value + clock)
+        return true
+    }
+
+    fun remove(id: String) = save(_clocks.value.filterNot { it.id == id })
+
+    /** Moves the clock at [from] to index [to]; out-of-range indices are ignored. */
+    fun move(from: Int, to: Int) {
+        val list = _clocks.value.toMutableList()
+        if (from !in list.indices || to !in list.indices || from == to) return
+        list.add(to, list.removeAt(from))
+        save(list)
+    }
+
+    private fun save(list: List<Clock>) {
+        _clocks.value = list
+        store.putString(KEY, JSONArray(list.map { JSONObject().put("id", it.id).put("name", it.name).putOpt("detail", it.detail).put("tz", it.zoneId) }).toString())
+    }
+
+    /** Entries that don't parse are dropped rather than losing the rest. */
+    private fun load(): List<Clock> {
+        val array = store.getString(KEY)?.let { runCatching { JSONArray(it) }.getOrNull() } ?: return emptyList()
+        return (0 until array.length()).mapNotNull { i ->
+            runCatching {
+                val o = array.getJSONObject(i)
+                Clock(o.getString("id"), o.getString("name"), o.optString("detail").ifBlank { null }, o.getString("tz"))
+            }.getOrNull()
+        }
+    }
+
+    private companion object {
+        const val KEY = "clocks"
     }
 }

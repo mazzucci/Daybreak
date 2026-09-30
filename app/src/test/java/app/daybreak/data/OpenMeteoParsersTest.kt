@@ -157,6 +157,7 @@ class OpenMeteoParsersTest {
         assertEquals(37.21533, first.latitude, 1e-6)
         assertEquals(-93.29824, first.longitude, 1e-6)
         assertEquals("Missouri, United States", first.detail)
+        assertEquals("America/Chicago", first.zoneId)
     }
 
     @Test fun `geocoding with no matches returns empty list`() {
