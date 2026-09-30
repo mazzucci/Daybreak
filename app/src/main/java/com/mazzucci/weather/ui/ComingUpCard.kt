@@ -62,11 +62,14 @@ fun ComingUpCard(items: List<Countdown>, forecast: Forecast, unit: TempUnit, mod
             items.forEachIndexed { i, item ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 val day = forecast.days.firstOrNull { it.date == item.date }
-                val date = item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))
+                // A range shows both ends ("Oct 12–16"); a single day keeps its weekday.
+                val date = item.endDate?.let { formatRange(item.date, it, spoken = false) }
+                    ?: item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))
                 val countdown = formatCountdown(item.daysFrom(today))
                 // TalkBack gets the full weekday and month (the short form's comma would split the list) and the
                 // high in both units, like the 7-day rows.
-                val spokenDate = item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+                val spokenDate = item.endDate?.let { formatRange(item.date, it, spoken = true) }
+                    ?: item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
                 val spokenWeather = day?.let { "${describeWeatherCode(it.code)}, high ${formatBothUnits(it.highC, unit)}" }
                 CountdownRow(
                     item, day, unit, palette,
@@ -228,6 +231,14 @@ private fun KindGlyph(kind: Countdown.Kind) {
             }
         }
     }
+}
+
+/** "Oct 12–16", "Oct 30 – Nov 2"; spoken, "October 12 to 16". */
+private fun formatRange(start: java.time.LocalDate, end: java.time.LocalDate, spoken: Boolean): String {
+    val month = DateTimeFormatter.ofPattern(if (spoken) "MMMM d" else "MMM d", Locale.US)
+    val to = if (spoken) " to " else if (start.month == end.month) "–" else " – "
+    val last = if (start.month == end.month) end.dayOfMonth.toString() else end.format(month)
+    return "${start.format(month)}$to$last"
 }
 
 private val GlyphSize = 36.dp

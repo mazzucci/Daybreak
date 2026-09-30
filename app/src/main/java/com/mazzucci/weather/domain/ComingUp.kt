@@ -51,32 +51,42 @@ data class PersonalDate(
     fun contains(date: LocalDate) = !date.isBefore(start) && !date.isAfter(end)
 
     /**
-     * The occurrence that's still ahead of (or under way on) [today]: this one, or for a yearly date this year's or
-     * next year's (a 29 February falls on the 28th in other years). Null once a one-off date is over.
+     * The occurrence that's still ahead of (or under way on) [today]: this one, or for a yearly date the first
+     * that hasn't ended, from last year's on (one over New Year can still be running in January). Each end moves
+     * with its own year, so a 29 February falls on the 28th without stretching the range. Null once a one-off
+     * date is over.
      */
     fun next(today: LocalDate): PersonalDate? {
         if (!yearly) return takeIf { !end.isBefore(today) }
-        val thisYear = start.withYear(today.year)
-        val first = if (thisYear.plusDays(dayCount - 1).isBefore(today)) start.withYear(today.year + 1) else thisYear
-        return copy(start = first, end = first.plusDays(dayCount - 1))
+        val years = end.year - start.year
+        return (today.year - 1..today.year + 1).firstNotNullOfOrNull { y ->
+            val s = start.withYear(y)
+            val e = maxOf(s, end.withYear(y + years))
+            if (e.isBefore(today)) null else copy(start = s, end = e)
+        }
     }
 }
 
 /** Longest name a date keeps; enough for "Lisbon with the kids". */
 const val PERSONAL_DATE_NAME_MAX = 40
 
-/** Every day off in [dates] from [today] on (this and next year's for yearly ones), for the commute check to skip. */
-fun dayOffDates(dates: List<PersonalDate>, today: LocalDate): Set<LocalDate> =
-    dates.filter { it.dayOff }
-        .flatMap { d -> listOfNotNull(d.next(today), d.next(today)?.takeIf { d.yearly }?.let { n -> d.next(n.end.plusDays(1)) }) }
+/**
+ * Every day off in [dates] from yesterday on (a night shift's trip home can be this morning), with a yearly one's
+ * next two times round, for the commute check to skip.
+ */
+fun dayOffDates(dates: List<PersonalDate>, today: LocalDate): Set<LocalDate> {
+    val from = today.minusDays(1)
+    return dates.filter { it.dayOff }
+        .flatMap { d -> listOfNotNull(d.next(from), d.next(from)?.takeIf { d.yearly }?.let { n -> d.next(n.end.plusDays(1)) }) }
         .flatMap { d -> generateSequence(d.start) { it.plusDays(1) }.take(d.dayCount.toInt()).toList() }
         .toSet()
+}
 
 /**
  * The user's next dates (up to [max]) within [horizonDays], soonest first: counted down to their first day, or to
  * today once under way. A day off's note says how long a break it makes with the [weekend], [holidays] and other
  * days off around it ("Makes a 4-day weekend", "9 days in a row"); once started, any multi-day date says when it
- * ends.
+ * ends. A day off that only covers days that were off anyway (a Saturday, a holiday) gets no note.
  */
 fun upcomingPersonalDates(
     today: LocalDate,
@@ -107,9 +117,13 @@ fun upcomingPersonalDates(
             var last = d.end
             while (off(last.plusDays(1)) && ChronoUnit.DAYS.between(d.end, last) < 30) last = last.plusDays(1)
             val total = ChronoUnit.DAYS.between(first, last) + 1
+            val run = generateSequence(first) { it.plusDays(1) }.take(total.toInt())
+            val freesWorkdays = generateSequence(d.start) { it.plusDays(1) }.take(d.dayCount.toInt())
+                .any { it.dayOfWeek !in weekend && it !in holidays }
             val note = when {
+                !freesWorkdays -> null
                 total == d.dayCount -> if (total > 1) "$total days" else null
-                total <= 4 -> "Makes a $total-day weekend"
+                total <= 4 && run.any { it.dayOfWeek in weekend } -> "Makes a $total-day weekend"
                 else -> "$total days in a row"
             }
             Countdown(kind, d.title, d.start, end, note)
@@ -127,6 +141,8 @@ fun comingUp(
     latitude: Double,
     horizonDays: Long = 120,
     locale: Locale = Locale.US,
+    /** The user's days off: a day of leave that's already booked isn't suggested again. */
+    offDates: Set<LocalDate> = emptySet(),
 ): List<Countdown> {
     val limit = today.plusDays(horizonDays)
     val holiday = holidays.filter { !it.date.isBefore(today) && !it.date.isAfter(limit) }.minByOrNull { it.date }
@@ -136,13 +152,13 @@ fun comingUp(
         val around = longWeekends.firstOrNull { !holiday.date.isBefore(it.start) && !holiday.date.isAfter(it.end) }
         items += Countdown(
             Countdown.Kind.HOLIDAY, holiday.name, holiday.date,
-            note = around?.let { weekendNote(it, null, today, locale) },
+            note = around?.let { weekendNote(it, null, today, locale, offDates) },
         )
     }
     if (weekend != null && (holiday == null || holiday.date.isBefore(weekend.start) || holiday.date.isAfter(weekend.end))) {
         items += Countdown(
             Countdown.Kind.LONG_WEEKEND, "${weekend.dayCount}-day weekend", maxOf(weekend.start, today), weekend.end,
-            note = weekendNote(weekend, holidays.firstOrNull { !it.date.isBefore(weekend.start) && !it.date.isAfter(weekend.end) }?.name, today, locale),
+            note = weekendNote(weekend, holidays.firstOrNull { !it.date.isBefore(weekend.start) && !it.date.isAfter(weekend.end) }?.name, today, locale, offDates),
         )
     }
     nextSeason(today, latitude)?.takeIf { !it.date.isAfter(limit) }?.let { items += it }
@@ -153,11 +169,11 @@ fun comingUp(
  * On a holiday row, the weekend it makes: "4-day weekend", or "Take Friday off for a 4-day weekend" when it
  * needs a day of leave. On a weekend row, the holiday behind it and any leave ("Thanksgiving Day · take Friday off").
  */
-private fun weekendNote(w: LongWeekend, holidayName: String?, today: LocalDate, locale: Locale): String {
+private fun weekendNote(w: LongWeekend, holidayName: String?, today: LocalDate, locale: Locale, offDates: Set<LocalDate>): String {
     fun dayName(d: LocalDate) = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, locale)
     // Already under way: advice about days off is too late; say when it ends instead.
     if (w.start.isBefore(today)) return listOfNotNull(holidayName, "ends ${dayName(w.end)}").joinToString(" · ").replaceFirstChar { it.uppercase() }
-    val leave = w.bridgeDays.filter { !it.isBefore(today) }.takeIf { it.isNotEmpty() }?.joinToString(" and ") { dayName(it) }
+    val leave = w.bridgeDays.filter { !it.isBefore(today) && it !in offDates }.takeIf { it.isNotEmpty() }?.joinToString(" and ") { dayName(it) }
     val weekend = "${w.dayCount}-day weekend"
     if (holidayName == null) return leave?.let { "Take $it off for a $weekend" } ?: weekend
     return listOfNotNull(holidayName, leave?.let { "take $it off" }).joinToString(" · ")

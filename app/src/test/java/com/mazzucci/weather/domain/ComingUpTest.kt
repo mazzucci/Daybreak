@@ -47,6 +47,12 @@ class ComingUpTest {
         assertTrue(items.none { it.kind == Countdown.Kind.LONG_WEEKEND && it.date == LocalDate.of(2026, 11, 26) })
     }
 
+    @Test fun `a day of leave already booked isn't suggested again`() {
+        val friday = setOf(LocalDate.of(2026, 11, 27))
+        assertEquals("Thanksgiving Day", comingUp(today, holidays, weekends, latitude = 37.8, offDates = friday)[1].note)
+        assertEquals("4-day weekend", comingUp(LocalDate.of(2026, 11, 20), holidays, weekends, latitude = 37.8, offDates = friday).first().note)
+    }
+
     @Test fun `a long weekend under way says when it ends, not which day to take off`() {
         val saturday = LocalDate.of(2026, 11, 28)
         val items = comingUp(saturday, holidays, weekends, latitude = 37.8)
@@ -151,5 +157,33 @@ class ComingUpTest {
             today,
         )
         assertEquals(setOf(12, 13, 14).map { LocalDate.of(2026, 10, it) }.toSet() + LocalDate.of(2026, 12, 24) + LocalDate.of(2027, 12, 24), dates)
+    }
+
+    @Test fun `a yearly date over New Year is still under way in January`() {
+        val holidays = PersonalDate(LocalDate.of(2026, 12, 30), LocalDate.of(2027, 1, 4), "Winter break", dayOff = true, yearly = true)
+        val jan4 = LocalDate.of(2027, 1, 4)
+        assertEquals(PersonalDate(LocalDate.of(2026, 12, 30), jan4, "Winter break", dayOff = true, yearly = true), holidays.next(jan4))
+        assertEquals("Last day", upcomingPersonalDates(jan4, listOf(holidays)).single().note)
+        assertTrue(jan4 in dayOffDates(listOf(holidays), jan4))
+        assertEquals(LocalDate.of(2027, 12, 30), holidays.next(jan4.plusDays(1))?.start)
+    }
+
+    @Test fun `a yearly range over 29 February keeps its end date in other years`() {
+        val leap = PersonalDate(LocalDate.of(2028, 2, 28), LocalDate.of(2028, 3, 1), yearly = true)
+        assertEquals(PersonalDate(LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 1), yearly = true), leap.next(LocalDate.of(2027, 1, 1)))
+    }
+
+    @Test fun `a day off on a day that was off anyway makes no break, and only weekends make weekends`() {
+        val wed = LocalDate.of(2026, 9, 30)
+        assertNull(upcomingPersonalDates(wed, listOf(PersonalDate(LocalDate.of(2026, 10, 3), dayOff = true))).single().note)
+        val holiday = LocalDate.of(2026, 10, 7)
+        assertNull(upcomingPersonalDates(wed, listOf(PersonalDate(holiday, dayOff = true)), setOf(holiday)).single().note)
+        // Tuesday off before a Wednesday holiday: two days, but no weekend.
+        assertEquals("2 days in a row", upcomingPersonalDates(wed, listOf(PersonalDate(LocalDate.of(2026, 10, 6), dayOff = true)), setOf(holiday)).single().note)
+    }
+
+    @Test fun `yesterday's day off still counts, for a night shift's trip home`() {
+        val today = LocalDate.of(2026, 9, 30)
+        assertTrue(today.minusDays(1) in dayOffDates(listOf(PersonalDate(today.minusDays(1), dayOff = true)), today))
     }
 }

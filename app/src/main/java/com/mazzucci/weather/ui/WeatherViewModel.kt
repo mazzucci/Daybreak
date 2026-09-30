@@ -17,6 +17,7 @@ import com.mazzucci.weather.domain.weekendDays
 import com.mazzucci.weather.domain.with
 import com.mazzucci.weather.domain.Countdown
 import com.mazzucci.weather.domain.PersonalDate
+import com.mazzucci.weather.domain.dayOffDates
 import com.mazzucci.weather.domain.comingUp
 import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.Forecast
@@ -310,7 +311,8 @@ class WeatherViewModel(
         val year = countryCodeOf(place)?.let { cc -> holidays?.around(today, cc) }
         if (!wanted()) return // turned off while fetching
         val show = settingsRepo.settings.value.comingUpEnabled
-        val items = if (show) comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude) else emptyList()
+        val offDates = dayOffDates(settingsRepo.settings.value.personalDates, today)
+        val items = if (show) comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude, offDates = offDates) else emptyList()
         val dates = year?.holidays.orEmpty().map { it.date }.toSet()
         updateLoaded(key, forecast) { it.copy(comingUp = items, holidays = dates) }
     }
@@ -507,15 +509,19 @@ class WeatherViewModel(
     /** Only changes the activity card, which is computed from the cached forecast: nothing to refetch or re-narrate. */
     fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
 
-    /** Adds [date], dropping one-off dates that are over; the card is computed from settings, so nothing to fetch. */
-    fun addPersonalDate(date: PersonalDate) {
-        val today = LocalDate.now()
-        settingsRepo.update { s ->
-            s.copy(personalDates = (s.personalDates.filter { it.next(today) != null } + date).distinct().sortedBy { it.start })
-        }
-    }
+    /**
+     * Adds [date], dropping one-off dates that are over. The dates' card is computed from settings; the holiday
+     * rows are refreshed so a booked day of leave stops being suggested.
+     */
+    fun addPersonalDate(date: PersonalDate) = updatePersonalDates { it + date }
 
-    fun removePersonalDate(date: PersonalDate) = settingsRepo.update { s -> s.copy(personalDates = s.personalDates - date) }
+    fun removePersonalDate(date: PersonalDate) = updatePersonalDates { it - date }
+
+    private fun updatePersonalDates(change: (List<PersonalDate>) -> List<PersonalDate>) {
+        val today = LocalDate.now()
+        settingsRepo.update { s -> s.copy(personalDates = change(s.personalDates).filter { it.next(today) != null }.distinct().sortedBy { it.start }) }
+        if (settingsRepo.settings.value.comingUpEnabled) refreshHolidays()
+    }
 
     fun setComingUpEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(comingUpEnabled = enabled) }
