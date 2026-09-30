@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.scale
@@ -30,31 +31,40 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import app.daybreak.domain.MoonPhase
 import app.daybreak.domain.SkyCopy
+import androidx.compose.ui.text.style.TextOverflow
 import kotlin.math.abs
+import kotlin.math.min
 
 /**
  * "Tonight's sky": the moon as it is tonight, drawn lit to the right fraction, with its phase, the next full
  * moon (by its old name), a meteor shower when one's close, and whether the forecast says to look up.
  */
 @Composable
-fun SkyCard(phase: MoonPhase, copy: SkyCopy, modifier: Modifier = Modifier) {
-    val lines = listOfNotNull(copy.moon, copy.meteors, copy.tonight)
+fun SkyCard(phase: MoonPhase, copy: SkyCopy, modifier: Modifier = Modifier, southern: Boolean = false) {
+    // Tonight first: it's what the card is for. The moon and meteors are the trivia under it.
+    val lines = listOfNotNull(copy.tonight, copy.moon, copy.meteors)
     Card(
-        modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = (listOf(copy.phase) + lines).joinToString(". ") + "." },
+        modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = copy.spoken },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             // Always on a night-sky disc, in both themes: it's the moon's own backdrop.
             Box(
-                Modifier.size(56.dp).clip(CircleShape).background(NightSky),
+                Modifier.size(48.dp).clip(CircleShape).background(NightSky),
                 contentAlignment = Alignment.Center,
-            ) { MoonGlyph(phase, Modifier.size(40.dp)) }
+            ) { MoonGlyph(phase, Modifier.size(34.dp), southern) }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(copy.phase, style = MaterialTheme.typography.titleMedium)
+                Text(copy.phase, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(2.dp))
                 lines.forEach {
-                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // A clear night is the good news, in the accent colour the countdowns use.
+                    val accent = it == copy.tonight && copy.clearTonight
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -68,17 +78,21 @@ private val MoonDark = Color(0xFF34405C)
 /**
  * The moon with the lit part drawn to its phase: a lit half-disc on the growing side and a terminator (half an
  * ellipse) whose width is how far from half lit it is, curving into the lit half for a crescent and out of it
- * for a gibbous moon. Waning moons are the mirror image (lit on the left, as seen from the north).
+ * for a gibbous moon. Waning moons are the mirror image (lit on the left, as seen from the north), and so is the
+ * whole moon seen from the [southern] hemisphere.
  */
 @Composable
-fun MoonGlyph(phase: MoonPhase, modifier: Modifier = Modifier) {
+fun MoonGlyph(phase: MoonPhase, modifier: Modifier = Modifier, southern: Boolean = false) {
     Canvas(modifier) {
         val r = size.minDimension / 2
         val c = Offset(size.width / 2, size.height / 2)
+        // A soft glow first, so it reads as a moon in the sky rather than a badge.
+        drawCircle(Brush.radialGradient(listOf(MoonLit.copy(alpha = 0.22f * (0.3f + phase.illumination.toFloat())), Color.Transparent), c, r * 1.6f), r * 1.6f, c)
         drawCircle(MoonDark, r, c)
         val k = phase.illumination.toFloat()
-        if (k < 0.01f) return@Canvas
-        val w = r * (1 - 2 * k) // > 0: crescent, < 0: gibbous
+        if (k < 0.005f) return@Canvas
+        // > 0: crescent, < 0: gibbous; a thin crescent keeps at least a hairline.
+        val w = min(r * (1 - 2 * k), r - 1.5.dp.toPx())
         val lit = Path().apply {
             moveTo(c.x, c.y - r)
             // The lit half: top, round the right side, to the bottom.
@@ -87,6 +101,6 @@ fun MoonGlyph(phase: MoonPhase, modifier: Modifier = Modifier) {
             arcTo(Rect(c.x - abs(w), c.y - r, c.x + abs(w), c.y + r), 90f, if (w > 0) -180f else 180f, false)
             close()
         }
-        scale(if (phase.waxing) 1f else -1f, 1f, pivot = c) { drawPath(lit, MoonLit) }
+        scale(if (phase.waxing != southern) 1f else -1f, 1f, pivot = c) { drawPath(lit, MoonLit) }
     }
 }

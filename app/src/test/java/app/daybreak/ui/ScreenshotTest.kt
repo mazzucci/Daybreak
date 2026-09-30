@@ -180,7 +180,10 @@ class ScreenshotTest {
 
     @Composable
     private fun Home(state: WeatherUiState, now: java.time.LocalDateTime = forecast.current.time) {
-        HomeScreen(state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {}, now = now)
+        HomeScreen(
+            state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {},
+            now = now, zone = java.time.ZoneId.of("America/Los_Angeles"),
+        )
     }
 
     // --- Home -----------------------------------------------------------------------------------
@@ -245,7 +248,7 @@ class ScreenshotTest {
     @Test fun skyCards() = snap("sky_cards", tall = true) {
         val zone = java.time.ZoneId.of("America/Los_Angeles")
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf("2026-10-14", "2026-10-18", "2026-10-22", "2026-10-26", "2026-10-31", "2026-11-04", "2026-11-07", "2026-11-09").forEach { d ->
+            listOf("2026-10-14", "2026-10-18", "2026-10-22", "2026-10-26", "2026-10-28", "2026-11-02", "2026-11-06", "2026-11-09").forEach { d ->
                 val at = java.time.Instant.parse("${d}T20:00:00Z")
                 SkyCard(moonPhase(at), describeSky(at, zone, null, use24Hour = false))
             }
@@ -254,7 +257,7 @@ class ScreenshotTest {
 
     @Test fun skyCardDark() = snap("sky_card_dark", night = true) {
         val at = java.time.Instant.parse("2026-10-18T20:00:00Z")
-        Column(Modifier.padding(16.dp)) { SkyCard(moonPhase(at), describeSky(at, java.time.ZoneId.of("America/Los_Angeles"), rainyNight, use24Hour = false)) }
+        Column(Modifier.padding(16.dp)) { SkyCard(moonPhase(at), describeSky(at, java.time.ZoneId.of("America/Los_Angeles"), forecast, use24Hour = false)) }
     }
 
     // --- Clocks ---------------------------------------------------------------------------------
