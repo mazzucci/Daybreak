@@ -19,6 +19,7 @@ import app.daybreak.domain.AppSettings
 import app.daybreak.domain.TempUnit
 import app.daybreak.narration.GemmaModelStore
 import app.daybreak.narration.GemmaNarrator
+import app.daybreak.narration.ModelStatus
 import app.daybreak.narration.MemeWriter
 import app.daybreak.data.HolidayRepository
 import app.daybreak.data.MemeRepository
@@ -44,7 +45,8 @@ class MainActivity : ComponentActivity() {
                 ClocksViewModel(
                     ClocksRepository(SharedPrefsStore(applicationContext)),
                     gemma = GemmaNarrator.shared(applicationContext, modelStore::installedFile),
-                    modelStatus = modelStore.status,
+                    // The Gemma switch is checked where the box is shown; here, only that there's a model.
+                    gemmaReady = { modelStore.status.value is ModelStatus.Installed },
                     places = OpenMeteoApi(UrlConnectionHttpClient()),
                 )
             }

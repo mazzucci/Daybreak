@@ -9,7 +9,6 @@ import app.daybreak.domain.Place
 import app.daybreak.domain.cityOf
 import app.daybreak.domain.convertTime
 import app.daybreak.domain.formatClock
-import app.daybreak.narration.ModelStatus
 import app.daybreak.narration.TextGenerator
 import app.daybreak.narration.TimeAskPrompt
 import app.daybreak.narration.TimeCall
@@ -19,20 +18,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-/** What the converter should show after an answer: a time (null for now), today or tomorrow, and where it is. */
-data class ConverterRequest(val minutes: Int?, val dayOffset: Int, val fromClockId: String?)
+/**
+ * What the converter should show after an answer: a time (null for now), today or tomorrow, and where it is.
+ * [id] is the answer's, so the converter applies it once and not again over the user's own picks.
+ */
+data class ConverterRequest(val minutes: Int?, val dayOffset: Int, val fromClockId: String?, val id: Long = 0)
 
 /** The Ask box: idle, working on [question], its answer, or why there isn't one. */
 sealed interface AskUi {
     data object Idle : AskUi
     data class Working(val question: String) : AskUi
-    /** [request] sets the converter to the same moment, when it's in a place the converter has (a clock or you). */
+    /** [request] sets the converter to the same moment, when the converter can show it. */
     data class Answer(val question: String, val text: String, val request: ConverterRequest?) : AskUi
     data class Failed(val question: String, val message: String) : AskUi
 }
@@ -46,16 +50,19 @@ class ClocksViewModel(
     private val repo: ClocksRepository,
     /** Null when there's no model engine at all (tests, previews). */
     private val gemma: TextGenerator? = null,
-    modelStatus: StateFlow<ModelStatus> = MutableStateFlow(ModelStatus.NotInstalled),
+    /** Whether Gemma can be asked now: installed and switched on. */
+    private val gemmaReady: () -> Boolean = { false },
     private val places: WeatherApi? = null,
     private val here: () -> ZoneId = ZoneId::systemDefault,
     private val clock: () -> Instant = Instant::now,
+    /** The whole ask, including waiting for Gemma behind the summaries and memes, must finish within this. */
+    private val timeoutMs: Long = 45_000,
 ) : ViewModel() {
     val clocks: StateFlow<List<Clock>> = repo.clocks
-    val modelStatus: StateFlow<ModelStatus> = modelStatus
     private val _ask = MutableStateFlow<AskUi>(AskUi.Idle)
     val ask: StateFlow<AskUi> = _ask.asStateFlow()
     private var askJob: Job? = null
+    private var answers = 0L
 
     /** Adds [place] as a clock; false when it has no time zone or is already there. */
     fun add(place: Place): Boolean = Clock.of(place)?.let(repo::add) ?: false
@@ -69,11 +76,20 @@ class ClocksViewModel(
         if (q.isEmpty()) return
         askJob?.cancel()
         _ask.value = AskUi.Working(q)
-        askJob = viewModelScope.launch { _ask.value = answer(q) }
+        askJob = viewModelScope.launch {
+            _ask.value = withTimeoutOrNull(timeoutMs) { answer(q) }
+                ?: AskUi.Failed(q, "Gemma is busy with the weather. Try again in a moment.")
+        }
+    }
+
+    /** Stops a question that's taking too long. */
+    fun cancelAsk() {
+        askJob?.cancel()
+        _ask.value = AskUi.Idle
     }
 
     private suspend fun answer(q: String): AskUi {
-        val gen = gemma?.takeIf { modelStatus.value is ModelStatus.Installed } ?: return AskUi.Failed(q, "Gemma isn't set up yet.")
+        val gen = gemma?.takeIf { gemmaReady() } ?: return AskUi.Failed(q, "Gemma isn't set up yet.")
         val zone = here()
         val saved = clocks.value.filter { it.zone != null }
         val reply = try {
@@ -85,60 +101,86 @@ class ClocksViewModel(
         }
         val call = TimeAskPrompt.parse(reply) ?: return AskUi.Failed(q, NOT_UNDERSTOOD)
         val now = clock()
+        val id = ++answers
         return when (call) {
             is TimeCall.TimeIn -> {
-                val there = resolve(call.place, zone, saved) ?: return notFound(q, call.place)
+                val there = resolve(call.place, zone, saved).let { it as? Found ?: return (it as Missing).failure(q) }
                 val t = now.atZone(there.zone)
-                val text = if (there.isMe) "It's ${clockText(t)} here." else "It's ${clockText(t)} on ${weekday(t)} in ${there.label}."
-                AskUi.Answer(q, text, ConverterRequest(null, 0, null))
+                val text = if (there.isMe) "It's ${clockText(t)} in ${there.label}." else "It's ${clockText(t)} on ${weekday(t)} in ${there.label}."
+                AskUi.Answer(q, text, ConverterRequest(null, 0, null, id))
             }
             is TimeCall.Convert -> {
-                val from = resolve(call.from, zone, saved) ?: return notFound(q, call.from)
-                val to = resolve(call.to, zone, saved) ?: return notFound(q, call.to)
+                val from = resolve(call.from, zone, saved).let { it as? Found ?: return (it as Missing).failure(q) }
+                val to = resolve(call.to, zone, saved).let { it as? Found ?: return (it as Missing).failure(q) }
                 val day = now.atZone(from.zone).toLocalDate().plusDays(call.day.toLong())
                 val at = convertTime(call.time, day, from.zone, from.zone)
                 val there = at.withZoneSameInstant(to.zone)
-                val fromText = if (from.isMe) "At ${clockText(at)} on ${weekday(at)} your time" else "At ${clockText(at)} on ${weekday(at)} in ${from.label}"
+                // The same voice as the converter's line: every place by name, the phone's too.
                 val toDay = if (there.toLocalDate() != at.toLocalDate()) " on ${weekday(there)}" else ""
-                val toText = if (to.isMe) "it's ${clockText(there)}$toDay for you" else "it's ${clockText(there)}$toDay in ${to.label}"
-                // The converter can show it when the time is in a place it has: your phone or one of the clocks.
-                val request = if (from.isMe || from.clockId != null) {
-                    ConverterRequest(call.time.hour * 60 + call.time.minute, call.day, from.clockId)
-                } else null
-                AskUi.Answer(q, "$fromText, $toText.", request)
+                val text = "At ${clockText(at)} on ${weekday(at)} in ${from.label}, it's ${clockText(there)}$toDay in ${to.label}."
+                AskUi.Answer(q, text, requestFor(at, from, zone, now, id))
             }
         }
     }
 
-    private data class Resolved(val label: String, val zone: ZoneId, val clockId: String? = null, val isMe: Boolean = false)
-
     /**
-     * "me" is the phone; then a clock by its name, or by its region or country ("Romania" is the Bucharest clock);
-     * then the first place search result with a time zone. Null when nothing matches (or the search fails).
+     * The converter shows a time in your phone's place or a clock's, today or tomorrow there: the answer's own
+     * time when it's in one of those, else the same moment in your phone's terms (null if that isn't today or
+     * tomorrow, when the converter can't show it).
      */
-    private suspend fun resolve(name: String, zone: ZoneId, saved: List<Clock>): Resolved? {
-        if (name == TimeCall.ME || name.equals(cityOf(zone), ignoreCase = true)) return Resolved(cityOf(zone), zone, isMe = true)
-        saved.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { return Resolved(it.name, it.zone!!, it.id) }
-        saved.firstOrNull { c -> c.detail?.split(", ")?.any { it.equals(name, ignoreCase = true) } == true }
-            ?.let { return Resolved(name.replaceFirstChar { it.uppercase() }, it.zone!!, it.id) }
-        val found = try {
-            places?.searchPlaces(name).orEmpty()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            emptyList()
+    private fun requestFor(at: ZonedDateTime, from: Found, here: ZoneId, now: Instant, id: Long): ConverterRequest? {
+        if (from.isMe || from.clockId != null) {
+            val offset = ChronoUnit.DAYS.between(now.atZone(from.zone).toLocalDate(), at.toLocalDate()).toInt()
+            return ConverterRequest(at.hour * 60 + at.minute, offset, from.clockId, id).takeIf { offset in 0..1 }
         }
-        val place = found.firstNotNullOfOrNull { p -> Clock.of(p)?.let { p to it } } ?: return null
-        return Resolved(place.first.name, place.second.zone!!)
+        val mine = at.withZoneSameInstant(here)
+        val offset = ChronoUnit.DAYS.between(now.atZone(here).toLocalDate(), mine.toLocalDate()).toInt()
+        return ConverterRequest(mine.hour * 60 + mine.minute, offset, null, id).takeIf { offset in 0..1 }
     }
 
-    private fun notFound(q: String, place: String) = AskUi.Failed(q, "Couldn't find “$place”. Try a city name.")
+    private sealed interface Resolved
+    private data class Found(val label: String, val zone: ZoneId, val clockId: String? = null, val isMe: Boolean = false) : Resolved
+    private data class Missing(val place: String, val offline: Boolean) : Resolved {
+        fun failure(q: String) = AskUi.Failed(
+            q,
+            if (offline) "Couldn't look up “$place” without a connection. Add it as a clock to ask offline."
+            else "Couldn't find “$place”. Try a city name.",
+        )
+    }
+
+    /**
+     * A clock by its name (the user's own list comes first), then "me" or the phone's city, then a clock by its
+     * region or country ("Romania" is the Bucharest clock, and the answer names Bucharest, as the rows do), then
+     * the first place search result with a time zone. "Bucharest, Romania" is tried as "Bucharest" too.
+     */
+    private suspend fun resolve(name: String, zone: ZoneId, saved: List<Clock>): Resolved {
+        val names = listOf(name, name.substringBefore(',').trim()).distinct()
+        for (n in names) saved.firstOrNull { it.name.equals(n, ignoreCase = true) }?.let { return Found(it.name, it.zone!!, it.id) }
+        if (name == TimeCall.ME || names.any { it.equals(cityOf(zone), ignoreCase = true) }) return Found(cityOf(zone), zone, isMe = true)
+        for (n in names) {
+            saved.firstOrNull { c -> c.detail?.split(", ")?.any { it.equals(n, ignoreCase = true) } == true }
+                ?.let { return Found(it.name, it.zone!!, it.id) }
+        }
+        var offline = false
+        for (n in names) {
+            val found = try {
+                places?.searchPlaces(n).orEmpty()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                offline = true
+                emptyList()
+            }
+            found.firstNotNullOfOrNull { p -> Clock.of(p)?.let { p to it } }?.let { (p, c) -> return Found(p.name, c.zone!!) }
+        }
+        return Missing(name, offline)
+    }
 
     private fun clockText(t: ZonedDateTime) = formatClock(t.toLocalDateTime())
 
     private fun weekday(t: ZonedDateTime) = t.format(DateTimeFormatter.ofPattern("EEEE", Locale.US))
 
     private companion object {
-        const val NOT_UNDERSTOOD = "Gemma couldn't work that one out. Try the converter above."
+        const val NOT_UNDERSTOOD = "Gemma couldn't work that one out. Try it another way, like “What time is it in Tokyo?”"
     }
 }

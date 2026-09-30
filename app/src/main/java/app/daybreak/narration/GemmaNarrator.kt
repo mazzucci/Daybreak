@@ -62,8 +62,9 @@ class GemmaNarrator(
         scope.launch { mutex.withLock { release() } }
     }
 
-    /** Frees the engine and stops the idle timer; the narrator can't be used afterwards. */
+    /** Frees the engine and stops the idle timer; the narrator can't be used afterwards. The shared one only frees. */
     override fun close() {
+        if (this === shared) return releaseEngine()
         scope.launch {
             mutex.withLock { release() }
         }.invokeOnCompletion { scope.cancel() }

@@ -274,10 +274,11 @@ class ScreenshotTest {
 
     @Composable
     private fun Clocks(list: List<Clock>, editing: Boolean = false, ask: AskUi = AskUi.Idle, gemmaReady: Boolean = false) {
+        val gemma = if (gemmaReady) GemmaAvailability.READY else GemmaAvailability.MISSING
         ClocksScreen(
             list, onAdd = {}, onRemove = {}, onMove = { _, _ -> },
             here = java.time.ZoneId.of("America/Los_Angeles"), now = clocksNow, initiallyEditing = editing,
-            ask = ask, gemmaReady = gemmaReady,
+            ask = ask, gemma = gemma,
         )
     }
 
@@ -287,8 +288,8 @@ class ScreenshotTest {
             clocks.take(3),
             ask = AskUi.Answer(
                 "What time is it in Romania at noon my time?",
-                "At 12:00 PM on Monday your time, it's 10:00 PM in Romania.",
-                ConverterRequest(12 * 60, 0, null),
+                "At 12:00 PM on Monday in Los Angeles, it's 10:00 PM in Bucharest.",
+                ConverterRequest(12 * 60, 0, null, 1),
             ),
             gemmaReady = true,
         )

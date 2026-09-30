@@ -2,6 +2,7 @@ package app.daybreak.narration
 
 import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.time.LocalTime
 
 /**
@@ -57,25 +58,27 @@ object TimeAskPrompt {
      */
     fun parse(reply: String): TimeCall? {
         val start = reply.indexOf('{')
-        val end = reply.indexOf('}', start)
-        if (start < 0 || end < 0) return null
-        val o = try {
-            JSONObject(reply.substring(start, end + 1))
+        if (start < 0) return null
+        val outer = try {
+            JSONTokener(reply.substring(start)).nextValue() as? JSONObject
         } catch (e: JSONException) {
-            return null
-        }
-        fun place(key: String) = o.optString(key).trim().takeIf { it.isNotEmpty() && it.length <= 60 }
+            null
+        } ?: return null
+        // Also the common {"name": …, "parameters": {…}} shape, and arguments nested under "args".
+        val tool = outer.str("tool") ?: outer.str("name")
+        val o = outer.optJSONObject("parameters") ?: outer.optJSONObject("args") ?: outer
+        fun place(key: String) = o.str(key)?.takeIf { it.length <= 60 }
             ?.let { if (it.lowercase() in SELF) TimeCall.ME else it }
-        return when (o.optString("tool")) {
+        return when (tool) {
             "time_in" -> place("place")?.let { TimeCall.TimeIn(it) }
             "convert_time" -> {
-                val time = TIME.matchEntire(o.optString("time").trim())?.let { m ->
+                val time = TIME.matchEntire(o.str("time") ?: "")?.let { m ->
                     val h = m.groupValues[1].toInt()
                     val min = m.groupValues[2].toInt()
                     if (h in 0..23 && min in 0..59) LocalTime.of(h, min) else null
                 } ?: return null
-                val day = when (o.optString("day", "today").trim().lowercase()) {
-                    "today", "" -> 0
+                val day = when ((o.str("day") ?: "today").lowercase()) {
+                    "today" -> 0
                     "tomorrow" -> 1
                     else -> return null
                 }
@@ -86,6 +89,10 @@ object TimeAskPrompt {
             else -> null
         }
     }
+
+    /** A trimmed, non-blank string value; JSON null (which Android's org.json reads as "null") counts as missing. */
+    private fun JSONObject.str(key: String): String? =
+        if (isNull(key)) null else optString(key).trim().takeIf { it.isNotEmpty() }
 
     private val TIME = Regex("""(\d{1,2}):(\d{2})""")
     private val SELF = setOf("me", "here", "my time", "local", "my place", "mine")

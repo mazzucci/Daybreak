@@ -37,4 +37,11 @@ class TimeAskTest {
         assertTrue(p.contains("The user is in Los Angeles. Their clocks: Bucharest, Tokyo."))
         assertTrue(p.endsWith("Q: ${"x".repeat(TimeAskPrompt.MAX_QUESTION)}\nA:"))
     }
+
+    @Test fun `nested and named shapes parse, and JSON null is missing`() {
+        assertEquals(TimeCall.TimeIn("Tokyo"), TimeAskPrompt.parse("""{"name":"time_in","parameters":{"place":"Tokyo"}}"""))
+        assertEquals(TimeCall.TimeIn("Tokyo"), TimeAskPrompt.parse("""{"tool":"time_in","args":{"place":"Tokyo"}}"""))
+        assertEquals(TimeCall.TimeIn("Tokyo {HQ}"), TimeAskPrompt.parse("""{"tool":"time_in","place":"Tokyo {HQ}"}"""))
+        assertNull(TimeAskPrompt.parse("""{"tool":"time_in","place":null}"""))
+    }
 }
