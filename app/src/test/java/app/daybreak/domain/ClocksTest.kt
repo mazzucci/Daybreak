@@ -61,4 +61,27 @@ class ClocksTest {
         assertFalse(isNightHour(6))
         assertTrue(isNightHour(18))
     }
+
+    @Test fun `offsets under an hour are minutes, and screen readers hear words`() {
+        assertEquals("+15 min", formatOffset(900))
+        assertEquals("−30 min", formatOffset(-1800))
+        assertEquals("UTC−3:30", formatUtc(-(3 * 3600 + 1800)))
+        assertEquals("1 hour ahead", spokenOffset(3600))
+        assertEquals("10 hours behind", spokenOffset(-36000))
+        assertEquals("5 and a half hours ahead", spokenOffset(5 * 3600 + 1800))
+        assertEquals("15 minutes ahead", spokenOffset(900))
+    }
+
+    @Test fun `converted days say next day, day before, or the weekday when two apart`() {
+        val mon = LocalDate.of(2026, 9, 28)
+        assertNull(dayNote(mon, mon))
+        assertEquals("next day", dayNote(mon, mon.plusDays(1)))
+        assertEquals("day before", dayNote(mon, mon.minusDays(1)))
+        assertEquals("Saturday", dayNote(mon, mon.minusDays(2)))
+    }
+
+    @Test fun `a zone this phone doesn't know can't be a clock`() {
+        assertNull(Clock.of(Place("geo:1", "Atlantis", latitude = 0.0, longitude = 0.0, zoneId = "Atlantis/Lost_City")))
+        assertNull(Clock("x", "Atlantis", zoneId = "Atlantis/Lost_City").zone)
+    }
 }

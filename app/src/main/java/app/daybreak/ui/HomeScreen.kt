@@ -33,9 +33,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -100,13 +98,7 @@ fun HomeScreen(
     /** Drives the date and greeting; fixed in screenshot tests, otherwise the clock, ticking each minute. */
     now: LocalDateTime? = null,
 ) {
-    val ticking by produceState(LocalDateTime.now()) {
-        while (true) {
-            delay(60_000L - System.currentTimeMillis() % 60_000L)
-            value = LocalDateTime.now()
-        }
-    }
-    val now = now ?: ticking
+    val now = now ?: rememberMinuteClock().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
     val index = glancePageIndex(state.pages)
     val page = state.pages.getOrNull(index)
     val loaded = page?.content as? PageContent.Loaded

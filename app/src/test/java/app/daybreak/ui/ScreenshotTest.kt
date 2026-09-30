@@ -252,9 +252,17 @@ class ScreenshotTest {
     private val clocksNow = java.time.Instant.parse("2026-09-28T21:42:00Z")
 
     @Composable
-    private fun Clocks(list: List<Clock>) {
-        ClocksScreen(list, onAdd = {}, onRemove = {}, onMove = { _, _ -> }, here = java.time.ZoneId.of("America/Los_Angeles"), now = clocksNow)
+    private fun Clocks(list: List<Clock>, editing: Boolean = false) {
+        ClocksScreen(
+            list, onAdd = {}, onRemove = {}, onMove = { _, _ -> },
+            here = java.time.ZoneId.of("America/Los_Angeles"), now = clocksNow, initiallyEditing = editing,
+        )
     }
+
+    /** Edit mode, with a clock whose zone this phone doesn't know (it can only be removed). */
+    @Test fun clocksEdit() = snap("clocks_edit") { Clocks(clocks.take(3) + Clock("x", "Atlantis", zoneId = "Atlantis/Lost_City"), editing = true) }
+
+    @Test fun clocksEditLargeFont() = snap("clocks_edit_large_font", narrow = true, fontScale = 1.5f) { Clocks(clocks.take(3), editing = true) }
 
     @Test fun clocksList() = snap("clocks", tall = true) { Clocks(clocks) }
 

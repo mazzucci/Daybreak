@@ -139,10 +139,13 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
             onPick = { place ->
                 val end = searchingFor
                 if (addingClock) {
-                    clocksVm?.add(place)
-                    vm.clearSearch()
-                    addingClock = false
-                    overlay = null
+                    // A place without a time zone this phone knows can't be a clock: stay on the search.
+                    if (app.daybreak.domain.Clock.of(place) != null) {
+                        clocksVm?.add(place)
+                        vm.clearSearch()
+                        addingClock = false
+                        overlay = null
+                    }
                 } else if (end != null) {
                     vm.setCommutePlace(end, place)
                     vm.clearSearch()

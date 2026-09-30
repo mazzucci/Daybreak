@@ -24,7 +24,7 @@ fun ClocksTabIcon(selected: Boolean) {
     val hands = if (selected) MaterialTheme.colorScheme.secondaryContainer else color
     Canvas(Modifier.size(24.dp)) {
         val c = Offset(size.width / 2, size.height / 2)
-        val r = 9.dp.toPx()
+        val r = 10.dp.toPx()
         val w = 2.dp.toPx()
         if (selected) drawCircle(color, r, c) else drawCircle(color, r - w / 2, c, style = Stroke(w))
         drawLine(hands, c, Offset(c.x, c.y - 5.dp.toPx()), w, StrokeCap.Round)
