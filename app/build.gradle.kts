@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.mazzucci.weather"
+    namespace = "app.daybreak"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.mazzucci.weather"
+        applicationId = "app.daybreak"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

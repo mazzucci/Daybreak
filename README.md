@@ -1,6 +1,8 @@
-# WeatherApp
+# Daybreak
 
-A simple Android app that shows the weather for your current location and any places you save, in both °F and °C.
+A personal Android app for the start of your day: the weather for where you are and the places you save (in both °F and °C), your commute, holidays and your own dates, and a few fun things, with an optional on-device Gemma model writing the words. (It began as a weather app; the tabs Home · Weather · Clocks · Settings are on the way, see [docs/design/shell.md](docs/design/shell.md).)
+
+> **Coming from the old "Weather" app?** Daybreak has a new application id (`app.daybreak`), so it installs as a separate app and starts empty: add your places again, import or download the Gemma model again, and re-add your dates and commute. Then uninstall the old Weather app (its widget and background refresh go with it).
 
 - Search for any city and save it; swipe between places, reorder or remove them
 - Current location is optional: turn it off and use saved places only
@@ -25,23 +27,23 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 
 | Weather | Dark | Gemma summary | Rainy night |
 |:---:|:---:|:---:|:---:|
-| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherLight_weather_light.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherDark_weather_dark.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherGemma_weather_gemma.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherRainyNight_weather_rainy_night.png" width="200"> |
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherLight_weather_light.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherDark_weather_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherGemma_weather_gemma.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherRainyNight_weather_rainy_night.png" width="200"> |
 
 | First run | Loading | Permission | Error |
 |:---:|:---:|:---:|:---:|
-| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_empty_empty.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_loading_loading.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_permission_permission.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_error_error.png" width="200"> |
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_empty_empty.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_loading_loading.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_permission_permission.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_error_error.png" width="200"> |
 
 | Search | Places | Settings: set up Gemma | Settings: downloading |
 |:---:|:---:|:---:|:---:|
-| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_search_search.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_places_places.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsNotInstalled_settings_not_installed.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsDownloading_settings_downloading.png" width="200"> |
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_search_search.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_places_places.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsNotInstalled_settings_not_installed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsDownloading_settings_downloading.png" width="200"> |
 
 | Full page | Full page (dark, °C) | Weather memes |
 |:---:|:---:|:---:|
-| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPage_weather_full_page.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherFullPageDark_weather_full_page_dark.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_memeMoods_meme_moods.png" width="200"> |
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherFullPage_weather_full_page.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherFullPageDark_weather_full_page_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_memeMoods_meme_moods.png" width="200"> |
 
 | Settings: installed | Settings: failed (dark) | Rainy night (dark) | App icon |
 |:---:|:---:|:---:|:---:|
-| <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsInstalled_settings_installed.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_settingsFailed_settings_failed.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_weatherRainyNightDark_weather_rainy_night_dark.png" width="200"> | <img src="app/src/test/snapshots/images/com.mazzucci.weather.ui_ScreenshotTest_appIcon_app_icon.png" width="120"> |
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsInstalled_settings_installed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsFailed_settings_failed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherRainyNightDark_weather_rainy_night_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_appIcon_app_icon.png" width="120"> |
 
 These are rendered from the app's real UI code with sample data using [Paparazzi](https://github.com/cashapp/paparazzi). Weather icons and the launcher icon are drawn in code and as vector drawables, so there are no bitmap assets. To regenerate the screenshots after UI changes:
 
@@ -66,15 +68,15 @@ If you already have `gemma3-1b-it-int4.task` on the phone, **Import file…** co
 How it works:
 
 - The model runs on the CPU through MediaPipe LLM Inference (`com.google.mediapipe:tasks-genai`), with low temperature and a 30-second timeout. It's loaded on first use and kept in memory while the app runs.
-- The prompt is a short instruction plus the forecast as JSON, in your preferred unit ([`GemmaPrompt`](app/src/main/java/com/mazzucci/weather/narration/GemmaPrompt.kt)).
-- Gemma's reply is checked before it's shown ([`NarrationValidator`](app/src/main/java/com/mazzucci/weather/narration/NarrationValidator.kt)). Every temperature, percentage and other number must match the forecast data, and the reply must be short plain text: at most 2 sentences (160 characters for the Brief voice), or up to 4 with a greeting and sign-off for the playful voices. If the check fails, or the model is missing, slow or errors out, the template summary stays.
-- The same engine writes the daily meme ([`Meme.kt`](app/src/main/java/com/mazzucci/weather/narration/Meme.kt)), with a playful temperature and a per-day seed. Its prompt describes the day in words only, and [`MemeValidator`](app/src/main/java/com/mazzucci/weather/narration/Meme.kt) accepts only a two-line `TOP:`/`BOTTOM:` caption with no digits, emoji or rude words. Gemma gets one try per place, day and mood; the result, or the hand-written template if it's rejected, is cached (`MemeRepository`) so the meme stays the same all day. Gemma's memes need both **Daily weather meme** and **Describe the weather with Gemma** switched on.
+- The prompt is a short instruction plus the forecast as JSON, in your preferred unit ([`GemmaPrompt`](app/src/main/java/app/daybreak/narration/GemmaPrompt.kt)).
+- Gemma's reply is checked before it's shown ([`NarrationValidator`](app/src/main/java/app/daybreak/narration/NarrationValidator.kt)). Every temperature, percentage and other number must match the forecast data, and the reply must be short plain text: at most 2 sentences (160 characters for the Brief voice), or up to 4 with a greeting and sign-off for the playful voices. If the check fails, or the model is missing, slow or errors out, the template summary stays.
+- The same engine writes the daily meme ([`Meme.kt`](app/src/main/java/app/daybreak/narration/Meme.kt)), with a playful temperature and a per-day seed. Its prompt describes the day in words only, and [`MemeValidator`](app/src/main/java/app/daybreak/narration/Meme.kt) accepts only a two-line `TOP:`/`BOTTOM:` caption with no digits, emoji or rude words. Gemma gets one try per place, day and mood; the result, or the hand-written template if it's rejected, is cached (`MemeRepository`) so the meme stays the same all day. Gemma's memes need both **Daily weather meme** and **Describe the weather with Gemma** switched on.
 - Expect a few seconds per summary on recent phones and longer on older ones. MediaPipe's native library makes the APK bigger, so it's built only for 64-bit ARM (phones) and x86_64 (emulators). It needs a 64-bit device.
 
 ## Code layout
 
 ```
-app/src/main/java/com/mazzucci/weather/
+app/src/main/java/app/daybreak/
   domain/     Place, Forecast, AppSettings; unit conversion and formatting; WMO code descriptions;
               ActivityScorer (best time to ride/run/walk); ComingUp (holidays, long weekends, seasons)
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
