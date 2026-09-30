@@ -44,9 +44,6 @@ dependencies {
     // Home-screen widget (Jetpack Glance) and its periodic refresh.
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    // Reads workouts (e.g. from Garmin Connect) for the activity log. 1.1.0 final needs compileSdk 36 / AGP 8.9;
-    // beta01 is the last release that builds with SDK 35.
-    implementation("androidx.health.connect:connect-client:1.1.0-beta01")
 
     testImplementation("junit:junit:4.13.2")
     // android.jar's XmlPullParser is a stub in JVM unit tests; kxml2 is the parser Android itself ships.

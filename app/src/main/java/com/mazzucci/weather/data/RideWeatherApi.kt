@@ -12,12 +12,8 @@ data class RideWeather(val hours: List<RideHour>, val utcOffsetSeconds: Int)
 
 /** Weather for a past ride. */
 fun interface RideWeatherApi {
-    /**
-     * Hourly weather at a place over [from]..[to], inclusive. With [localTime] the dates are the place's own and
-     * the offset is reported (one offset for the whole range, so keep ranges short across daylight saving);
-     * otherwise everything is UTC, right for long ranges.
-     */
-    suspend fun weather(latitude: Double, longitude: Double, from: LocalDate, to: LocalDate, localTime: Boolean): RideWeather
+    /** Hourly weather at a place over [from]..[to] (the place's local dates, inclusive). */
+    suspend fun weather(latitude: Double, longitude: Double, from: LocalDate, to: LocalDate): RideWeather
 }
 
 /**
@@ -26,9 +22,9 @@ fun interface RideWeatherApi {
  * place's own time zone, so the ride can be shown in the time it happened there.
  */
 class OpenMeteoRideWeather(private val http: HttpClient) : RideWeatherApi {
-    override suspend fun weather(latitude: Double, longitude: Double, from: LocalDate, to: LocalDate, localTime: Boolean): RideWeather {
+    override suspend fun weather(latitude: Double, longitude: Double, from: LocalDate, to: LocalDate): RideWeather {
         val body = try {
-            http.get(url(latitude, longitude, from, to, localTime))
+            http.get(url(latitude, longitude, from, to))
         } catch (e: HttpException) {
             throw IOException("Weather history returned HTTP ${e.code}")
         }
@@ -40,10 +36,10 @@ class OpenMeteoRideWeather(private val http: HttpClient) : RideWeatherApi {
     }
 
     companion object {
-        fun url(latitude: Double, longitude: Double, from: LocalDate, to: LocalDate, localTime: Boolean = true) =
+        fun url(latitude: Double, longitude: Double, from: LocalDate, to: LocalDate) =
             "https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude" +
                 "&start_date=$from&end_date=$to" +
-                "&hourly=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,weather_code&timezone=${if (localTime) "auto" else "GMT"}"
+                "&hourly=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,weather_code&timezone=auto"
     }
 }
 

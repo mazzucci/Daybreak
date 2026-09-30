@@ -26,7 +26,7 @@ class RideViewModelTest {
     private var failWeather = false
 
     private fun vm(files: Map<String, String>, now: Instant = Instant.parse("2026-09-29T00:00:00Z")) = RideViewModel(
-        weather = { lat, lon, from, to, _ ->
+        weather = { lat, lon, from, to ->
             requests += "$lat,$lon,$from,$to"
             if (failWeather) throw IOException("Weather history returned HTTP 500")
             RideWeather(parseRideHours(fixture("ride_weather_sf.json")), 0)

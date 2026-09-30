@@ -168,7 +168,7 @@ class ScreenshotTest {
             settings = settings,
             modelStatus = status,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
-            onImportModel = {}, onRemoveModel = {}, onBack = {}, onOpenRideReplay = {}, onOpenActivityLog = {},
+            onImportModel = {}, onRemoveModel = {}, onBack = {}, onOpenRideReplay = {},
         )
     }
 
@@ -511,64 +511,6 @@ class ScreenshotTest {
 
     @Test fun rideError() = snap("ride_error") {
         RideScreen(RideUi.Failed("That doesn't look like a GPX file"), TempUnit.F, onPickFile = {}, onBack = {})
-    }
-
-    /**
-     * Three workouts on Sunday Sep 20 (a wet morning run, a dry ride, a turbo session), a run the Sunday before
-     * with the same day's weather, and a hike three weeks back that the hours don't cover.
-     */
-    private val logItems by lazy {
-        val hours = parseRideHours(fixture("ride_weather_sf.json"))
-        fun ex(start: String, minutes: Long, kind: com.mazzucci.weather.domain.ExerciseKind, title: String? = null, indoor: Boolean = false) =
-            java.time.Instant.parse(start).let { com.mazzucci.weather.domain.Exercise(start, kind, title, it, it.plusSeconds(minutes * 60), "garmin", indoor) }
-        val wet = hours.map { if (it.time == java.time.Instant.parse("2026-09-20T09:00:00Z")) it.copy(precipitationMm = 1.6, code = 63) else it }
-        val weekBefore = hours.map { it.copy(time = it.time.minus(java.time.Duration.ofDays(7)), tempC = it.tempC - 3, code = 2) }
-        com.mazzucci.weather.domain.withWeather(
-            listOf(
-                ex("2026-09-20T15:00:00Z", 95, com.mazzucci.weather.domain.ExerciseKind.RIDE, "Ocean Beach loop"),
-                ex("2026-09-20T08:10:00Z", 42, com.mazzucci.weather.domain.ExerciseKind.RUN),
-                ex("2026-09-20T18:30:00Z", 50, com.mazzucci.weather.domain.ExerciseKind.RIDE, "Zwift", indoor = true),
-                ex("2026-09-13T14:00:00Z", 65, com.mazzucci.weather.domain.ExerciseKind.RUN, "Long run"),
-                ex("2026-09-02T16:00:00Z", 130, com.mazzucci.weather.domain.ExerciseKind.HIKE),
-            ),
-            wet + weekBefore,
-        )
-    }
-
-    /** The Sunday of the newest workouts, so they fall under "This week". */
-    private val logToday = java.time.LocalDate.of(2026, 9, 20)
-
-    @Test fun activityLog() = snap("activity_log", tall = true) {
-        ActivityLogScreen(ActivityLogUi.Loaded(logItems, "San Francisco"), TempUnit.F, {}, {}, {}, zone = java.time.ZoneOffset.UTC, today = logToday)
-    }
-
-    @Test fun activityLogDark() = snap("activity_log_dark", night = true, tall = true) {
-        ActivityLogScreen(ActivityLogUi.Loaded(logItems, "London"), TempUnit.C, {}, {}, {}, zone = java.time.ZoneOffset.UTC, today = logToday)
-    }
-
-    /** Narrow at 1.5x: the tiles stay level, the date line wraps, and the weather column keeps its icon beside the temperature. */
-    @Test fun activityLogLargeFontDark() = snap("activity_log_large_font_dark", night = true, tall = true, narrow = true, fontScale = 1.5f) {
-        ActivityLogScreen(ActivityLogUi.Loaded(logItems, "San Francisco"), TempUnit.F, {}, {}, {}, zone = java.time.ZoneOffset.UTC, today = logToday)
-    }
-
-    @Test fun activityLogEmpty() = snap("activity_log_empty") {
-        ActivityLogScreen(ActivityLogUi.Loaded(emptyList(), "San Francisco"), TempUnit.F, {}, {}, {})
-    }
-
-    @Test fun activityLogFailed() = snap("activity_log_failed", night = true) {
-        ActivityLogScreen(ActivityLogUi.Failed("Health Connect is busy"), TempUnit.F, {}, {}, {})
-    }
-
-    @Test fun permissionsRationale() = snap("permissions_rationale") {
-        PermissionsRationaleScreen(onBack = {})
-    }
-
-    @Test fun activityLogConnect() = snap("activity_log_connect") {
-        ActivityLogScreen(ActivityLogUi.NeedsPermission(), TempUnit.F, {}, {}, {})
-    }
-
-    @Test fun activityLogInstall() = snap("activity_log_install") {
-        ActivityLogScreen(ActivityLogUi.Unavailable(installable = true), TempUnit.F, {}, {}, {})
     }
 
     @Test fun weatherPirate() = snap("weather_pirate") {
