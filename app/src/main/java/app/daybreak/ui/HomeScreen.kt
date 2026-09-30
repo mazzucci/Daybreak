@@ -64,6 +64,8 @@ import app.daybreak.domain.describeWeatherCode
 import app.daybreak.domain.formatBothUnits
 import app.daybreak.domain.formatDegrees
 import app.daybreak.domain.upcomingPersonalDates
+import app.daybreak.domain.describeSky
+import app.daybreak.domain.moonPhase
 import app.daybreak.domain.weekendDays
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -97,8 +99,10 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     /** Drives the date and greeting; fixed in screenshot tests, otherwise the clock, ticking each minute. */
     now: LocalDateTime? = null,
+    /** The phone's zone, for tonight's sky; fixed in screenshot tests. */
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
 ) {
-    val now = now ?: rememberMinuteClock().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+    val now = now ?: rememberMinuteClock().atZone(zone).toLocalDateTime()
     val index = glancePageIndex(state.pages)
     val page = state.pages.getOrNull(index)
     val loaded = page?.content as? PageContent.Loaded
@@ -141,10 +145,10 @@ fun HomeScreen(
                 onOpenSearch = onOpenSearch,
                 modifier = Modifier.padding(horizontal = PageMargin),
             )
-            HomeCards(state, page, loaded, now)
+            HomeCards(state, page, loaded, now, zone)
             // Only when every card is switched off (not while they're waiting for a forecast).
             val settings = state.settings
-            if (!settings.commute.enabled && !settings.comingUpEnabled && !settings.memesEnabled) {
+            if (!settings.commute.enabled && !settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Turn on more cards in Settings",
@@ -164,7 +168,7 @@ fun HomeScreen(
 
 /** The personal cards under the glance, in order. */
 @Composable
-private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.Loaded?, now: LocalDateTime) {
+private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.Loaded?, now: LocalDateTime, zone: java.time.ZoneId) {
     val settings = state.settings
     val unit = settings.primaryUnit
     val forecast = loaded?.forecast
@@ -191,6 +195,16 @@ private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
     if (upcoming.isNotEmpty()) {
         SectionHeading("Coming up")
         ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin), today = today)
+    }
+
+    if (settings.skyEnabled) {
+        val instant = now.atZone(zone).toInstant()
+        // The viewer's hemisphere: the Home place's, or the northern one until it's known.
+        val latitude = page?.place?.latitude ?: 45.0
+        val phase = remember(instant) { moonPhase(instant) }
+        val sky = remember(instant, forecast, latitude) { describeSky(instant, zone, forecast, latitude) }
+        SectionHeading("Tonight's sky")
+        SkyCard(phase, sky, Modifier.padding(horizontal = PageMargin), southern = latitude < 0)
     }
 
     val meme = loaded?.meme

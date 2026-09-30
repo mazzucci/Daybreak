@@ -625,6 +625,9 @@ class WeatherViewModel(
         }
     }
 
+    /** Tonight's sky is computed from the clock and the cached forecast: nothing to fetch. */
+    fun setSkyEnabled(enabled: Boolean) = settingsRepo.update { it.copy(skyEnabled = enabled) }
+
     fun setMemesEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(memesEnabled = enabled) }
         if (enabled) showMemesOnLoadedPages() else contents.update { map ->
