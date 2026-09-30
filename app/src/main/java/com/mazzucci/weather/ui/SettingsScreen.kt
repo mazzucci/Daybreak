@@ -99,6 +99,22 @@ import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.TempUnit
 import com.mazzucci.weather.narration.GemmaModelSource
 import com.mazzucci.weather.narration.ModelStatus
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.rememberDateRangePickerState
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.mazzucci.weather.domain.PersonalDate
+import com.mazzucci.weather.domain.PERSONAL_DATE_NAME_MAX
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.LaunchedEffect
 import java.util.Locale
 
 private val ScreenMargin = 16.dp
@@ -112,6 +128,10 @@ fun SettingsScreen(
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
     onComingUpEnabledChange: (Boolean) -> Unit,
+    onAddPersonalDate: (PersonalDate) -> Unit = {},
+    onRemovePersonalDate: (PersonalDate) -> Unit = {},
+    /** For your dates (listed while they're ahead); fixed in screenshot tests. */
+    today: LocalDate = LocalDate.now(),
     onToneChange: (Tone) -> Unit,
     onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
@@ -180,6 +200,8 @@ fun SettingsScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            PersonalDatesCard(settings.personalDates, settings.comingUpEnabled, today, onAddPersonalDate, onRemovePersonalDate)
 
             SectionTitle("Outdoor plans")
             SettingsCard {
@@ -399,6 +421,172 @@ private fun capAboutMeDraft(text: String): String {
     val capped = text.take(ABOUT_ME_MAX_CHARS)
     return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
 }
+
+/**
+ * "Your dates": birthdays, big days and time off still ahead, each with a remove button, and "Add a date", which
+ * asks for the dates (a range picker, so one day is a tap and a week is two), then a label and whether it's a day
+ * off and whether it comes round every year.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PersonalDatesCard(
+    dates: List<PersonalDate>,
+    shown: Boolean,
+    today: LocalDate,
+    onAdd: (PersonalDate) -> Unit,
+    onRemove: (PersonalDate) -> Unit,
+) {
+    var picking by rememberSaveable { mutableStateOf(false) }
+    // The dates picked, waiting for a label (epoch days, so they survive rotation).
+    var pickedStart by rememberSaveable { mutableStateOf<Long?>(null) }
+    var pickedEnd by rememberSaveable { mutableStateOf<Long?>(null) }
+    SettingsCard {
+        Text("Your dates", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "Birthdays, big days, time off: counted down on your first page alongside the holidays (once within four " +
+                "months). Days off count as a break, and the commute check skips them. Kept on this phone, not backed up." +
+                if (shown) "" else " Shown once Holidays and countdowns is on.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val ahead = dates.mapNotNull { d -> d.next(today)?.let { d to it } }.sortedBy { it.second.start }
+        if (ahead.isNotEmpty()) Spacer(Modifier.height(8.dp))
+        ahead.forEach { (d, next) ->
+            // A yearly date is its day and month ("Aug 19 · every year"); the rest keep weekday and, if not this year's, year.
+            val detail = listOfNotNull(
+                if (d.yearly) formatYearly(next) else formatPersonalDates(next, today.year),
+                "every year".takeIf { d.yearly },
+                "day off".takeIf { d.dayOff },
+            ).joinToString(" · ")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+                    Text(d.title, style = MaterialTheme.typography.bodyLarge)
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton({ onRemove(d) }) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove ${d.title}, $detail")
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton({ picking = true }) {
+            Icon(Icons.Default.Add, contentDescription = null, Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text("Add a date")
+        }
+    }
+    if (picking) {
+        // The picker works in UTC midnights. From a year back, so a birthday can be picked where it last was (it
+        // then comes round every year); a past date can only be added as a yearly one.
+        val yearAgoMillis = today.minusYears(1).toEpochDay() * DAY_MILLIS
+        val state = rememberDateRangePickerState(
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis >= yearAgoMillis
+                override fun isSelectableYear(year: Int) = year >= today.year - 1
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { picking = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickedStart = state.selectedStartDateMillis?.div(DAY_MILLIS)
+                        pickedEnd = (state.selectedEndDateMillis ?: state.selectedStartDateMillis)?.div(DAY_MILLIS)
+                        picking = false
+                    },
+                    enabled = state.selectedStartDateMillis != null,
+                ) { Text("Next") }
+            },
+            dismissButton = { TextButton({ picking = false }) { Text("Cancel") } },
+        ) {
+            DateRangePicker(
+                state,
+                title = { Text("Pick a day, or the first and last day", Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp)) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+    val start = pickedStart
+    val end = pickedEnd
+    if (start != null && end != null) {
+        val range = PersonalDate(LocalDate.ofEpochDay(start), LocalDate.ofEpochDay(end))
+        val past = range.end.isBefore(today)
+        var name by rememberSaveable { mutableStateOf("") }
+        var dayOff by rememberSaveable { mutableStateOf(false) }
+        // A date already gone this year is a yearly one (a birthday picked where it last was).
+        var yearly by rememberSaveable { mutableStateOf(past) }
+        val nextTime = range.copy(yearly = true).next(today)
+        // A day off can go unnamed ("Day off"); anything else needs its label. A past date must come round again.
+        val canAdd = (name.isNotBlank() || dayOff) && (!past || yearly)
+        val focus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+        val close = { pickedStart = null; pickedEnd = null }
+        val add = {
+            if (canAdd) {
+                onAdd(range.copy(name = name.trim().take(PERSONAL_DATE_NAME_MAX), dayOff = dayOff, yearly = yearly))
+                close()
+            }
+        }
+        AlertDialog(
+            onDismissRequest = close,
+            title = { Text(formatPersonalDates(if (yearly && nextTime != null) nextTime else range, today.year)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(PERSONAL_DATE_NAME_MAX) },
+                        label = { Text("Label") },
+                        placeholder = { Text("Mum's birthday") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { add() }),
+                        supportingText = { if (name.isBlank() && !dayOff) Text("Needed unless it's a day off") },
+                        modifier = Modifier.focusRequester(focus),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SwitchRow("Day off", "Counts as a break, and the commute check skips it", dayOff) { dayOff = it }
+                    SwitchRow(
+                        "Every year",
+                        if (past && nextTime != null) "Next: ${formatPersonalDates(nextTime, today.year)}" else "Like a birthday",
+                        yearly,
+                    ) { yearly = it }
+                }
+            },
+            confirmButton = { TextButton(add, enabled = canAdd) { Text("Add") } },
+            dismissButton = { TextButton(close) { Text("Cancel") } },
+        )
+    }
+}
+
+/** A label, a quiet line under it, and a switch; the whole row toggles. */
+@Composable
+private fun SwitchRow(label: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+/** A yearly date without its weekday or year: "Aug 19", "Dec 30 – Jan 2". */
+private fun formatYearly(d: PersonalDate): String {
+    fun f(date: LocalDate) = date.format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
+    return if (d.start == d.end) f(d.start) else "${f(d.start)} – ${f(d.end)}"
+}
+
+/** "Mon, Oct 13", or "Mon, Oct 13 – Fri, Oct 17" (with the year when it isn't [thisYear]). */
+private fun formatPersonalDates(d: PersonalDate, thisYear: Int): String {
+    fun f(date: LocalDate) = date.format(DateTimeFormatter.ofPattern(if (date.year == thisYear) "EEE, MMM d" else "EEE, MMM d, yyyy", Locale.US))
+    return if (d.start == d.end) f(d.start) else "${f(d.start)} – ${f(d.end)}"
+}
+
+private const val DAY_MILLIS = 86_400_000L
 
 /** The office-or-home check: a switch, then home and the office, then the two weekday travel times. */
 @Composable

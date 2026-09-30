@@ -62,11 +62,14 @@ fun ComingUpCard(items: List<Countdown>, forecast: Forecast, unit: TempUnit, mod
             items.forEachIndexed { i, item ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 val day = forecast.days.firstOrNull { it.date == item.date }
-                val date = item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))
+                // A range shows both ends ("Oct 12–16"); a single day keeps its weekday.
+                val date = item.endDate?.let { formatRange(item.date, it, spoken = false) }
+                    ?: item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))
                 val countdown = formatCountdown(item.daysFrom(today))
                 // TalkBack gets the full weekday and month (the short form's comma would split the list) and the
                 // high in both units, like the 7-day rows.
-                val spokenDate = item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+                val spokenDate = item.endDate?.let { formatRange(item.date, it, spoken = true) }
+                    ?: item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
                 val spokenWeather = day?.let { "${describeWeatherCode(it.code)}, high ${formatBothUnits(it.highC, unit)}" }
                 CountdownRow(
                     item, day, unit, palette,
@@ -165,10 +168,14 @@ private fun DayWeather(day: DaySummary, high: String, palette: IconPalette, styl
     }
 }
 
-/** A calendar page for holidays and long weekends, a leaf for seasons. */
+/** A calendar page for holidays and long weekends, a leaf for seasons, a suitcase for days off, a star for your own dates. */
 @Composable
 private fun KindGlyph(kind: Countdown.Kind) {
-    val color = if (kind == Countdown.Kind.SEASON) MaterialTheme.weatherColors.success else MaterialTheme.colorScheme.primary
+    val color = when (kind) {
+        Countdown.Kind.SEASON -> MaterialTheme.weatherColors.success
+        Countdown.Kind.DAY_OFF, Countdown.Kind.PERSONAL -> MaterialTheme.weatherColors.sun
+        else -> MaterialTheme.colorScheme.primary
+    }
     Box(Modifier.size(GlyphSize).clip(CircleShape).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(18.dp)) {
             val s = size.minDimension
@@ -187,6 +194,30 @@ private fun KindGlyph(kind: Countdown.Kind) {
                 drawPath(blade, color, style = Stroke(width, join = StrokeJoin.Miter))
                 drawLine(color, base, Offset(s * 0.73f, s * 0.27f), width, StrokeCap.Round)
                 drawLine(color, base, Offset(s * 0.08f, s * 0.92f), width, StrokeCap.Round)
+            } else if (kind == Countdown.Kind.PERSONAL) {
+                // A five-pointed star, outlined like the other glyphs.
+                val star = Path().apply {
+                    for (i in 0 until 10) {
+                        val r = if (i % 2 == 0) s * 0.44f else s * 0.19f
+                        val a = Math.toRadians(-90.0 + i * 36.0)
+                        val p = Offset(s * 0.5f + r * kotlin.math.cos(a).toFloat(), s * 0.53f + r * kotlin.math.sin(a).toFloat())
+                        if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
+                    }
+                    close()
+                }
+                drawPath(star, color, style = Stroke(width, join = StrokeJoin.Round))
+            } else if (kind == Countdown.Kind.DAY_OFF) {
+                // A suitcase: the case, its handle on top, and a band across the middle.
+                val stroke = Stroke(width)
+                drawRoundRect(
+                    color, Offset(s * 0.1f, s * 0.3f), Size(s * 0.8f, s * 0.58f),
+                    androidx.compose.ui.geometry.CornerRadius(s * 0.1f), style = stroke,
+                )
+                drawRoundRect(
+                    color, Offset(s * 0.35f, s * 0.12f), Size(s * 0.3f, s * 0.18f),
+                    androidx.compose.ui.geometry.CornerRadius(s * 0.06f), style = stroke,
+                )
+                drawLine(color, Offset(s * 0.1f, s * 0.56f), Offset(s * 0.9f, s * 0.56f), width)
             } else {
                 val stroke = Stroke(width)
                 drawRoundRect(
@@ -200,6 +231,14 @@ private fun KindGlyph(kind: Countdown.Kind) {
             }
         }
     }
+}
+
+/** "Oct 12–16", "Oct 30 – Nov 2"; spoken, "October 12 to 16". */
+private fun formatRange(start: java.time.LocalDate, end: java.time.LocalDate, spoken: Boolean): String {
+    val month = DateTimeFormatter.ofPattern(if (spoken) "MMMM d" else "MMM d", Locale.US)
+    val to = if (spoken) " to " else if (start.month == end.month) "–" else " – "
+    val last = if (start.month == end.month) end.dayOfMonth.toString() else end.format(month)
+    return "${start.format(month)}$to$last"
 }
 
 private val GlyphSize = 36.dp

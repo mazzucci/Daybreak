@@ -3,6 +3,7 @@ package com.mazzucci.weather.data
 import com.mazzucci.weather.domain.Activity
 import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.PersonalDate
 import com.mazzucci.weather.domain.Place
 import com.mazzucci.weather.domain.countryCodeOf
 import com.mazzucci.weather.domain.TempUnit
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.time.LocalDate
 
 /** The user's saved places, in display order, persisted as a JSON array. */
 class SavedPlacesRepository(private val store: KeyValueStore) {
@@ -84,9 +86,9 @@ private fun JSONObject.toPlace() = Place(
 )
 
 /**
- * App settings. The "About me" note and the commute's home and office live in [privateStore], a separate file
- * that's excluded from Android backup and device transfer (see res/xml/backup_rules.xml), so they really stay on
- * this phone.
+ * App settings. The "About me" note, the commute's home and office and the user's own dates live in [privateStore],
+ * a separate file that's excluded from Android backup and device transfer (see res/xml/backup_rules.xml), so they
+ * really stay on this phone.
  */
 class SettingsRepository(
     private val store: KeyValueStore,
@@ -111,6 +113,38 @@ class SettingsRepository(
         store.putString(KEY_COMMUTE, "${if (s.commute.enabled) "on" else "off"}-${s.commute.leaveHour}-${s.commute.returnHour}")
         putPlace(KEY_HOME, s.commute.home)
         putPlace(KEY_OFFICE, s.commute.office)
+        if (s.personalDates.isEmpty()) {
+            privateStore.remove(KEY_DATES)
+        } else {
+            privateStore.putString(
+                KEY_DATES,
+                JSONArray(
+                    s.personalDates.map {
+                        JSONObject().put("start", it.start.toString()).put("end", it.end.toString()).put("name", it.name)
+                            .put("dayOff", it.dayOff).put("yearly", it.yearly)
+                    },
+                ).toString(),
+            )
+        }
+    }
+
+    /** Stored dates; any entry that doesn't parse is dropped rather than losing the rest. */
+    private fun loadPersonalDates(): List<PersonalDate>? {
+        val raw = privateStore.getString(KEY_DATES) ?: return null
+        val array = try {
+            JSONArray(raw)
+        } catch (e: JSONException) {
+            return emptyList()
+        }
+        return (0 until array.length()).mapNotNull { i ->
+            runCatching {
+                val o = array.getJSONObject(i)
+                PersonalDate(
+                    LocalDate.parse(o.getString("start")), LocalDate.parse(o.getString("end")), o.optString("name"),
+                    dayOff = o.optBoolean("dayOff"), yearly = o.optBoolean("yearly"),
+                )
+            }.getOrNull()
+        }.sortedBy { it.start }
     }
 
     private fun putPlace(key: String, place: Place?) {
@@ -145,6 +179,7 @@ class SettingsRepository(
                 office = getPlace(KEY_OFFICE, Place.COMMUTE_OFFICE_ID) ?: defaults.commute.office,
             )
         },
+        personalDates = loadPersonalDates() ?: defaults.personalDates,
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
             null -> defaults.activity
             ACTIVITY_OFF -> null
@@ -164,6 +199,7 @@ class SettingsRepository(
         const val KEY_COMMUTE = "commute"
         const val KEY_HOME = "commute_home"
         const val KEY_OFFICE = "commute_office"
+        const val KEY_DATES = "personal_dates"
         const val ACTIVITY_OFF = "OFF"
     }
 }
