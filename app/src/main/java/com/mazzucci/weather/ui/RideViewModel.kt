@@ -57,7 +57,7 @@ class RideViewModel(
                 val from = start.atOffset(ZoneOffset.UTC).toLocalDate().minusDays(1)
                 val to = end.plusSeconds(3600).atOffset(ZoneOffset.UTC).toLocalDate().plusDays(1)
                 val w = try {
-                    weather.weather(lat, lon, from, to, localTime = true)
+                    weather.weather(lat, lon, from, to)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: IOException) {

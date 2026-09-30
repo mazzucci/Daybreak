@@ -112,7 +112,6 @@ fun SettingsScreen(
     onActivityChange: (Activity?) -> Unit,
     onCommuteChange: (CommuteSettings) -> Unit,
     onOpenRideReplay: (() -> Unit)? = null,
-    onOpenActivityLog: (() -> Unit)? = null,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -210,11 +209,30 @@ fun SettingsScreen(
 
             if (onOpenRideReplay != null) {
                 Spacer(Modifier.height(12.dp))
-                NavCard("Ride replay", "See the wind and weather on a past ride or run, from a GPX file.", onOpenRideReplay)
-            }
-            if (onOpenActivityLog != null) {
-                Spacer(Modifier.height(12.dp))
-                NavCard("Activity log", "Your workouts from Health Connect (e.g. Garmin), with the weather each one had.", onOpenActivityLog)
+                // Opens a page rather than changing a setting, so the whole card is the control, with a chevron.
+                Card(
+                    onClick = onOpenRideReplay,
+                    modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Ride replay", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "See the wind and weather on a past ride or run, from a GPX file.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
 
             SectionTitle("Summary style")
@@ -466,26 +484,6 @@ private fun StepButton(description: String, plus: Boolean, onClick: () -> Unit) 
             val w = 2.dp.toPx()
             drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), w, StrokeCap.Round)
             if (plus) drawLine(color, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), w, StrokeCap.Round)
-        }
-    }
-}
-
-/** Opens a page rather than changing a setting, so the whole card is the control, with a chevron. */
-@Composable
-private fun NavCard(title: String, text: String, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(2.dp))
-                Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.width(12.dp))
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
