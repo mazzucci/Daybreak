@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Weather</string>
+    <string name="app_name">Daybreak</string>
     <string name="widget_name">Weather</string>
     <string name="widget_description">The temperature, today\'s high, low and rain chance, and the summary for your first place</string>
 
