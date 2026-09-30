@@ -38,6 +38,7 @@ import app.daybreak.domain.CommuteAdvice
 import app.daybreak.domain.HourForecast
 import app.daybreak.domain.HourScore
 import app.daybreak.domain.Limit
+import app.daybreak.domain.Clock
 import app.daybreak.domain.CommuteEnd
 import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.PersonalDate
@@ -238,11 +239,46 @@ class ScreenshotTest {
         Home(WeatherUiState(settings = AppSettings(comingUpEnabled = false, memesEnabled = false)))
     }
 
+    // --- Clocks ---------------------------------------------------------------------------------
+
+    private val clocks = listOf(
+        Clock("geo:683506", "Bucharest", "Bucharest, Romania", "Europe/Bucharest"),
+        Clock("geo:2643743", "London", "England, United Kingdom", "Europe/London"),
+        Clock("geo:1850147", "Tokyo", "Tokyo, Japan", "Asia/Tokyo"),
+        Clock("geo:1275339", "Mumbai", "Maharashtra, India", "Asia/Kolkata"),
+    )
+
+    /** 2:42 PM on a Monday in Los Angeles: Bucharest is past midnight, Tokyo is tomorrow morning, Mumbai is +12½ h. */
+    private val clocksNow = java.time.Instant.parse("2026-09-28T21:42:00Z")
+
+    @Composable
+    private fun Clocks(list: List<Clock>, editing: Boolean = false) {
+        ClocksScreen(
+            list, onAdd = {}, onRemove = {}, onMove = { _, _ -> },
+            here = java.time.ZoneId.of("America/Los_Angeles"), now = clocksNow, initiallyEditing = editing,
+        )
+    }
+
+    /** Edit mode, with a clock whose zone this phone doesn't know (it can only be removed). */
+    @Test fun clocksEdit() = snap("clocks_edit") { Clocks(clocks.take(3) + Clock("x", "Atlantis", zoneId = "Atlantis/Lost_City"), editing = true) }
+
+    @Test fun clocksEditLargeFont() = snap("clocks_edit_large_font", narrow = true, fontScale = 1.5f) { Clocks(clocks.take(3), editing = true) }
+
+    @Test fun clocksList() = snap("clocks", tall = true) { Clocks(clocks) }
+
+    @Test fun clocksDark() = snap("clocks_dark", night = true, tall = true) { Clocks(clocks) }
+
+    @Test fun clocksEmpty() = snap("clocks_empty") { Clocks(emptyList()) }
+
+    @Test fun clocksLargeFont() = snap("clocks_large_font", narrow = true, fontScale = 1.5f, tall = true) { Clocks(clocks.take(2)) }
+
     @Test fun bottomBar() = snap("bottom_bar") {
         Column(Modifier.padding(vertical = 16.dp)) {
             DaybreakNavigationBar(Tab.Home) {}
             Spacer(Modifier.height(16.dp))
             DaybreakNavigationBar(Tab.Weather) {}
+            Spacer(Modifier.height(16.dp))
+            DaybreakNavigationBar(Tab.Clocks) {}
         }
     }
 

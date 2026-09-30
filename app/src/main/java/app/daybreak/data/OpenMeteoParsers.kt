@@ -97,6 +97,7 @@ fun parseGeocoding(json: String): List<Place> {
             countryCode = r.optStringOrNull("country_code")?.uppercase(),
             latitude = r.getDouble("latitude"),
             longitude = r.getDouble("longitude"),
+            zoneId = r.optStringOrNull("timezone"),
         )
     }
 }

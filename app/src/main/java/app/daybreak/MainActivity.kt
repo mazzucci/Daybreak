@@ -27,6 +27,8 @@ import app.daybreak.widget.GlanceWidgetPublisher
 import app.daybreak.data.NagerHolidayApi
 import app.daybreak.narration.ValidatingNarrator
 import app.daybreak.ui.WeatherApp
+import app.daybreak.ui.ClocksViewModel
+import app.daybreak.data.ClocksRepository
 import app.daybreak.domain.ClockFormat
 import android.text.format.DateFormat
 import app.daybreak.ui.WeatherTheme
@@ -35,12 +37,15 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
+    private val clocksVm: ClocksViewModel by viewModels {
+        viewModelFactory { initializer { ClocksViewModel(ClocksRepository(SharedPrefsStore(applicationContext))) } }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         syncClockFormat(recreateOnChange = false) // about to compose anyway
-        setContent { WeatherTheme { WeatherApp(vm) } }
+        setContent { WeatherTheme { WeatherApp(vm, clocksVm) } }
     }
 
     override fun onResume() {

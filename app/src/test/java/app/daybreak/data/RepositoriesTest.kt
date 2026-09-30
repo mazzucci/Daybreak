@@ -5,6 +5,7 @@ import app.daybreak.TestData.sanFrancisco
 import app.daybreak.TestData.tokyo
 import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
+import app.daybreak.domain.Clock
 import app.daybreak.domain.CommuteSettings
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.Place
@@ -195,5 +196,19 @@ class SettingsRepositoryTest {
         assertEquals("I cycle", loaded.aboutMe)
         store.putString("tone", "OPERA")
         assertEquals(Tone.FRIENDLY, SettingsRepository(store).settings.value.tone)
+    }
+
+    @Test fun `clocks are saved in order, moved, removed, and a bad entry doesn't lose the rest`() {
+        val store = InMemoryStore()
+        val bucharest = Clock("geo:683506", "Bucharest", "Bucharest, Romania", "Europe/Bucharest")
+        val tokyo = Clock("geo:1850147", "Tokyo", null, "Asia/Tokyo")
+        ClocksRepository(store).apply { add(bucharest); add(tokyo); assertFalse(add(tokyo)) }
+        assertEquals(listOf(bucharest, tokyo), ClocksRepository(store).clocks.value)
+        ClocksRepository(store).move(1, 0)
+        assertEquals(listOf(tokyo, bucharest), ClocksRepository(store).clocks.value)
+        store.putString("clocks", store.getString("clocks")!!.replace("\"tz\":\"Asia/Tokyo\"", "\"nope\":1"))
+        assertEquals(listOf(bucharest), ClocksRepository(store).clocks.value)
+        ClocksRepository(store).remove(bucharest.id)
+        assertTrue(ClocksRepository(store).clocks.value.isEmpty())
     }
 }

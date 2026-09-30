@@ -38,17 +38,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.daybreak.domain.CommuteEnd
 
 /** The bottom bar's sections. Home is where the app opens. */
-enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Settings("Settings") }
+enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Clocks("Clocks"), Settings("Settings") }
 
 /** Full-screen tasks opened from a tab; the bottom bar hides while one is open. */
 private enum class Overlay { Search, Places }
 
 /** Wires the ViewModel to the stateless screens and owns navigation and system pickers/prompts. */
 @Composable
-fun WeatherApp(vm: WeatherViewModel) {
+fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
+    // Set while Search is adding a clock rather than a page.
+    var addingClock by rememberSaveable { mutableStateOf(false) }
     // Whether Search was opened from Places (its "Add"), so back returns there.
     var searchFromPlaces by rememberSaveable { mutableStateOf(false) }
     // Each tab keeps its own scroll and state while another is shown.
@@ -105,7 +108,10 @@ fun WeatherApp(vm: WeatherViewModel) {
             from == Overlay.Search && searchFromPlaces -> Overlay.Places
             else -> null
         }
-        if (from == Overlay.Search) searchFromPlaces = false
+        if (from == Overlay.Search) {
+            searchFromPlaces = false
+            addingClock = false
+        }
     }
     BackHandler(enabled = overlay != null || tab != Tab.Home) {
         if (overlay != null) {
@@ -124,11 +130,23 @@ fun WeatherApp(vm: WeatherViewModel) {
     when (overlay) {
         Overlay.Search -> SearchScreen(
             search = state.search,
-            savedIds = if (searchingFor == null) state.savedPlaces.map { it.id }.toSet() else emptySet(),
+            savedIds = when {
+                addingClock -> clocks.map { it.id }.toSet()
+                searchingFor == null -> state.savedPlaces.map { it.id }.toSet()
+                else -> emptySet()
+            },
             onQueryChange = vm::onSearchQueryChange,
             onPick = { place ->
                 val end = searchingFor
-                if (end != null) {
+                if (addingClock) {
+                    // A place without a time zone this phone knows can't be a clock: stay on the search.
+                    if (app.daybreak.domain.Clock.of(place) != null) {
+                        clocksVm?.add(place)
+                        vm.clearSearch()
+                        addingClock = false
+                        overlay = null
+                    }
+                } else if (end != null) {
                     vm.setCommutePlace(end, place)
                     vm.clearSearch()
                     searchingFor = null
@@ -145,7 +163,7 @@ fun WeatherApp(vm: WeatherViewModel) {
                 back()
                 searchingFor = null
             },
-            title = searchingFor?.let { "Your ${it.label.lowercase()}" } ?: "Add a place",
+            title = if (addingClock) "Add a clock" else searchingFor?.let { "Your ${it.label.lowercase()}" } ?: "Add a place",
         )
         Overlay.Places -> PlacesScreen(
             places = state.savedPlaces,
@@ -193,6 +211,16 @@ fun WeatherApp(vm: WeatherViewModel) {
                             onOpenSearch = openSearch,
                             onOpenPlaces = { overlay = Overlay.Places },
                         )
+                        Tab.Clocks -> ClocksScreen(
+                            clocks = clocks,
+                            onAdd = {
+                                addingClock = true
+                                searchFromPlaces = false
+                                overlay = Overlay.Search
+                            },
+                            onRemove = { clocksVm?.remove(it) },
+                            onMove = { from, to -> clocksVm?.move(from, to) },
+                        )
                         Tab.Settings -> SettingsTab(state, vm, commutePlaceHere, modelPicker::launch) { end ->
                             searchingFor = end
                             overlay = Overlay.Search
@@ -236,7 +264,7 @@ private fun SettingsTab(
         )
 }
 
-/** Home · Weather · Settings, labels always shown, flat on the card colour like the cards themselves. */
+/** Home · Weather · Clocks · Settings, labels always shown, flat on the card colour like the cards themselves. */
 @Composable
 fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
@@ -250,6 +278,7 @@ fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
                     when (t) {
                         Tab.Home -> Icon(if (on) Icons.Filled.Home else Icons.Outlined.Home, contentDescription = null)
                         Tab.Weather -> WeatherTabIcon()
+                        Tab.Clocks -> ClocksTabIcon(on)
                         Tab.Settings -> Icon(if (on) Icons.Filled.Settings else Icons.Outlined.Settings, contentDescription = null)
                     }
                 },
