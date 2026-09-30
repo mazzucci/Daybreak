@@ -145,6 +145,22 @@ class SettingsRepositoryTest {
         assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
     }
 
+    @Test fun `home and office are kept in the private store only, and can be removed`() {
+        val store = InMemoryStore()
+        val private = InMemoryStore()
+        val home = sanFrancisco.copy(id = Place.COMMUTE_HOME_ID)
+        val office = sanFrancisco.copy(id = Place.COMMUTE_OFFICE_ID, name = "Oakland", latitude = 37.8)
+        SettingsRepository(store, privateStore = private).update { it.copy(commute = CommuteSettings(7, 18, true, home, office)) }
+        assertNull(store.getString("commute_home"))
+        assertNull(store.getString("commute_office"))
+        assertEquals(CommuteSettings(7, 18, true, home, office), SettingsRepository(store, privateStore = private).settings.value.commute)
+        SettingsRepository(store, privateStore = private).update { it.copy(commute = it.commute.copy(office = null)) }
+        assertNull(private.getString("commute_office"))
+        assertEquals(CommuteSettings(7, 18, true, home, null), SettingsRepository(store, privateStore = private).settings.value.commute)
+        private.putString("commute_home", "{not json")
+        assertNull(SettingsRepository(store, privateStore = private).settings.value.commute.home)
+    }
+
     @Test fun `activity is saved, including off`() {
         val store = InMemoryStore()
         assertEquals(Activity.CYCLING, SettingsRepository(store).settings.value.activity)

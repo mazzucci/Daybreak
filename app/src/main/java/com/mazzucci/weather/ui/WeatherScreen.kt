@@ -163,9 +163,12 @@ fun WeatherPagerScreen(
                     page = page,
                     unit = state.settings.primaryUnit,
                     activity = state.settings.activity,
-                    // The commute is about one place: the first page that can show weather (your location, or your
-                    // first saved place when location is off or unavailable).
+                    // The commute card goes on the first page that can show weather (your location, or your first saved
+                    // place when location is off or unavailable). It's judged at home and the office once they're set,
+                    // and on that page's own forecast until then.
                     commute = state.settings.commute.takeIf { it.enabled && index == commutePage },
+                    commuteForecasts = state.commute,
+                    commuteUnavailable = state.commuteUnavailable,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -238,6 +241,8 @@ fun WeatherPage(
     unit: TempUnit,
     activity: Activity? = null,
     commute: CommuteSettings? = null,
+    commuteForecasts: CommuteForecasts? = null,
+    commuteUnavailable: Boolean = false,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -308,6 +313,8 @@ fun WeatherPage(
                     is PageContent.Loaded -> BodyForecast(
                         content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays,
                         weekend = weekendDays(page.place?.let(::countryCodeOf)),
+                        commuteForecasts = commuteForecasts,
+                        commuteUnavailable = commuteUnavailable,
                     )
                 }
                 Spacer(Modifier.height(24.dp))
@@ -468,6 +475,8 @@ private fun BodyForecast(
     commute: CommuteSettings? = null,
     holidays: Set<LocalDate> = emptySet(),
     weekend: Set<DayOfWeek> = weekendDays(null),
+    commuteForecasts: CommuteForecasts? = null,
+    commuteUnavailable: Boolean = false,
 ) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
@@ -491,10 +500,20 @@ private fun BodyForecast(
         // The hero and its tiles are "now"; the commute verdict opens the planning part of the page, still
         // above the fold. Walking is the fallback mode when outdoor plans are off.
         val mode = activity ?: Activity.WALKING
-        val advice = remember(forecast, mode, commute, holidays, weekend) { commuteAdvice(forecast, mode, commute, holidays, weekend) }
+        // With a home set, home's (and the office's) own forecasts; until they load, nothing, unless home's
+        // couldn't be fetched, when this page's forecast is better than no card at all.
+        val c = commuteForecasts?.takeIf { commute.home != null && it.home == commute.home && it.office == commute.office }
+        val advice = remember(forecast, mode, commute, holidays, weekend, c, commuteUnavailable) {
+            when {
+                c != null -> commuteAdvice(c.homeForecast, mode, commute, c.holidays, c.weekend, c.officeForecast)
+                commute.home == null || commuteUnavailable -> commuteAdvice(forecast, mode, commute, holidays, weekend)
+                else -> null
+            }
+        }
         if (advice != null) {
+            val today = (c?.homeForecast ?: forecast).current.time.toLocalDate()
             Spacer(Modifier.height(16.dp))
-            CommuteCard(advice, mode, unit, cur.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
+            CommuteCard(advice, mode, unit, today, Modifier.padding(horizontal = PageMargin))
         }
     }
     Spacer(Modifier.height(24.dp))

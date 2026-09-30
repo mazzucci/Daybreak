@@ -2,8 +2,10 @@ package com.mazzucci.weather.domain
 
 import com.mazzucci.weather.TestData
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.DayOfWeek
 import java.time.LocalDateTime
@@ -136,5 +138,59 @@ class CommuteTest {
         val copy = describeCommute(commuteAdvice(warmer, Activity.WALKING, settings)!!, Activity.WALKING, TempUnit.C, today)
         assertEquals("A dry walk both ways · 16–20°", copy.detail)
         assertEquals("A dry walk both ways, 16 to 20°C (61 to 68°F)", copy.spokenDetail)
+    }
+
+    @Test fun `with an office, each trip is judged at its worse end`() {
+        val today = monday7am.toLocalDate()
+        fun detail(home: Forecast, office: Forecast): Pair<CommuteAdvice, String> {
+            val advice = commuteAdvice(home, Activity.CYCLING, settings, office = office)!!
+            return advice to describeCommute(advice, Activity.CYCLING, TempUnit.F, today).detail
+        }
+        val dry = forecast(monday7am)
+        val (wetEvening, eveningText) = detail(dry, forecast(monday7am) { if (it.hour == 17) 80 else 0 })
+        assertEquals(CommuteAdvice.Verdict.WORK_FROM_HOME, wetEvening.verdict)
+        assertTrue(wetEvening.inboundAtOffice)
+        assertFalse(wetEvening.outboundAtOffice)
+        assertEquals("Rain likely leaving the office · 80% at 5 PM", eveningText)
+
+        val (showery, morningText) = detail(dry, forecast(monday7am) { if (it.hour == 8) 35 else 0 })
+        assertEquals(CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, showery.verdict)
+        assertEquals("Rain possible arriving at the office · 35% at 8 AM", morningText)
+
+        // Wetter at home: the trip's words stay "on the way".
+        val (homeWet, homeText) = detail(forecast(monday7am) { if (it.hour == 17) 80 else 0 }, forecast(monday7am) { if (it.hour == 17) 40 else 0 })
+        assertFalse(homeWet.inboundAtOffice)
+        assertEquals("Rain likely on the way home · 80% at 5 PM", homeText)
+
+        // Dry at both ends is an ordinary office day.
+        assertEquals("A dry ride both ways · 61°", detail(dry, dry).second)
+    }
+
+    @Test fun `an office forecast that doesn't reach the trips is left out`() {
+        val office = forecast(monday7am) { 90 }.copy(hours = emptyList())
+        val advice = commuteAdvice(forecast(monday7am), Activity.CYCLING, settings, office = office)!!
+        assertEquals(CommuteAdvice.Verdict.OFFICE, advice.verdict)
+        assertFalse(advice.inboundAtOffice)
+    }
+
+    @Test fun `an office in another time zone is lined up by the clock, and reported in home's hours`() {
+        // The office is an hour ahead: home's 5 PM is its 6 PM, when it rains there.
+        val office = forecast(monday7am.plusHours(1)) { if (it.hour == 18) 80 else 0 }.copy(utcOffsetSeconds = 3600)
+        val advice = commuteAdvice(forecast(monday7am), Activity.CYCLING, settings, office = office)!!
+        assertTrue(advice.inboundAtOffice)
+        assertEquals(monday7am.withHour(17), advice.inbound.hour.time)
+        assertEquals(
+            "Rain likely leaving the office · 80% at 5 PM",
+            describeCommute(advice, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()).detail,
+        )
+    }
+
+    @Test fun `removing home removes the office with it`() {
+        val home = TestData.sanFrancisco
+        val both = CommuteSettings().with(CommuteEnd.HOME, home).with(CommuteEnd.OFFICE, TestData.london)
+        assertEquals(Place.COMMUTE_HOME_ID, both.home?.id)
+        assertEquals(Place.COMMUTE_OFFICE_ID, both.office?.id)
+        assertEquals(both.copy(office = null), both.with(CommuteEnd.OFFICE, null))
+        assertEquals(CommuteSettings(), both.with(CommuteEnd.HOME, null))
     }
 }
