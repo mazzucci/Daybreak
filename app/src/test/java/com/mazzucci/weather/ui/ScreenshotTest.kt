@@ -31,7 +31,6 @@ import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
-import com.mazzucci.weather.TestData.fixture
 import com.mazzucci.weather.domain.Term
 import com.mazzucci.weather.domain.explain
 import com.mazzucci.weather.domain.Activity
