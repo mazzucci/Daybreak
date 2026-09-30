@@ -29,23 +29,18 @@ import com.mazzucci.weather.narration.ValidatingNarrator
 import com.mazzucci.weather.ui.WeatherApp
 import com.mazzucci.weather.domain.ClockFormat
 import android.text.format.DateFormat
-import java.io.IOException
-import android.net.Uri
-import com.mazzucci.weather.data.OpenMeteoRideWeather
-import com.mazzucci.weather.ui.RideViewModel
 import com.mazzucci.weather.ui.WeatherTheme
 import com.mazzucci.weather.ui.WeatherViewModel
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
-    private val rideVm: RideViewModel by viewModels { rideViewModelFactory(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         syncClockFormat(recreateOnChange = false) // about to compose anyway
-        setContent { WeatherTheme { WeatherApp(vm, rideVm) } }
+        setContent { WeatherTheme { WeatherApp(vm) } }
     }
 
     override fun onResume() {
@@ -94,16 +89,6 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
 
 /** Preferences that must never leave the phone; excluded in res/xml/backup_rules.xml and data_extraction_rules.xml. */
 private const val PRIVATE_PREFS = "private"
-
-private fun rideViewModelFactory(context: Context): ViewModelProvider.Factory = viewModelFactory {
-    initializer {
-        RideViewModel(
-            weather = OpenMeteoRideWeather(UrlConnectionHttpClient(timeoutMs = 15_000)),
-            // Streamed and size-capped by the parser.
-            openStream = { uri -> context.contentResolver.openInputStream(Uri.parse(uri)) ?: throw IOException("Couldn't open that file") },
-        )
-    }
-}
 
 /** °F first in the few countries that use it, °C everywhere else. */
 private fun defaultUnit(): TempUnit =

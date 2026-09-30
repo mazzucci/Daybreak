@@ -14,11 +14,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mazzucci.weather.domain.CommuteEnd
 
-private enum class Screen { Weather, Search, Places, Settings, Ride }
+private enum class Screen { Weather, Search, Places, Settings }
 
 /** Wires the ViewModel to the stateless screens and owns navigation and system pickers/prompts. */
 @Composable
-fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
+fun WeatherApp(vm: WeatherViewModel) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.Weather) }
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -55,12 +55,6 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
         uri?.let { vm.importModel(it.toString()) }
     }
 
-    val rideState = rideVm?.state?.collectAsStateWithLifecycle()
-    // GPX has no reliably registered MIME type either, so accept anything; the parser checks the content.
-    val gpxPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { rideVm?.open(it.toString()) }
-    }
-
     LaunchedEffect(Unit) {
         if (vm.shouldRequestLocationOnStart()) requestPermission()
     }
@@ -76,7 +70,6 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
         screen = when {
             screen == Screen.Search && searchingFor != null -> Screen.Settings
             screen == Screen.Search && state.savedPlaces.isNotEmpty() -> Screen.Places
-            screen == Screen.Ride -> Screen.Settings
             else -> Screen.Weather
         }
     }
@@ -131,12 +124,6 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
             onAdd = { screen = Screen.Search },
             onBack = { screen = Screen.Weather },
         )
-        Screen.Ride -> RideScreen(
-            state = rideState?.value ?: RideUi.Idle,
-            unit = state.settings.primaryUnit,
-            onPickFile = { gpxPicker.launch(arrayOf("*/*")) },
-            onBack = { back() },
-        )
         Screen.Settings -> SettingsScreen(
             settings = state.settings,
             modelStatus = state.modelStatus,
@@ -154,7 +141,6 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
                 searchingFor = end
                 screen = Screen.Search
             },
-            onOpenRideReplay = if (rideVm != null) ({ screen = Screen.Ride }) else null,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,
             onImportModel = { modelPicker.launch(arrayOf("*/*")) },

@@ -31,9 +31,6 @@ import com.mazzucci.weather.narration.Narration
 import com.mazzucci.weather.narration.NarrationInput
 import com.mazzucci.weather.narration.NarrationSource
 import com.mazzucci.weather.domain.Tone
-import com.mazzucci.weather.domain.replay
-import com.mazzucci.weather.data.parseGpx
-import com.mazzucci.weather.data.parseRideHours
 import com.mazzucci.weather.TestData.fixture
 import com.mazzucci.weather.domain.Term
 import com.mazzucci.weather.domain.explain
@@ -170,7 +167,7 @@ class ScreenshotTest {
             modelStatus = status,
             commuteLocating = commuteLocating,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
-            onImportModel = {}, onRemoveModel = {}, onBack = {}, onOpenRideReplay = {},
+            onImportModel = {}, onRemoveModel = {}, onBack = {},
         )
     }
 
@@ -523,28 +520,6 @@ class ScreenshotTest {
             Sheet(explain(Term.RAIN_CHANCE, rainyNight, TempUnit.C))
             Sheet(explain(Term.SUN, rainyNight, TempUnit.C))
         }
-    }
-
-    private val rideReplay by lazy {
-        replay(parseGpx(fixture("ride_loop.gpx")), parseRideHours(fixture("ride_weather_sf.json")))
-    }
-
-    @Test fun rideIntro() = snap("ride_intro") { RideScreen(RideUi.Idle, TempUnit.F, onPickFile = {}, onBack = {}) }
-
-    @Test fun rideReplay() = snap("ride_replay", tall = true) { RideScreen(RideUi.Loaded(rideReplay), TempUnit.F, onPickFile = {}, onBack = {}) }
-
-    @Test fun rideReplayDark() = snap("ride_replay_dark", night = true, tall = true) {
-        RideScreen(RideUi.Loaded(rideReplay), TempUnit.C, onPickFile = {}, onBack = {})
-    }
-
-    /** An out-and-back ride, so the finish marker shows; narrow at 1.5x, so the legend wraps and the tiles stay level. */
-    @Test fun rideReplayLargeFontDark() = snap("ride_replay_large_font_dark", night = true, tall = true, narrow = true, fontScale = 1.5f) {
-        val outAndBack = replay(parseGpx(fixture("ride_out_and_back.gpx")), parseRideHours(fixture("ride_weather_sf.json")))
-        RideScreen(RideUi.Loaded(outAndBack), TempUnit.F, onPickFile = {}, onBack = {})
-    }
-
-    @Test fun rideError() = snap("ride_error") {
-        RideScreen(RideUi.Failed("That doesn't look like a GPX file"), TempUnit.F, onPickFile = {}, onBack = {})
     }
 
     @Test fun weatherPirate() = snap("weather_pirate") {
