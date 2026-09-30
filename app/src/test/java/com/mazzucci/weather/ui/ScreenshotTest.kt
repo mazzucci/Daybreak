@@ -368,7 +368,7 @@ class ScreenshotTest {
         )
     }
 
-    /** The check with home set where you are and an office found by search, the office's location lookup having failed. */
+    /** Home set with no office yet; a new lookup for home has failed, and says why under the place it keeps. */
     @Test fun settingsCommute() = snap("settings_commute", tall = true) {
         Settings(
             ModelStatus.Installed(529L shl 20),
@@ -378,7 +378,7 @@ class ScreenshotTest {
                     home = Place(Place.COMMUTE_HOME_ID, "Oakland", "California", latitude = 37.8, longitude = -122.27),
                 ),
             ),
-            commuteLocating = CommuteLocating(CommuteEnd.OFFICE, failed = true),
+            commuteLocating = CommuteLocating(CommuteEnd.HOME, "Couldn't get your location. Is location turned on?"),
         )
     }
 

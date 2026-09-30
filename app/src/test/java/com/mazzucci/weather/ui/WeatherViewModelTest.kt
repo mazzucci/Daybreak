@@ -61,13 +61,15 @@ class WeatherViewModelTest {
     private class FakeApi : WeatherApi {
         val forecasts = mutableMapOf<Double, Forecast>()
         var failing = false
+        /** Latitudes whose forecast fails, for one place failing while others load. */
+        val failingAt = mutableSetOf<Double>()
         val searches = mutableListOf<String>()
         var searchResults: List<Place> = emptyList()
         var forecastCalls = 0
 
         override suspend fun forecast(latitude: Double, longitude: Double): Forecast {
             forecastCalls++
-            if (failing) throw IOException("Weather service returned HTTP 503")
+            if (failing || latitude in failingAt) throw IOException("Weather service returned HTTP 503")
             return forecasts[latitude] ?: TestData.forecast()
         }
 
@@ -441,6 +443,35 @@ class WeatherViewModelTest {
         assertEquals(before, vm.uiState.value.commute)
     }
 
+    @Test fun `home's forecast failing lets the card fall back, and a failed office refresh keeps the office's`() = runTest(dispatcher) {
+        api.failingAt += sanFrancisco.latitude
+        val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true, home = sanFrancisco)))
+        assertNull(vm.uiState.value.commute)
+        assertTrue(vm.uiState.value.commuteUnavailable)
+
+        api.failingAt.clear()
+        vm.setCommutePlace(CommuteEnd.OFFICE, london)
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.commuteUnavailable)
+        val officeForecast = vm.uiState.value.commute?.officeForecast
+        assertTrue(officeForecast != null)
+        api.failingAt += london.latitude
+        vm.refresh(WeatherViewModel.CURRENT)
+        advanceUntilIdle()
+        assertEquals(officeForecast, vm.uiState.value.commute?.officeForecast)
+    }
+
+    @Test fun `a lookup error goes once anything else changes`() = runTest(dispatcher) {
+        location.place = null
+        val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true)))
+        vm.setCommutePlaceHere(CommuteEnd.HOME)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.commuteLocating?.error != null)
+        vm.setCommute(vm.uiState.value.settings.commute.copy(leaveHour = 7))
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.commuteLocating)
+    }
+
     @Test fun `use where I am now sets the end from the device location`() = runTest(dispatcher) {
         val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true)))
         assertNull(vm.uiState.value.commute) // no home yet: the card uses the first page
@@ -453,13 +484,13 @@ class WeatherViewModelTest {
         location.place = null
         vm.setCommutePlaceHere(CommuteEnd.OFFICE)
         advanceUntilIdle()
-        assertEquals(CommuteLocating(CommuteEnd.OFFICE, failed = true), vm.uiState.value.commuteLocating)
+        assertEquals(CommuteLocating(CommuteEnd.OFFICE, "Couldn't get your location. Is location turned on?"), vm.uiState.value.commuteLocating)
         assertNull(vm.uiState.value.settings.commute.office)
 
         location.granted = false
         vm.setCommutePlaceHere(CommuteEnd.OFFICE)
         runCurrent()
-        assertEquals(CommuteLocating(CommuteEnd.OFFICE, failed = true), vm.uiState.value.commuteLocating)
+        assertEquals(CommuteLocating(CommuteEnd.OFFICE, "Location access is off for this app."), vm.uiState.value.commuteLocating)
     }
 
     @Test fun `the widget mirrors the first loaded page, and Gemma's summary when it lands`() = runTest(dispatcher) {

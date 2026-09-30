@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
@@ -446,10 +447,9 @@ private fun CommuteSettingsCard(
                 Text(
                     when {
                         commute.home == null ->
-                            "Checks your weekday trips on the first page's forecast, using the activity above (walking if " +
-                                "it's off). Set your home, and your office if it's farther away, to check both ends."
+                            "Adds a card to the first page about your weekday trips, judged with the activity above (walking if it's off)."
                         commute.office == null ->
-                            "Checks your weekday trips at home, using the activity above (walking if it's off)."
+                            "Checks your weekday trips at home, using the activity above (walking if it's off). Add the office if it's in a different town."
                         else -> "Checks your weekday trips at home and at the office, using the activity above (walking if it's off)."
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -477,13 +477,13 @@ private fun CommuteSettingsCard(
                     onRemove = { onChange(commute.with(end, null)) },
                 )
             }
+            // A footnote to the pair, set apart so it doesn't read as the office's third line.
             Text(
-                "Home and office stay on this phone and aren't backed up.",
+                "Both stay on this phone and aren't backed up.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 4.dp),
+                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
             )
-            Spacer(Modifier.height(8.dp))
             HourStepper("Leave for work", commute.leaveHour) { onChange(commute.copy(leaveHour = it)) }
             HourStepper("Head home", commute.returnHour) { onChange(commute.copy(returnHour = it)) }
         }
@@ -491,8 +491,9 @@ private fun CommuteSettingsCard(
 }
 
 /**
- * "Home · Brooklyn   [Change]": the place, or what's used without it, and a menu to set it where you are now or by
- * searching for a town (and to remove it). The status line is a live region, so TalkBack hears the location land.
+ * "Home · Brooklyn   [Change ▾]": the place, or what's used without it, and a menu to set it where you are now or
+ * by searching (and to remove it). A failed lookup adds its reason under the place rather than hiding it. The
+ * status is a live region, so TalkBack hears the location land.
  */
 @Composable
 private fun CommutePlaceRow(
@@ -505,33 +506,35 @@ private fun CommutePlaceRow(
     onRemove: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
+    val error = locating?.error
     val status = when {
-        locating?.failed == true -> "Couldn't get your location. Is location turned on?"
-        locating != null -> "Finding where you are…"
+        locating != null && error == null -> "Finding where you are…"
         place != null -> listOfNotNull(place.name, place.region).joinToString(", ")
-        end == CommuteEnd.HOME -> "Not set, so the first page's place is used"
-        enabled -> "Not set, so trips are checked at home only"
+        end == CommuteEnd.HOME -> "Not set · using your first place for now"
+        enabled -> "Not set · trips are checked at home only"
         else -> "Set your home first"
     }
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
             Text(end.label, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                status,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (locating?.failed == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (error != null) Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         Spacer(Modifier.width(8.dp))
         Box {
             TextButton(
                 onClick = { menu = true },
-                enabled = enabled && (locating == null || locating.failed),
+                enabled = enabled && (locating == null || error != null),
                 modifier = Modifier.semantics { contentDescription = "${if (place == null) "Set" else "Change"} ${end.label.lowercase()}" },
-            ) { Text(if (place == null) "Set" else "Change") }
+            ) {
+                // The arrow says it opens a menu rather than acting straight away.
+                Text(if (place == null) "Set" else "Change")
+                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, Modifier.size(18.dp))
+            }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Use where I am now") }, onClick = { menu = false; onHere() })
-                DropdownMenuItem(text = { Text("Search for a town") }, onClick = { menu = false; onSearch() })
+                DropdownMenuItem(text = { Text("Search for a place") }, onClick = { menu = false; onSearch() })
                 if (place != null) DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; onRemove() })
             }
         }

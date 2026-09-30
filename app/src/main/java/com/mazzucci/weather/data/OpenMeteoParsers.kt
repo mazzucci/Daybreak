@@ -81,7 +81,7 @@ fun parseForecast(json: String): Forecast {
         )
     }
 
-    return Forecast(current, days, hours)
+    return Forecast(current, days, hours, root.optInt("utc_offset_seconds", 0))
 }
 
 /** Parses an Open-Meteo geocoding /v1/search response. No matches → empty list (the API omits "results"). */

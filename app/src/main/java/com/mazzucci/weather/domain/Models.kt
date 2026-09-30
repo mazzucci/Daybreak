@@ -48,6 +48,8 @@ data class Forecast(
     val days: List<DaySummary>,
     /** Hourly forecast for the same range as [days], in the place's local time. */
     val hours: List<HourForecast>,
+    /** The place's offset from UTC now, to line its hours up with another place's. */
+    val utcOffsetSeconds: Int = 0,
 ) {
     init {
         require(days.isNotEmpty()) { "A forecast needs at least one day" }

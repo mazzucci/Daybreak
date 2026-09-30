@@ -102,8 +102,8 @@ data class CommuteForecasts(
     val weekend: Set<DayOfWeek> = weekendDays(null),
 )
 
-/** "Use where I am now" for a commute end: finding the location, or [failed] to. */
-data class CommuteLocating(val end: CommuteEnd, val failed: Boolean = false)
+/** "Use where I am now" for a commute end: finding the location, or why it couldn't ([error]). */
+data class CommuteLocating(val end: CommuteEnd, val error: String? = null)
 
 data class WeatherUiState(
     val pages: List<PageUi> = emptyList(),
@@ -113,6 +113,8 @@ data class WeatherUiState(
     val modelStatus: ModelStatus = ModelStatus.NotInstalled,
     /** Null until home is set and its forecast has loaded, or while the check is off. */
     val commute: CommuteForecasts? = null,
+    /** Home's forecast couldn't be loaded (and there's none from before): the card falls back to the first page. */
+    val commuteUnavailable: Boolean = false,
     val commuteLocating: CommuteLocating? = null,
 )
 
@@ -140,6 +142,7 @@ class WeatherViewModel(
     private val currentPlace = MutableStateFlow<Place?>(null)
     private val search = MutableStateFlow(SearchUi())
     private val commute = MutableStateFlow<CommuteForecasts?>(null)
+    private val commuteUnavailable = MutableStateFlow(false)
     private val commuteLocating = MutableStateFlow<CommuteLocating?>(null)
     private val jobs = mutableMapOf<String, Job>()
     private var searchJob: Job? = null
@@ -149,17 +152,18 @@ class WeatherViewModel(
     val uiState: StateFlow<WeatherUiState> = combine(
         combine(places.places, settingsRepo.settings, ::Pair),
         combine(contents, fetching, ::Pair),
-        combine(currentPlace, commute, commuteLocating, ::Triple),
+        combine(currentPlace, combine(commute, commuteUnavailable, ::Pair), commuteLocating, ::Triple),
         search,
         model.status,
-    ) { (saved, settings), (contents, fetching), (current, commute, locating), search, modelStatus ->
+    ) { (saved, settings), (contents, fetching), (current, commuteState, locating), search, modelStatus ->
+        val (commute, commuteUnavailable) = commuteState
         val pages = buildList {
             if (settings.useCurrentLocation) {
                 add(PageUi(CURRENT, current, contents[CURRENT] ?: PageContent.Loading, CURRENT in fetching))
             }
             saved.forEach { add(PageUi(it.id, it, contents[it.id] ?: PageContent.Loading, it.id in fetching)) }
         }
-        WeatherUiState(pages, saved, settings, search, modelStatus, commute, locating)
+        WeatherUiState(pages, saved, settings, search, modelStatus, commute, commuteUnavailable, locating)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, WeatherUiState())
 
     init {
@@ -521,7 +525,14 @@ class WeatherViewModel(
         // The commute skips public holidays, which come with the countdowns: fetch them if nothing has yet.
         if (commute.enabled && !old.enabled) refreshHolidays()
         val placesChanged = commute.home != old.home || commute.office != old.office
-        if (placesChanged) this.commute.value = null // never judge the new places with the old ones' weather
+        if (placesChanged) {
+            this.commute.value = null // never judge the new places with the old ones' weather
+            // A place set any other way wins over a location still being looked up.
+            locateJob?.cancel()
+            commuteLocating.value = null
+        } else if (commuteLocating.value?.error != null) {
+            commuteLocating.value = null // any other change moves on from the error
+        }
         if (placesChanged || commute.enabled != old.enabled) refreshCommute()
     }
 
@@ -532,18 +543,18 @@ class WeatherViewModel(
         setCommute(settingsRepo.settings.value.commute.with(end, place))
     }
 
-    /** "Use where I am now": the device's location becomes [end]. The caller has made sure of the permission. */
+    /** "Use where I am now": the device's location becomes [end]. The caller has asked for the permission. */
     fun setCommutePlaceHere(end: CommuteEnd) {
         locateJob?.cancel()
         if (!location.hasPermission()) {
-            commuteLocating.value = CommuteLocating(end, failed = true)
+            commuteLocating.value = CommuteLocating(end, "Location access is off for this app.")
             return
         }
         commuteLocating.value = CommuteLocating(end)
         locateJob = viewModelScope.launch {
             val place = location.currentPlace()
             if (place == null) {
-                commuteLocating.value = CommuteLocating(end, failed = true)
+                commuteLocating.value = CommuteLocating(end, "Couldn't get your location. Is location turned on?")
             } else {
                 commuteLocating.value = null
                 setCommute(settingsRepo.settings.value.commute.with(end, place))
@@ -553,10 +564,12 @@ class WeatherViewModel(
 
     /**
      * Fetches home's and the office's forecasts for the commute card, with home's holidays. A failed refresh keeps
-     * what's shown; a failed office forecast leaves the trips judged at home only.
+     * what's shown (the office's too); with nothing to keep, a failed home forecast lets the card fall back to the
+     * first page, and a failed office forecast leaves the trips judged at home only.
      */
     private fun refreshCommute() {
         commuteJob?.cancel()
+        commuteUnavailable.value = false
         val settings = settingsRepo.settings.value.commute
         val home = settings.home
         if (!settings.enabled || home == null) {
@@ -570,6 +583,7 @@ class WeatherViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (commute.value == null) commuteUnavailable.value = true
                 return@launch
             }
             val officeForecast = office?.let {
@@ -578,7 +592,7 @@ class WeatherViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    null
+                    commute.value?.takeIf { c -> c.office == office }?.officeForecast
                 }
             }
             val cc = countryCodeOf(home)

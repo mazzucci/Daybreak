@@ -168,6 +168,7 @@ fun WeatherPagerScreen(
                     // and on that page's own forecast until then.
                     commute = state.settings.commute.takeIf { it.enabled && index == commutePage },
                     commuteForecasts = state.commute,
+                    commuteUnavailable = state.commuteUnavailable,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -241,6 +242,7 @@ fun WeatherPage(
     activity: Activity? = null,
     commute: CommuteSettings? = null,
     commuteForecasts: CommuteForecasts? = null,
+    commuteUnavailable: Boolean = false,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -312,6 +314,7 @@ fun WeatherPage(
                         content.forecast, unit, night, content.meme, activity, content.comingUp, commute, content.holidays,
                         weekend = weekendDays(page.place?.let(::countryCodeOf)),
                         commuteForecasts = commuteForecasts,
+                        commuteUnavailable = commuteUnavailable,
                     )
                 }
                 Spacer(Modifier.height(24.dp))
@@ -473,6 +476,7 @@ private fun BodyForecast(
     holidays: Set<LocalDate> = emptySet(),
     weekend: Set<DayOfWeek> = weekendDays(null),
     commuteForecasts: CommuteForecasts? = null,
+    commuteUnavailable: Boolean = false,
 ) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
@@ -496,12 +500,13 @@ private fun BodyForecast(
         // The hero and its tiles are "now"; the commute verdict opens the planning part of the page, still
         // above the fold. Walking is the fallback mode when outdoor plans are off.
         val mode = activity ?: Activity.WALKING
-        // With a home set, only home's (and the office's) own forecasts will do: nothing shows until they've loaded.
+        // With a home set, home's (and the office's) own forecasts; until they load, nothing, unless home's
+        // couldn't be fetched, when this page's forecast is better than no card at all.
         val c = commuteForecasts?.takeIf { commute.home != null && it.home == commute.home && it.office == commute.office }
-        val advice = remember(forecast, mode, commute, holidays, weekend, c) {
+        val advice = remember(forecast, mode, commute, holidays, weekend, c, commuteUnavailable) {
             when {
                 c != null -> commuteAdvice(c.homeForecast, mode, commute, c.holidays, c.weekend, c.officeForecast)
-                commute.home == null -> commuteAdvice(forecast, mode, commute, holidays, weekend)
+                commute.home == null || commuteUnavailable -> commuteAdvice(forecast, mode, commute, holidays, weekend)
                 else -> null
             }
         }

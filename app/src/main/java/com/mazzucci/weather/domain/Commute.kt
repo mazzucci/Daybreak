@@ -30,10 +30,14 @@ enum class CommuteEnd(val label: String, val placeId: String) {
     OFFICE("Office", Place.COMMUTE_OFFICE_ID),
 }
 
-/** [commute] with [place] (or nothing) as its [end]. */
+/** [commute] with [place] (or nothing) as its [end]. The office goes with home: it's only judged against one. */
 fun CommuteSettings.with(end: CommuteEnd, place: Place?): CommuteSettings {
     val p = place?.copy(id = end.placeId)
-    return if (end == CommuteEnd.HOME) copy(home = p) else copy(office = p)
+    return when {
+        end == CommuteEnd.OFFICE -> copy(office = p)
+        p == null -> copy(home = null, office = null)
+        else -> copy(home = p)
+    }
 }
 
 /**
@@ -58,7 +62,7 @@ data class CommuteAdvice(
  * - otherwise the next workday, skipping the country's [weekend] and [holidays].
  * Darkness never tips it to "work from home" (lights fix that); it's a caveat at most. [forecast] is home's; with
  * an [office] forecast each trip is also judged at the office in the same hour (a commute rarely spans two), and
- * counts as its worse end. Null when home's forecast doesn't cover the trips.
+ * counts as its worse end. The hours are home's clock; the office's are lined up by UTC offset. Null when home's forecast doesn't cover the trips.
  */
 fun commuteAdvice(
     forecast: Forecast,
@@ -94,7 +98,8 @@ fun commuteAdvice(
 
 /**
  * A trip's score at home, or at the office when that's worse (more rain breaks a tie), paired with whether it's
- * the office's. The office's hour is skipped when its forecast doesn't reach it.
+ * the office's. The office is scored in its own local time (for its daylight) but reported in home's, so the card
+ * names the hour the user set. It's skipped when its forecast doesn't reach the trip.
  */
 private fun worseEnd(
     homeHour: HourForecast,
@@ -104,11 +109,13 @@ private fun worseEnd(
     thisHour: LocalDateTime,
 ): Pair<HourScore, Boolean> {
     val atHome = score(homeHour, home, activity, isNow = homeHour.time == thisHour)
-    val officeHour = office?.let { hourAt(it, homeHour.time) } ?: return atHome to false
-    val atOffice = score(officeHour, office, activity, isNow = officeHour.time == thisHour)
+    if (office == null) return atHome to false
+    val shift = (office.utcOffsetSeconds - home.utcOffsetSeconds).toLong()
+    val officeHour = hourAt(office, homeHour.time.plusSeconds(shift)) ?: return atHome to false
+    val atOffice = score(officeHour, office, activity, isNow = officeHour.time == thisHour.plusSeconds(shift))
     val officeWorse = atOffice.score < atHome.score ||
         (atOffice.score == atHome.score && officeHour.precipChance > homeHour.precipChance)
-    return if (officeWorse) atOffice to true else atHome to false
+    return if (officeWorse) atOffice.copy(hour = officeHour.copy(time = officeHour.time.minusSeconds(shift))) to true else atHome to false
 }
 
 private fun score(hour: HourForecast, forecast: Forecast, activity: Activity, isNow: Boolean): HourScore =

@@ -172,4 +172,25 @@ class CommuteTest {
         assertEquals(CommuteAdvice.Verdict.OFFICE, advice.verdict)
         assertFalse(advice.inboundAtOffice)
     }
+
+    @Test fun `an office in another time zone is lined up by the clock, and reported in home's hours`() {
+        // The office is an hour ahead: home's 5 PM is its 6 PM, when it rains there.
+        val office = forecast(monday7am.plusHours(1)) { if (it.hour == 18) 80 else 0 }.copy(utcOffsetSeconds = 3600)
+        val advice = commuteAdvice(forecast(monday7am), Activity.CYCLING, settings, office = office)!!
+        assertTrue(advice.inboundAtOffice)
+        assertEquals(monday7am.withHour(17), advice.inbound.hour.time)
+        assertEquals(
+            "Rain likely leaving the office · 80% at 5 PM",
+            describeCommute(advice, Activity.CYCLING, TempUnit.F, monday7am.toLocalDate()).detail,
+        )
+    }
+
+    @Test fun `removing home removes the office with it`() {
+        val home = TestData.sanFrancisco
+        val both = CommuteSettings().with(CommuteEnd.HOME, home).with(CommuteEnd.OFFICE, TestData.london)
+        assertEquals(Place.COMMUTE_HOME_ID, both.home?.id)
+        assertEquals(Place.COMMUTE_OFFICE_ID, both.office?.id)
+        assertEquals(both.copy(office = null), both.with(CommuteEnd.OFFICE, null))
+        assertEquals(CommuteSettings(), both.with(CommuteEnd.HOME, null))
+    }
 }
