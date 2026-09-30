@@ -16,6 +16,7 @@ const val WEEK_DAYS = 7
 /**
  * A place the app can show weather for: either a saved search result or the device's current location.
  * [id] doubles as the page key: saved places are "geo:<geocoding id>", the device location is [CURRENT_LOCATION_ID].
+ * The commute's home and office are [COMMUTE_HOME_ID] and [COMMUTE_OFFICE_ID] (they're never pages).
  */
 data class Place(
     val id: String,
@@ -33,6 +34,8 @@ data class Place(
     companion object {
         const val CURRENT_LOCATION_ID = "current"
         const val GEOCODING_PREFIX = "geo:"
+        const val COMMUTE_HOME_ID = "commute:home"
+        const val COMMUTE_OFFICE_ID = "commute:office"
 
         fun geocodingId(id: Long): String = "$GEOCODING_PREFIX$id"
     }

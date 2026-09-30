@@ -8,25 +8,46 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 /**
- * When the user travels to and from work, on weekdays. Hours are local to the commute page's place. A return
- * hour at or before the leave hour is a night shift: the trip home is the next morning. The times are kept while
- * the check is switched off.
+ * When the user travels to and from work, on weekdays. Hours are local to [home] (or, until it's set, to the first
+ * page's place). A return hour at or before the leave hour is a night shift: the trip home is the next morning.
+ * With an [office], each trip is judged at both ends. The times and places are kept while the check is switched off.
  */
-data class CommuteSettings(val leaveHour: Int = 8, val returnHour: Int = 17, val enabled: Boolean = false) {
+data class CommuteSettings(
+    val leaveHour: Int = 8,
+    val returnHour: Int = 17,
+    val enabled: Boolean = false,
+    val home: Place? = null,
+    val office: Place? = null,
+) {
     init {
         require(leaveHour in 0..23 && returnHour in 0..23)
     }
 }
 
+/** The two ends of the commute that can be set. */
+enum class CommuteEnd(val label: String, val placeId: String) {
+    HOME("Home", Place.COMMUTE_HOME_ID),
+    OFFICE("Office", Place.COMMUTE_OFFICE_ID),
+}
+
+/** [commute] with [place] (or nothing) as its [end]. */
+fun CommuteSettings.with(end: CommuteEnd, place: Place?): CommuteSettings {
+    val p = place?.copy(id = end.placeId)
+    return if (end == CommuteEnd.HOME) copy(home = p) else copy(office = p)
+}
+
 /**
  * The call for the next workday's trips: go in, go in with a caveat, or consider working from home.
- * [outbound] is null once the trip in has already started (only the way home is left to judge).
+ * [outbound] is null once the trip in has already started (only the way home is left to judge). Each trip is its
+ * worse end; [outboundAtOffice] / [inboundAtOffice] say when that's the office's.
  */
 data class CommuteAdvice(
     val day: LocalDate,
     val verdict: Verdict,
     val outbound: HourScore?,
     val inbound: HourScore,
+    val outboundAtOffice: Boolean = false,
+    val inboundAtOffice: Boolean = false,
 ) {
     enum class Verdict { OFFICE, OFFICE_WITH_CAVEAT, WORK_FROM_HOME }
 }
@@ -35,8 +56,9 @@ data class CommuteAdvice(
  * Scores the next commute for [activity] with the same scorer as the "best time" card:
  * - today, if it's a workday and the trip home is still ahead (after leaving, only the trip home counts);
  * - otherwise the next workday, skipping the country's [weekend] and [holidays].
- * Darkness never tips it to "work from home" (lights fix that); it's a caveat at most. Null when the forecast
- * doesn't cover the trips.
+ * Darkness never tips it to "work from home" (lights fix that); it's a caveat at most. [forecast] is home's; with
+ * an [office] forecast each trip is also judged at the office in the same hour (a commute rarely spans two), and
+ * counts as its worse end. Null when home's forecast doesn't cover the trips.
  */
 fun commuteAdvice(
     forecast: Forecast,
@@ -44,6 +66,7 @@ fun commuteAdvice(
     commute: CommuteSettings,
     holidays: Set<LocalDate> = emptySet(),
     weekend: Set<DayOfWeek> = SAT_SUN,
+    office: Forecast? = null,
 ): CommuteAdvice? {
     val now = forecast.current.time
     val thisHour = now.truncatedTo(ChronoUnit.HOURS)
@@ -57,16 +80,35 @@ fun commuteAdvice(
         ?: return null
     val outHour = leaveAt(day).takeIf { !thisHour.isAfter(it) }?.let { hourAt(forecast, it) ?: return null }
     val backHour = hourAt(forecast, backAt(day)) ?: return null
-    val out = outHour?.let { score(it, forecast, activity, isNow = it.time == thisHour) }
-    val back = score(backHour, forecast, activity, isNow = backHour.time == thisHour)
-    val trips = listOfNotNull(out, back)
+    val out = outHour?.let { worseEnd(it, forecast, office, activity, thisHour) }
+    val back = worseEnd(backHour, forecast, office, activity, thisHour)
+    val trips = listOfNotNull(out?.first, back.first)
     val worst = trips.minOf { it.score }
     val verdict = when {
         worst < POOR -> CommuteAdvice.Verdict.WORK_FROM_HOME
         worst < ActivityScorer.GOOD || trips.any { Limit.DARK in it.limits } -> CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT
         else -> CommuteAdvice.Verdict.OFFICE
     }
-    return CommuteAdvice(day, verdict, out, back)
+    return CommuteAdvice(day, verdict, out?.first, back.first, out?.second == true, back.second)
+}
+
+/**
+ * A trip's score at home, or at the office when that's worse (more rain breaks a tie), paired with whether it's
+ * the office's. The office's hour is skipped when its forecast doesn't reach it.
+ */
+private fun worseEnd(
+    homeHour: HourForecast,
+    home: Forecast,
+    office: Forecast?,
+    activity: Activity,
+    thisHour: LocalDateTime,
+): Pair<HourScore, Boolean> {
+    val atHome = score(homeHour, home, activity, isNow = homeHour.time == thisHour)
+    val officeHour = office?.let { hourAt(it, homeHour.time) } ?: return atHome to false
+    val atOffice = score(officeHour, office, activity, isNow = officeHour.time == thisHour)
+    val officeWorse = atOffice.score < atHome.score ||
+        (atOffice.score == atHome.score && officeHour.precipChance > homeHour.precipChance)
+    return if (officeWorse) atOffice to true else atHome to false
 }
 
 private fun score(hour: HourForecast, forecast: Forecast, activity: Activity, isNow: Boolean): HourScore =
@@ -139,7 +181,11 @@ private fun commuteDetail(
 ): String {
     val out = advice.outbound?.hour
     val back = advice.inbound.hour
-    val trips = listOfNotNull(advice.outbound?.let { "in" to it }, "home" to advice.inbound)
+    // Where the trouble is: on the way, or at the office end when that's the worse one.
+    val trips = listOfNotNull(
+        advice.outbound?.let { (if (advice.outboundAtOffice) "arriving at the office" else "on the way in") to it },
+        (if (advice.inboundAtOffice) "leaving the office" else "on the way home") to advice.inbound,
+    )
     if (advice.verdict == CommuteAdvice.Verdict.OFFICE) {
         val rain = when {
             // Already on the way in: only the trip home is left to judge.
@@ -166,7 +212,7 @@ private fun commuteDetail(
         Limit.DARK in l -> "Dark" to "take lights"
         else -> "Iffy weather" to null
     }
-    return "$problem on the way $leg$separator${if (measure != null) "$measure at $hour" else hour}"
+    return "$problem $leg$separator${if (measure != null) "$measure at $hour" else hour}"
 }
 
 private fun rainWord(h: HourForecast) = if (h.precipChance < DRY) "dry" else "${h.precipChance}% rain chance"

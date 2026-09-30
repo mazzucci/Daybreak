@@ -59,33 +59,34 @@ class SavedPlacesRepository(private val store: KeyValueStore) {
         }
     }
 
-    private fun Place.toJson() = JSONObject()
-        .put("id", id)
-        .put("name", name)
-        .putOpt("region", region)
-        .putOpt("country", country)
-        .putOpt("cc", countryCode)
-        .put("lat", latitude)
-        .put("lon", longitude)
-
-    private fun JSONObject.toPlace() = Place(
-        id = getString("id").let { if (it.startsWith(Place.GEOCODING_PREFIX)) it else Place.GEOCODING_PREFIX + it },
-        name = getString("name"),
-        region = optString("region").ifBlank { null },
-        country = optString("country").ifBlank { null },
-        latitude = getDouble("lat"),
-        longitude = getDouble("lon"),
-        countryCode = optString("cc").ifBlank { null },
-    )
-
     private companion object {
         const val KEY = "saved_places"
     }
 }
 
+private fun Place.toJson() = JSONObject()
+    .put("id", id)
+    .put("name", name)
+    .putOpt("region", region)
+    .putOpt("country", country)
+    .putOpt("cc", countryCode)
+    .put("lat", latitude)
+    .put("lon", longitude)
+
+private fun JSONObject.toPlace() = Place(
+    id = getString("id").let { if (it.startsWith(Place.GEOCODING_PREFIX)) it else Place.GEOCODING_PREFIX + it },
+    name = getString("name"),
+    region = optString("region").ifBlank { null },
+    country = optString("country").ifBlank { null },
+    latitude = getDouble("lat"),
+    longitude = getDouble("lon"),
+    countryCode = optString("cc").ifBlank { null },
+)
+
 /**
- * App settings. The "About me" note lives in [privateStore], a separate file that's excluded from Android backup
- * and device transfer (see res/xml/backup_rules.xml), so it really stays on this phone.
+ * App settings. The "About me" note and the commute's home and office live in [privateStore], a separate file
+ * that's excluded from Android backup and device transfer (see res/xml/backup_rules.xml), so they really stay on
+ * this phone.
  */
 class SettingsRepository(
     private val store: KeyValueStore,
@@ -108,6 +109,20 @@ class SettingsRepository(
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
         // "on-8-17" / "off-8-17": the times survive switching the check off.
         store.putString(KEY_COMMUTE, "${if (s.commute.enabled) "on" else "off"}-${s.commute.leaveHour}-${s.commute.returnHour}")
+        putPlace(KEY_HOME, s.commute.home)
+        putPlace(KEY_OFFICE, s.commute.office)
+    }
+
+    private fun putPlace(key: String, place: Place?) {
+        if (place == null) privateStore.remove(key) else privateStore.putString(key, place.toJson().toString())
+    }
+
+    private fun getPlace(key: String, id: String): Place? = privateStore.getString(key)?.let {
+        try {
+            JSONObject(it).toPlace().copy(id = id)
+        } catch (e: JSONException) {
+            null
+        }
     }
 
     private fun load(defaults: AppSettings) = AppSettings(
@@ -124,7 +139,12 @@ class SettingsRepository(
             if (parts.size == 3 && parts[0] in setOf("on", "off") && hours.size == 2 && hours.all { it in 0..23 }) {
                 CommuteSettings(hours[0], hours[1], enabled = parts[0] == "on")
             } else null
-        } ?: defaults.commute,
+        }.let { c ->
+            (c ?: defaults.commute).copy(
+                home = getPlace(KEY_HOME, Place.COMMUTE_HOME_ID) ?: defaults.commute.home,
+                office = getPlace(KEY_OFFICE, Place.COMMUTE_OFFICE_ID) ?: defaults.commute.office,
+            )
+        },
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
             null -> defaults.activity
             ACTIVITY_OFF -> null
@@ -142,6 +162,8 @@ class SettingsRepository(
         const val KEY_ABOUT_ME = "about_me"
         const val KEY_ACTIVITY = "activity"
         const val KEY_COMMUTE = "commute"
+        const val KEY_HOME = "commute_home"
+        const val KEY_OFFICE = "commute_office"
         const val ACTIVITY_OFF = "OFF"
     }
 }

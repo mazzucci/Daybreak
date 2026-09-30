@@ -61,6 +61,7 @@ fun SearchScreen(
     onPick: (Place) -> Unit,
     onBack: () -> Unit,
     autoFocus: Boolean = true,
+    title: String = "Add a place",
 ) {
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -69,7 +70,7 @@ fun SearchScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Add a place") },
+                title = { Text(title) },
                 navigationIcon = {
                     IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },

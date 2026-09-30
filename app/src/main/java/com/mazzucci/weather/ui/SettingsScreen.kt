@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -87,7 +89,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import com.mazzucci.weather.domain.Activity
+import com.mazzucci.weather.domain.CommuteEnd
 import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.Place
+import com.mazzucci.weather.domain.with
 import com.mazzucci.weather.domain.formatHour
 import androidx.compose.ui.text.style.TextAlign
 import com.mazzucci.weather.domain.AppSettings
@@ -111,6 +116,9 @@ fun SettingsScreen(
     onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
     onCommuteChange: (CommuteSettings) -> Unit,
+    commuteLocating: CommuteLocating? = null,
+    onCommutePlaceHere: (CommuteEnd) -> Unit = {},
+    onCommutePlaceSearch: (CommuteEnd) -> Unit = {},
     onOpenRideReplay: (() -> Unit)? = null,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
@@ -205,7 +213,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            CommuteSettingsCard(settings.commute, onCommuteChange)
+            CommuteSettingsCard(settings.commute, commuteLocating, onCommuteChange, onCommutePlaceHere, onCommutePlaceSearch)
 
             if (onOpenRideReplay != null) {
                 Spacer(Modifier.height(12.dp))
@@ -421,16 +429,29 @@ private fun capAboutMeDraft(text: String): String {
     return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
 }
 
-/** The office-or-home check: a switch, then the two weekday travel times. */
+/** The office-or-home check: a switch, then home and the office, then the two weekday travel times. */
 @Composable
-private fun CommuteSettingsCard(commute: CommuteSettings, onChange: (CommuteSettings) -> Unit) {
+private fun CommuteSettingsCard(
+    commute: CommuteSettings,
+    locating: CommuteLocating?,
+    onChange: (CommuteSettings) -> Unit,
+    onPlaceHere: (CommuteEnd) -> Unit,
+    onPlaceSearch: (CommuteEnd) -> Unit,
+) {
     SettingsCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Office or home?", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "Checks your weekday trips on the first page's forecast, using the activity above (walking if it's off).",
+                    when {
+                        commute.home == null ->
+                            "Checks your weekday trips on the first page's forecast, using the activity above (walking if " +
+                                "it's off). Set your home, and your office if it's farther away, to check both ends."
+                        commute.office == null ->
+                            "Checks your weekday trips at home, using the activity above (walking if it's off)."
+                        else -> "Checks your weekday trips at home and at the office, using the activity above (walking if it's off)."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -444,8 +465,75 @@ private fun CommuteSettingsCard(commute: CommuteSettings, onChange: (CommuteSett
         }
         if (commute.enabled) {
             Spacer(Modifier.height(12.dp))
+            CommuteEnd.entries.forEach { end ->
+                CommutePlaceRow(
+                    end = end,
+                    place = if (end == CommuteEnd.HOME) commute.home else commute.office,
+                    locating = locating?.takeIf { it.end == end },
+                    // The office needs a home to be measured against.
+                    enabled = end == CommuteEnd.HOME || commute.home != null,
+                    onHere = { onPlaceHere(end) },
+                    onSearch = { onPlaceSearch(end) },
+                    onRemove = { onChange(commute.with(end, null)) },
+                )
+            }
+            Text(
+                "Home and office stay on this phone and aren't backed up.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+            Spacer(Modifier.height(8.dp))
             HourStepper("Leave for work", commute.leaveHour) { onChange(commute.copy(leaveHour = it)) }
             HourStepper("Head home", commute.returnHour) { onChange(commute.copy(returnHour = it)) }
+        }
+    }
+}
+
+/**
+ * "Home · Brooklyn   [Change]": the place, or what's used without it, and a menu to set it where you are now or by
+ * searching for a town (and to remove it). The status line is a live region, so TalkBack hears the location land.
+ */
+@Composable
+private fun CommutePlaceRow(
+    end: CommuteEnd,
+    place: Place?,
+    locating: CommuteLocating?,
+    enabled: Boolean,
+    onHere: () -> Unit,
+    onSearch: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    val status = when {
+        locating?.failed == true -> "Couldn't get your location. Is location turned on?"
+        locating != null -> "Finding where you are…"
+        place != null -> listOfNotNull(place.name, place.region).joinToString(", ")
+        end == CommuteEnd.HOME -> "Not set, so the first page's place is used"
+        enabled -> "Not set, so trips are checked at home only"
+        else -> "Set your home first"
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
+            Text(end.label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (locating?.failed == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Box {
+            TextButton(
+                onClick = { menu = true },
+                enabled = enabled && (locating == null || locating.failed),
+                modifier = Modifier.semantics { contentDescription = "${if (place == null) "Set" else "Change"} ${end.label.lowercase()}" },
+            ) { Text(if (place == null) "Set" else "Change") }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(text = { Text("Use where I am now") }, onClick = { menu = false; onHere() })
+                DropdownMenuItem(text = { Text("Search for a town") }, onClick = { menu = false; onSearch() })
+                if (place != null) DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; onRemove() })
+            }
         }
     }
 }

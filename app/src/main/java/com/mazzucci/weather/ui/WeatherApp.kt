@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mazzucci.weather.domain.CommuteEnd
 
 private enum class Screen { Weather, Search, Places, Settings, Ride }
 
@@ -21,12 +22,30 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.Weather) }
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
+    // Set while the search screen is choosing a commute end rather than adding a page.
+    var searchingFor by rememberSaveable { mutableStateOf<CommuteEnd?>(null) }
+    // The commute end waiting on the location prompt's answer.
+    var locatingFor by rememberSaveable { mutableStateOf<CommuteEnd?>(null) }
     val pagerState = rememberPagerState { state.pages.size }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(), vm::onLocationPermissionResult,
     )
     val requestPermission = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
+    val commutePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        // A refusal still goes through, so the row says it couldn't get the location.
+        locatingFor?.let(vm::setCommutePlaceHere)
+        locatingFor = null
+        if (granted && state.settings.useCurrentLocation) vm.onLocationPermissionResult(true)
+    }
+    val commutePlaceHere = { end: CommuteEnd ->
+        if (vm.needsLocationPermission()) {
+            locatingFor = end
+            commutePermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        } else {
+            vm.setCommutePlaceHere(end)
+        }
+    }
     val enableCurrentLocation = {
         vm.setUseCurrentLocation(true)
         if (vm.needsLocationPermission()) requestPermission()
@@ -55,6 +74,7 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
 
     val back = {
         screen = when {
+            screen == Screen.Search && searchingFor != null -> Screen.Settings
             screen == Screen.Search && state.savedPlaces.isNotEmpty() -> Screen.Places
             screen == Screen.Ride -> Screen.Settings
             else -> Screen.Weather
@@ -63,6 +83,7 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
     BackHandler(enabled = screen != Screen.Weather) {
         vm.clearSearch()
         back()
+        searchingFor = null
     }
 
     when (screen) {
@@ -78,16 +99,26 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
         )
         Screen.Search -> SearchScreen(
             search = state.search,
-            savedIds = state.savedPlaces.map { it.id }.toSet(),
+            savedIds = if (searchingFor == null) state.savedPlaces.map { it.id }.toSet() else emptySet(),
             onQueryChange = vm::onSearchQueryChange,
             onPick = { place ->
-                scrollTo = vm.addPlace(place)
-                screen = Screen.Weather
+                val end = searchingFor
+                if (end != null) {
+                    vm.setCommutePlace(end, place)
+                    vm.clearSearch()
+                    searchingFor = null
+                    screen = Screen.Settings
+                } else {
+                    scrollTo = vm.addPlace(place)
+                    screen = Screen.Weather
+                }
             },
             onBack = {
                 vm.clearSearch()
                 back()
+                searchingFor = null
             },
+            title = searchingFor?.let { "Your ${it.label.lowercase()}" } ?: "Add a place",
         )
         Screen.Places -> PlacesScreen(
             places = state.savedPlaces,
@@ -117,6 +148,12 @@ fun WeatherApp(vm: WeatherViewModel, rideVm: RideViewModel? = null) {
             onAboutMeChange = vm::setAboutMe,
             onActivityChange = vm::setActivity,
             onCommuteChange = vm::setCommute,
+            commuteLocating = state.commuteLocating,
+            onCommutePlaceHere = commutePlaceHere,
+            onCommutePlaceSearch = { end ->
+                searchingFor = end
+                screen = Screen.Search
+            },
             onOpenRideReplay = if (rideVm != null) ({ screen = Screen.Ride }) else null,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,

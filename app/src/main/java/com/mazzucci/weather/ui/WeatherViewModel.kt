@@ -11,7 +11,10 @@ import com.mazzucci.weather.domain.AppSettings
 import com.mazzucci.weather.domain.WidgetSnapshot
 import com.mazzucci.weather.domain.widgetSnapshotOf
 import com.mazzucci.weather.widget.WidgetPublisher
+import com.mazzucci.weather.domain.CommuteEnd
 import com.mazzucci.weather.domain.CommuteSettings
+import com.mazzucci.weather.domain.weekendDays
+import com.mazzucci.weather.domain.with
 import com.mazzucci.weather.domain.Countdown
 import com.mazzucci.weather.domain.comingUp
 import com.mazzucci.weather.domain.countryCodeOf
@@ -45,6 +48,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
@@ -85,12 +89,31 @@ data class SearchUi(
     val error: String? = null,
 )
 
+/**
+ * The commute's own forecasts, once home is set: [home]'s and, if there is one, [office]'s ([officeForecast] is
+ * null when it couldn't be fetched), with the public holidays and weekend of home's country.
+ */
+data class CommuteForecasts(
+    val home: Place,
+    val homeForecast: Forecast,
+    val office: Place? = null,
+    val officeForecast: Forecast? = null,
+    val holidays: Set<LocalDate> = emptySet(),
+    val weekend: Set<DayOfWeek> = weekendDays(null),
+)
+
+/** "Use where I am now" for a commute end: finding the location, or [failed] to. */
+data class CommuteLocating(val end: CommuteEnd, val failed: Boolean = false)
+
 data class WeatherUiState(
     val pages: List<PageUi> = emptyList(),
     val savedPlaces: List<Place> = emptyList(),
     val settings: AppSettings = AppSettings(),
     val search: SearchUi = SearchUi(),
     val modelStatus: ModelStatus = ModelStatus.NotInstalled,
+    /** Null until home is set and its forecast has loaded, or while the check is off. */
+    val commute: CommuteForecasts? = null,
+    val commuteLocating: CommuteLocating? = null,
 )
 
 class WeatherViewModel(
@@ -116,23 +139,27 @@ class WeatherViewModel(
     private val fetching = MutableStateFlow<Set<String>>(emptySet())
     private val currentPlace = MutableStateFlow<Place?>(null)
     private val search = MutableStateFlow(SearchUi())
+    private val commute = MutableStateFlow<CommuteForecasts?>(null)
+    private val commuteLocating = MutableStateFlow<CommuteLocating?>(null)
     private val jobs = mutableMapOf<String, Job>()
     private var searchJob: Job? = null
+    private var commuteJob: Job? = null
+    private var locateJob: Job? = null
 
     val uiState: StateFlow<WeatherUiState> = combine(
         combine(places.places, settingsRepo.settings, ::Pair),
         combine(contents, fetching, ::Pair),
-        currentPlace,
+        combine(currentPlace, commute, commuteLocating, ::Triple),
         search,
         model.status,
-    ) { (saved, settings), (contents, fetching), current, search, modelStatus ->
+    ) { (saved, settings), (contents, fetching), (current, commute, locating), search, modelStatus ->
         val pages = buildList {
             if (settings.useCurrentLocation) {
                 add(PageUi(CURRENT, current, contents[CURRENT] ?: PageContent.Loading, CURRENT in fetching))
             }
             saved.forEach { add(PageUi(it.id, it, contents[it.id] ?: PageContent.Loading, it.id in fetching)) }
         }
-        WeatherUiState(pages, saved, settings, search, modelStatus)
+        WeatherUiState(pages, saved, settings, search, modelStatus, commute, locating)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, WeatherUiState())
 
     init {
@@ -171,6 +198,7 @@ class WeatherViewModel(
             }
         }
         if (settingsRepo.settings.value.useCurrentLocation) refreshCurrentLocation()
+        refreshCommute()
         // A download can finish while the user is anywhere in the app; re-narrate as soon as the model lands.
         viewModelScope.launch {
             var wasInstalled = model.status.value is ModelStatus.Installed
@@ -187,6 +215,8 @@ class WeatherViewModel(
     fun refresh(key: String) {
         if (key == CURRENT) refreshCurrentLocation()
         else places.places.value.firstOrNull { it.id == key }?.let { load(key, it) }
+        // The commute card shows on the first page, but pulling any page is a request for fresh weather.
+        refreshCommute()
     }
 
     /** Whether the app still needs the location permission (the one place this is checked). */
@@ -481,12 +511,80 @@ class WeatherViewModel(
         }
     }
 
-    /** The commute card is computed from the cached forecast: nothing to refetch. */
+    /**
+     * Without a home, the commute card is computed from the first page's cached forecast. With one, home's and the
+     * office's forecasts are fetched when the check is switched on or either place changes (new times need nothing).
+     */
     fun setCommute(commute: CommuteSettings) {
-        val wasOn = settingsRepo.settings.value.commute.enabled
+        val old = settingsRepo.settings.value.commute
         settingsRepo.update { it.copy(commute = commute) }
         // The commute skips public holidays, which come with the countdowns: fetch them if nothing has yet.
-        if (commute.enabled && !wasOn) refreshHolidays()
+        if (commute.enabled && !old.enabled) refreshHolidays()
+        val placesChanged = commute.home != old.home || commute.office != old.office
+        if (placesChanged) this.commute.value = null // never judge the new places with the old ones' weather
+        if (placesChanged || commute.enabled != old.enabled) refreshCommute()
+    }
+
+    /** Sets (or with null, clears) one end of the commute. */
+    fun setCommutePlace(end: CommuteEnd, place: Place?) {
+        locateJob?.cancel()
+        commuteLocating.value = null
+        setCommute(settingsRepo.settings.value.commute.with(end, place))
+    }
+
+    /** "Use where I am now": the device's location becomes [end]. The caller has made sure of the permission. */
+    fun setCommutePlaceHere(end: CommuteEnd) {
+        locateJob?.cancel()
+        if (!location.hasPermission()) {
+            commuteLocating.value = CommuteLocating(end, failed = true)
+            return
+        }
+        commuteLocating.value = CommuteLocating(end)
+        locateJob = viewModelScope.launch {
+            val place = location.currentPlace()
+            if (place == null) {
+                commuteLocating.value = CommuteLocating(end, failed = true)
+            } else {
+                commuteLocating.value = null
+                setCommute(settingsRepo.settings.value.commute.with(end, place))
+            }
+        }
+    }
+
+    /**
+     * Fetches home's and the office's forecasts for the commute card, with home's holidays. A failed refresh keeps
+     * what's shown; a failed office forecast leaves the trips judged at home only.
+     */
+    private fun refreshCommute() {
+        commuteJob?.cancel()
+        val settings = settingsRepo.settings.value.commute
+        val home = settings.home
+        if (!settings.enabled || home == null) {
+            commute.value = null
+            return
+        }
+        val office = settings.office
+        commuteJob = viewModelScope.launch {
+            val homeForecast = try {
+                api.forecast(home.latitude, home.longitude)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@launch
+            }
+            val officeForecast = office?.let {
+                try {
+                    api.forecast(it.latitude, it.longitude)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            val cc = countryCodeOf(home)
+            val dates = cc?.let { holidays?.around(homeForecast.current.time.toLocalDate(), it) }?.holidays.orEmpty()
+            commute.value = CommuteForecasts(home, homeForecast, office, officeForecast, dates.map { it.date }.toSet(), weekendDays(cc))
+        }
     }
 
     fun setMemesEnabled(enabled: Boolean) {

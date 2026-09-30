@@ -42,6 +42,7 @@ import com.mazzucci.weather.domain.CommuteAdvice
 import com.mazzucci.weather.domain.HourForecast
 import com.mazzucci.weather.domain.HourScore
 import com.mazzucci.weather.domain.Limit
+import com.mazzucci.weather.domain.CommuteEnd
 import com.mazzucci.weather.domain.CommuteSettings
 import com.mazzucci.weather.domain.ActivityScorer
 import com.mazzucci.weather.data.parseLongWeekends
@@ -163,10 +164,11 @@ class ScreenshotTest {
     }
 
     @Composable
-    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings()) {
+    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings(), commuteLocating: CommuteLocating? = null) {
         SettingsScreen(
             settings = settings,
             modelStatus = status,
+            commuteLocating = commuteLocating,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = {}, onOpenRideReplay = {},
         )
@@ -366,6 +368,33 @@ class ScreenshotTest {
         )
     }
 
+    /** The check with home set where you are and an office found by search, the office's location lookup having failed. */
+    @Test fun settingsCommute() = snap("settings_commute", tall = true) {
+        Settings(
+            ModelStatus.Installed(529L shl 20),
+            AppSettings(
+                commute = CommuteSettings(
+                    8, 17, enabled = true,
+                    home = Place(Place.COMMUTE_HOME_ID, "Oakland", "California", latitude = 37.8, longitude = -122.27),
+                ),
+            ),
+            commuteLocating = CommuteLocating(CommuteEnd.OFFICE, failed = true),
+        )
+    }
+
+    @Test fun settingsCommuteOffice() = snap("settings_commute_office", tall = true) {
+        Settings(
+            ModelStatus.Installed(529L shl 20),
+            AppSettings(
+                commute = CommuteSettings(
+                    8, 17, enabled = true,
+                    home = Place(Place.COMMUTE_HOME_ID, "Oakland", "California", latitude = 37.8, longitude = -122.27),
+                    office = sanFrancisco.copy(id = Place.COMMUTE_OFFICE_ID),
+                ),
+            ),
+        )
+    }
+
     /** A clear window; a showery afternoon with two one-hour windows (amber bars, the marker under the pick); none at all. */
     @Test fun activityCards() = snap("activity_cards", tall = true) {
         val showery = forecast.copy(hours = forecast.hours.mapIndexed { i, h -> if (i in 1..2) h.copy(precipChance = 50) else h })
@@ -400,6 +429,11 @@ class ScreenshotTest {
         CommuteCard(
             CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.WORK_FROM_HOME, trip(8, 80, code = 63, limits = setOf(Limit.RAIN), score = 10), trip(17, 20)),
             Activity.WALKING, TempUnit.C, today,
+        )
+        // With an office set: the rain is at the office end on the way home.
+        CommuteCard(
+            CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.WORK_FROM_HOME, trip(8, 0), trip(17, 75, code = 63, limits = setOf(Limit.RAIN), score = 20), inboundAtOffice = true),
+            Activity.CYCLING, TempUnit.F, today,
         )
     }
 
