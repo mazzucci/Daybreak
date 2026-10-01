@@ -113,7 +113,8 @@ fun DayScreen(
     val gradient = heroGradient(skyOf(day.code), night = false, darkTheme = dark)
     var explaining by rememberSaveable { mutableStateOf<Term?>(null) }
     explaining?.let { term ->
-        ExplainSheet(explain(term, forecast, unit, date)) { explaining = null }
+        val explanation = remember(term, forecast, unit, date) { explain(term, forecast, unit, date) }
+        ExplainSheet(explanation) { explaining = null }
     }
     val openExplanation = remember { { t: Term -> explaining = t } }
     CompositionLocalProvider(LocalExplain provides openExplanation) {

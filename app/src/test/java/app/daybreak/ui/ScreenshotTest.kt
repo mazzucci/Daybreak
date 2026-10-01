@@ -31,13 +31,13 @@ import app.daybreak.narration.NarrationInput
 import app.daybreak.narration.NarrationSource
 import app.daybreak.domain.Term
 import app.daybreak.domain.explain
-import app.daybreak.domain.Activity
+import app.daybreak.domain.weekOutlook
+import androidx.compose.runtime.CompositionLocalProvider
 import app.daybreak.domain.Clock
 import app.daybreak.domain.describeSky
 import app.daybreak.domain.moonPhase
 import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.PersonalDate
-import app.daybreak.domain.ActivityScorer
 import app.daybreak.data.parseLongWeekends
 import app.daybreak.data.parsePublicHolidays
 import app.daybreak.domain.Holiday
@@ -142,7 +142,10 @@ class ScreenshotTest {
                 fontScale = fontScale,
             )
         )
-        paparazzi.snapshot(name) { WeatherTheme(darkTheme = night, content = content) }
+        // Snapshots see the first frame only, so the outlook's bars start grown.
+        paparazzi.snapshot(name) {
+            CompositionLocalProvider(LocalOutlookGrowth provides false) { WeatherTheme(darkTheme = night, content = content) }
+        }
     }
 
     /** The moment the sample pages are viewed: 2:30 PM in San Francisco, 8 minutes after [fetched]. */
@@ -175,7 +178,7 @@ class ScreenshotTest {
             settings = settings,
             habitsWeekStart = weekStart,
             modelStatus = status,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onActivityChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = null,
         )
     }
@@ -186,10 +189,11 @@ class ScreenshotTest {
         now: java.time.LocalDateTime = forecast.current.time,
         habits: HabitsData? = null,
         celebration: Celebration? = null,
+        zone: java.time.ZoneId = java.time.ZoneId.of("America/Los_Angeles"),
     ) {
         HomeScreen(
             state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {},
-            now = now, zone = java.time.ZoneId.of("America/Los_Angeles"),
+            now = now, zone = zone,
             habits = habits?.let { summarize(it, now.toLocalDate()) }, celebration = celebration,
         )
     }
@@ -225,6 +229,7 @@ class ScreenshotTest {
                 settings = AppSettings(primaryUnit = TempUnit.C),
             ),
             now = rainyNight.current.time,
+            zone = java.time.ZoneId.of("Europe/London"),
         )
     }
 
@@ -443,7 +448,7 @@ class ScreenshotTest {
         val place = Place("geo:2659811", "Jungfraujoch", "Bern", "Switzerland", 46.55, 7.98)
         val summary = TemplateNarrator().describe(NarrationInput(place.name, afternoon, TempUnit.C))
         Weather(
-            weatherState(PageContent.Loaded(afternoon, summary, fetchedAt = fetched), place = place, key = place.id, settings = AppSettings(primaryUnit = TempUnit.C, activity = null)),
+            weatherState(PageContent.Loaded(afternoon, summary, fetchedAt = fetched), place = place, key = place.id, settings = AppSettings(primaryUnit = TempUnit.C)),
         )
     }
 
@@ -672,17 +677,6 @@ class ScreenshotTest {
         Settings(ModelStatus.NotInstalled, weekStart = java.time.DayOfWeek.MONDAY)
     }
 
-    /** A clear window; a showery afternoon with two one-hour windows (amber bars, the marker under the pick); none at all. */
-    @Test fun activityCards() = snap("activity_cards", tall = true) {
-        val showery = forecast.copy(hours = forecast.hours.mapIndexed { i, h -> if (i in 1..2) h.copy(precipChance = 50) else h })
-        val wet = rainyNight.copy(hours = rainyNight.hours.map { it.copy(precipChance = 90, code = 63) })
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActivityCard(ActivityScorer.plan(forecast, Activity.CYCLING), TempUnit.F, forecast.current.time.toLocalDate())
-            ActivityCard(ActivityScorer.plan(showery, Activity.RUNNING), TempUnit.C, showery.current.time.toLocalDate())
-            ActivityCard(ActivityScorer.plan(wet, Activity.WALKING), TempUnit.C, wet.current.time.toLocalDate())
-        }
-    }
-
     /**
      * The phone on the 24-hour clock: "15:00" in the 52dp hourly cards, "07:02" in the sun tiles, and the copy that
      * names an hour (the summary, "Now–18:00").
@@ -743,6 +737,56 @@ class ScreenshotTest {
     @Test fun comingUpCardLargeFont() = snap("coming_up_large_font", narrow = true, fontScale = 1.5f) {
         Column(Modifier.padding(vertical = 16.dp)) {
             ComingUpCard(sanFranciscoComingUp, forecast, TempUnit.F, Modifier.padding(horizontal = 16.dp))
+        }
+    }
+
+    // --- This week ------------------------------------------------------------------------------
+
+    /** The "This week" section as it sits on the Weather page, with "How it works" (explanations available). */
+    @Composable
+    private fun ThisWeek(f: app.daybreak.domain.Forecast, unit: TempUnit = TempUnit.C) {
+        CompositionLocalProvider(LocalExplain provides {}) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                WeekOutlookSection(weekOutlook(f, unit), f.today.date, onOpenDay = {})
+            }
+        }
+    }
+
+    private val sanFranciscoWeek by lazy { app.daybreak.data.parseForecast(TestData.fixture("forecast_sf_week.json")) }
+
+    /** A rainy spell midweek and a sunny weekend: the spell, the best day outlined, rain glyphs under the wet days. */
+    @Test fun weekOutlookMixed() = snap("week_outlook_mixed") { ThisWeek(TestData.mixedWeek()) }
+
+    /** San Francisco's dry, warm week (°F): all great, "Dry all week", no best day to single out. */
+    @Test fun weekOutlookDry() = snap("week_outlook_dry") { ThisWeek(sanFranciscoWeek, TempUnit.F) }
+
+    /** Ten wet days: every bar short and blue-grey, every day with a glyph. */
+    @Test fun weekOutlookStayIn() = snap("week_outlook_stay_in") { ThisWeek(TestData.wetWeek()) }
+
+    /** 7:20 PM: today's daylight is over, so the line is about tomorrow and today's bar is empty. */
+    @Test fun weekOutlookEvening() = snap("week_outlook_evening") { ThisWeek(TestData.mixedWeek(TestData.monday.withHour(19).withMinute(20))) }
+
+    @Test fun weekOutlookDark() = snap("week_outlook_dark", night = true) { ThisWeek(TestData.mixedWeek()) }
+
+    /** The narrowest phone at 1.5x: "Today" gives way to three-letter names. */
+    @Test fun weekOutlookLargeFont() = snap("week_outlook_large_font", narrow = true, fontScale = 1.5f) { ThisWeek(TestData.mixedWeek()) }
+
+    /** And at 2x: initials, and a star for "Best". */
+    @Test fun weekOutlookHugeFont() = snap("week_outlook_huge_font", narrow = true, fontScale = 2f) { ThisWeek(TestData.mixedWeek()) }
+
+    /** The Weather page with the mixed week: "This week" between the hourly strip and the sun tiles. */
+    @Test fun weatherThisWeek() = snap("weather_this_week", tall = true) {
+        val f = TestData.mixedWeek()
+        val place = Place("geo:2950159", "Berlin", "Land Berlin", "Germany", 52.52, 13.41, countryCode = "DE")
+        val summary = TemplateNarrator().describe(NarrationInput(place.name, f, TempUnit.C))
+        Weather(weatherState(PageContent.Loaded(f, summary, fetchedAt = fetched), place = place, key = place.id, settings = AppSettings(primaryUnit = TempUnit.C)))
+    }
+
+    /** "How the outlook works" for the mixed week's breezy Monday, and in the evening for tomorrow. */
+    @Test fun explainWeek() = snap("explain_week", tall = true) {
+        Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Sheet(explain(Term.WEEK, TestData.mixedWeek(), TempUnit.C))
+            Sheet(explain(Term.WEEK, TestData.mixedWeek(TestData.monday.withHour(19).withMinute(20)), TempUnit.F))
         }
     }
 

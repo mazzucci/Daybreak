@@ -16,11 +16,14 @@ fun degrees(c: Double, unit: TempUnit): Int = when (unit) {
     TempUnit.F -> cToF(c).roundToInt()
 }
 
-/** "72°F" / "22°C". */
-fun formatTemp(c: Double, unit: TempUnit): String = "${degrees(c, unit)}°${unit.name}"
+/** "72°F" / "22°C" / "−6°C" (a true minus sign, U+2212, as typeset temperatures use). */
+fun formatTemp(c: Double, unit: TempUnit): String = "${signed(degrees(c, unit))}°${unit.name}"
 
-/** "72°" — for places where the unit is already clear from context. */
-fun formatDegrees(c: Double, unit: TempUnit): String = "${degrees(c, unit)}°"
+/** "72°", "−6°" — for places where the unit is already clear from context. */
+fun formatDegrees(c: Double, unit: TempUnit): String = "${signed(degrees(c, unit))}°"
+
+/** A whole number with a true minus sign (U+2212) rather than a hyphen when it's negative. */
+private fun signed(n: Int): String = if (n < 0) "\u2212${-n}" else "$n"
 
 /** "74°F (23°C)": both units, primary first, for accessibility labels. */
 fun formatBothUnits(c: Double, unit: TempUnit): String = "${formatTemp(c, unit)} (${formatTemp(c, unit.other())})"
@@ -64,56 +67,6 @@ fun describeUv(uv: Double): String = when (uv.roundToInt()) {
     in 6..7 -> "High"
     in 8..10 -> "Very high"
     else -> "Extreme"
-}
-
-/**
- * "9 AM–1 PM" for an activity window; "Now–6 PM" when it starts this hour ([startsNow]), and "From 8 AM" when it
- * runs to the end of the data, since the good weather may well carry on.
- */
-fun formatWindow(w: ActivityWindow, startsNow: Boolean = false, locale: Locale = Locale.getDefault()): String {
-    val start = if (startsNow) "Now" else formatHour(w.start, locale)
-    return when {
-        w.openEnded && startsNow -> "From now on"
-        w.openEnded -> "From $start"
-        else -> "$start–${formatHour(w.end, locale)}"
-    }
-}
-
-/** "Dry · light wind · 17–21°": what the window is like, in the primary unit. */
-fun describeWindow(w: ActivityWindow, unit: TempUnit): String =
-    listOfNotNull(windowRain(w), windowWind(w), windowTemps(w, unit)).joinToString(" · ")
-
-/** The same for screen readers: commas for pauses, "to" for ranges, and both units like the rest of the app. */
-fun describeWindowSpoken(w: ActivityWindow, unit: TempUnit): String {
-    val other = unit.other()
-    val temps = "${windowTemps(w, unit).replace("–", " to ")}${unit.name} (${windowTemps(w, other).replace("–", " to ")}${other.name})"
-    return listOfNotNull(windowRain(w), windowWind(w), temps).joinToString(", ")
-}
-
-private fun windowRain(w: ActivityWindow) = if (w.maxPrecipChance < 15) "Dry" else "${w.maxPrecipChance}% rain chance"
-
-private fun windowWind(w: ActivityWindow) = w.maxWindKmh?.let { if (it < 12) "calm" else if (it < 25) "light wind" else "breezy" }
-
-private fun windowTemps(w: ActivityWindow, unit: TempUnit): String {
-    val lo = degrees(w.minTempC, unit)
-    val hi = degrees(w.maxTempC, unit)
-    return if (lo == hi) "$lo°" else "$lo–$hi°"
-}
-
-/** "Rain and wind": the top one or two reasons there's no good window. */
-fun describeBlockers(limits: List<Limit>): String {
-    val words = limits.take(2).map {
-        when (it) {
-            Limit.STORM -> "storms"
-            Limit.SNOW -> "snow"
-            Limit.RAIN -> "rain"
-            Limit.WIND -> "strong wind"
-            Limit.COLD -> "the cold"
-            Limit.HEAT -> "the heat"
-            Limit.DARK -> "darkness"
-        }
-    }
-    return if (words.isEmpty()) "Not great conditions" else words.joinToString(" and ").replaceFirstChar { it.uppercase() }
 }
 
 /** WMO weather interpretation codes, as used by Open-Meteo. */

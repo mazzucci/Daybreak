@@ -6,7 +6,10 @@ import app.daybreak.domain.FORECAST_DAYS
 import app.daybreak.domain.Forecast
 import app.daybreak.domain.HourForecast
 import app.daybreak.domain.Place
+import java.time.LocalDate
 import java.time.LocalDateTime
+import kotlin.math.PI
+import kotlin.math.cos
 
 /** Shared sample data for unit and screenshot tests. */
 object TestData {
@@ -48,6 +51,7 @@ object TestData {
                 windDirectionDeg = 235.0,
             )
         },
+        utcOffsetSeconds = -7 * 3600, // PDT
     )
 
     /** 9.8°C (50°F), steady rain at 10:30 PM in London; a few hours of showers then clearing to overcast. */
@@ -80,6 +84,7 @@ object TestData {
                     windDirectionDeg = 200.0,
                 )
             },
+            utcOffsetSeconds = 3600, // BST
         )
     }
 
@@ -115,4 +120,99 @@ object TestData {
 
     /** A real 10-day Open-Meteo response for the Jungfraujoch (3,200 m): showers, a dry spell, then two days of snow. */
     fun alps(): Forecast = app.daybreak.data.parseForecast(fixture("forecast_alps_10day.json"))
+
+    /**
+     * One day of a [synthetic] forecast: its low (at 5 AM) and high (at 3 PM), the hours rain falls in ([rainHours],
+     * each the start of the hour, 0–22) with their chance and amount, snow instead of rain, and the wind.
+     */
+    data class DaySpec(
+        val highC: Double = 20.0,
+        val lowC: Double = 11.0,
+        val rainHours: IntRange? = null,
+        val chance: Int = 80,
+        val mmPerHour: Double = 1.5,
+        val snow: Boolean = false,
+        val windKmh: Double = 12.0,
+        val gustKmh: Double = 25.0,
+    )
+
+    /** How the sun behaves in a [synthetic] forecast. */
+    enum class Sun { NORMAL, POLAR_NIGHT, MIDNIGHT_SUN }
+
+    /**
+     * A forecast with full hourly data for [days] (today first, at [at]), built to order for the outlook's rules: a
+     * smooth day from each low to high, rain stamped at the end of the hour it falls in (see Precip) with the weather
+     * code at its start (an instant value), sunrise 7 AM and
+     * sunset 7 PM unless [sun] says otherwise.
+     */
+    fun synthetic(days: List<DaySpec>, at: LocalDateTime = LocalDateTime.of(2026, 10, 1, 8, 0), sun: Sun = Sun.NORMAL): Forecast {
+        val start = at.toLocalDate()
+        fun stamp(d: Int, h: Int) = start.plusDays(d.toLong()).atTime(h, 0)
+        val hours = days.flatMapIndexed { d, spec ->
+            (0 until 24).map { h ->
+                // The rain falling during hour h - 1 is stamped h.
+                val wet = spec.rainHours?.contains(h - 1) == true
+                val t = spec.lowC + (spec.highC - spec.lowC) * (1 - cos(PI * ((h - 5 + 24) % 24).coerceAtMost(20) / 10.0)) / 2
+                HourForecast(
+                    time = stamp(d, h),
+                    tempC = t,
+                    precipChance = if (wet) spec.chance else 5,
+                    // The code is instant (Open-Meteo): it's raining at h when rain falls during the hour from h.
+                    code = if (spec.rainHours?.contains(h) == true) (if (spec.snow) 73 else 63) else 1,
+                    windKmh = spec.windKmh,
+                    gustKmh = spec.gustKmh,
+                    precipMm = if (wet) spec.mmPerHour else 0.0,
+                    snowCm = if (wet && spec.snow) spec.mmPerHour * 0.7 else 0.0,
+                )
+            }
+        }
+        val summaries = days.mapIndexed { d, spec ->
+            val date: LocalDate = start.plusDays(d.toLong())
+            val dayHours = hours.filter { it.time.toLocalDate() == date }
+            val (rise, set) = when (sun) {
+                Sun.NORMAL -> date.atTime(7, 0) to date.atTime(19, 0)
+                Sun.POLAR_NIGHT -> date.atStartOfDay() to date.atStartOfDay()
+                Sun.MIDNIGHT_SUN -> date.atStartOfDay() to date.plusDays(1).atStartOfDay()
+            }
+            DaySummary(
+                date, spec.highC, spec.lowC,
+                precipChance = dayHours.maxOf { it.precipChance },
+                code = if (spec.rainHours != null) (if (spec.snow) 73 else 63) else 1,
+                sunrise = rise, sunset = set,
+                windMaxKmh = spec.windKmh, gustMaxKmh = spec.gustKmh,
+                precipSumMm = dayHours.sumOf { it.precipMm ?: 0.0 },
+                precipHours = dayHours.count { (it.precipMm ?: 0.0) > 0.0 }.toDouble(),
+                snowSumCm = dayHours.sumOf { it.snowCm ?: 0.0 },
+            )
+        }
+        val now = hours.firstOrNull { !it.time.isAfter(at) && it.time.plusHours(1).isAfter(at) } ?: hours.first()
+        return Forecast(
+            current = CurrentConditions(at, now.tempC, now.tempC, humidity = 60, windKmh = now.windKmh ?: 0.0, code = now.code),
+            days = summaries,
+            hours = hours,
+        )
+    }
+
+    /** Monday, October 5, 2026, 8 AM: the start of the synthetic weeks below. */
+    val monday: LocalDateTime = LocalDateTime.of(2026, 10, 5, 8, 0)
+
+    /**
+     * A mixed week from [monday]: breezy today, a rainy spell Tuesday to Thursday (Thursday clearing late), a cool
+     * Friday and a sunny weekend, then three ordinary days.
+     */
+    fun mixedWeek(at: LocalDateTime = monday): Forecast = synthetic(
+        listOf(
+            DaySpec(highC = 16.0, windKmh = 38.0, gustKmh = 50.0),
+            DaySpec(highC = 14.0, rainHours = 8..20, chance = 85),
+            DaySpec(highC = 12.0, rainHours = 0..22, chance = 90),
+            DaySpec(highC = 13.0, rainHours = 5..15, chance = 75),
+            DaySpec(highC = 10.0, lowC = 5.0),
+            DaySpec(highC = 21.0),
+            DaySpec(highC = 19.0, windKmh = 20.0),
+        ) + List(3) { DaySpec() },
+        at,
+    )
+
+    /** Ten days of steady rain and a stiff breeze from [monday]: every day one for staying in. */
+    fun wetWeek(): Forecast = synthetic(List(10) { DaySpec(highC = 11.0, lowC = 8.0, rainHours = 0..22, chance = 90, windKmh = 30.0, gustKmh = 55.0) }, monday)
 }

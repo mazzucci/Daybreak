@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,9 +92,13 @@ import java.util.Locale
  * comes back (a delay pauses while the phone sleeps), and doesn't wake the phone while it's away.
  */
 @Composable
-fun rememberMinuteClock(): Instant {
+fun rememberMinuteClock(): Instant = rememberMinuteClockState().value
+
+/** The same clock as a state, for readers that only care about part of it (through derivedStateOf). */
+@Composable
+fun rememberMinuteClockState(): State<Instant> {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val now by produceState(Instant.now(), lifecycle) {
+    return produceState(Instant.now(), lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 value = Instant.now()
@@ -101,7 +106,6 @@ fun rememberMinuteClock(): Instant {
             }
         }
     }
-    return now
 }
 
 /**

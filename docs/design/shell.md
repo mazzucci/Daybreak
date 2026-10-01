@@ -70,7 +70,9 @@ A tappable `surfaceContainer` card, min 72dp tall, with 16dp padding. Tapping it
 - `DualTemp` in `headlineMedium` (for example "71°" over "21°C");
 - a `KeyboardArrowRight` chevron.
 
-**Screen reader:** one node, "San Francisco, 71 degrees Fahrenheit, 21 degrees Celsius, partly cloudy, high 74, low 56, 60 percent chance of rain. Opens Weather."
+**Under that row:** the "This week" today line ("Mixed day: dry until 5 PM, then rain"), one line in `bodySmall` `onSurfaceVariant` that ellipsizes, starting under the place name (`padding(start = 64.dp, top = 6.dp, end = 16.dp, bottom = 14.dp)`), with no dot or other mark. It's worked out for the place's current hour, so a forecast fetched at 2 PM doesn't give afternoon advice at 8 PM. It's the only outlook on Home: the week lines and the strip stay on the Weather tab.
+
+**Screen reader:** one node, "San Francisco, 71 degrees Fahrenheit, 21 degrees Celsius, partly cloudy, high 74, low 56, 60 percent chance of rain. Mixed day: dry until 5 PM, then rain. Opens Weather."
 
 **States:**
 - **Loading:** two skeleton bars.
@@ -93,7 +95,7 @@ The order is fixed and not user-reorderable. A card that is off, or has nothing 
 7. "Word of the day" (later; needs Gemma)
 8. "Today's weather meme": `MemeCard` for the glance forecast. It's always last, because it's the tallest card and the least actionable.
 
-`ActivityCard` ("Best time to ride") stays on the Weather tab.
+"This week" (`WeekOutlookSection`) stays on the Weather tab, between the sun tiles and the 10-day list; Home gets only its today line, in the glance.
 
 **Spacing:** 16dp between cards, 24dp before a heading, 12dp from a heading to its card.
 
@@ -188,7 +190,7 @@ Settings becomes a tab with no back arrow. Its sections:
 1. **Temperature** (°F first or °C first). It applies everywhere.
 2. **Home:** "Holidays and countdowns", "Your dates", "Daily weather meme", and later On this day, Word of the day and Greeting. The copy should say "on Home" rather than "on the first page".
    - **Habits** (its own section, before Coming up): "Habits on Home", on by default.
-3. **Weather:** a Places row that opens the Places screen, and Activity.
+3. **Weather:** a Places row that opens the Places screen. (The Activity choice is gone: "This week" scores days for being outside in general.)
 4. **Gemma** (was "AI summary"): a "Use Gemma for the meme" switch, then the model section. Gemma no longer writes the weather summary; the template does.
 5. **Footer:** "Daybreak 1.5.0".
 

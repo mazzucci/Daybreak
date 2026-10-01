@@ -15,7 +15,7 @@ A personal Android app for the start of your day: the weather for where you are 
 - One set of rules for rain everywhere ([`Precip.kt`](app/src/main/java/app/daybreak/domain/Precip.kt)): hourly chances from 10% (blue from 40%), daily chances from 20%, hourly amounts from 0.1 mm and day totals from 0.5 mm, an amount only with a 20% chance or from 1 mm ("A small chance of rain · up to 2 mm"); "likely" from 70%, "possible" from 40%. One classifier (dry, possible or likely) judges every day, part of a day and hour from its chance and amount together. Amounts are in mm (snow in cm) with °C and inches with °F, never both
 - "Updated 8 min ago" on each Weather page, from when the app fetched it; past 90 minutes it turns amber and suggests pulling to refresh. A refresh that fails keeps the forecast and says so: "Couldn't refresh · updated 2 hours ago"
 - Temperatures in both units: the primary one large, the other small alongside or underneath (current, feels-like, hourly strip, 10-day list and day details); screen readers hear both
-- "Best time to ride" (or run, or walk): each of the next 24 hours is scored for rain, wind and gusts, temperature and daylight, and the page shows the best window with a bar per hour, or what's in the way
+- "This week": plain advice about being outside, worked out from rules and the forecast (no model). A line about today ("Great day to be outside, best 1–5 PM", "Mixed day: dry until 2 PM, then showers", "Hot day: 34° by 3 PM, best before 11 AM"; in the evening it's about tomorrow, and it's worked out for the hour you look), up to two about the week ("Rainy spell from tomorrow until Monday", "Saturday is the best day this week", "First frost by Tuesday morning"), and a strip of the next 7 days with a bar per day rising from a shared baseline by its score, green for great or good days and blue-grey otherwise, a rain or snow glyph under wet days and "Best" under the best day (also marked in the 10-day list); tap a day for its details, or "How it works" for the rules. Each day scores 0–100 on its best 3 daylight hours in a row (rain, wind and gusts, and temperatures outside 12–26°C / 54–79°F cost points), and its rain words come from the same rules as the rest of the app. The today line also sits quietly under the weather glance on Home
 - Tap a tile (Feels like, Humidity, Wind, UV index, Sunrise/Sunset), the Rain pill or a day's rain card for a plain-language explanation of the term and of the value ("Colder than the air: the 19 mph wind carries heat away from your skin")
 - A home-screen widget (4×2 by default, resizable down to 2×1) with the first page's place, the temperature in both units, today's high, low and rain chance, and the summary line on the same sky colour as the app; smaller sizes keep the icon and temperature and drop the rest. It mirrors the app whenever you open it and refreshes the numbers and summary every couple of hours in the background. Location isn't read there: the widget keeps the place the app last showed. Its cache (with that location) is excluded from backup
 - "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the 10-day forecast. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; it sees your IP address and each place's country, and nothing else) and are cached for a month. Only nationwide holidays are shown, so countries whose holidays are mostly regional (the UK, for example) show fewer. Add your own dates there too (a birthday that comes round every year, a big presentation, a week off): the next few count down on the first page alongside the holidays, and a day off says what kind of break it makes ("Makes a 4-day weekend"). They stay on the phone and aren't backed up. Turn it all off in Settings → Coming up
@@ -48,6 +48,10 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 | Day: showers | Day: snow (°F) | Day: dry | Day (dark) |
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dayWet_day_wet.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_daySnowy_day_snowy.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dayDry_day_dry.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dayDark_day_dark.png" width="200"> |
+
+| This week | This week (dark) | This week, evening | This week, 2x font |
+|:---:|:---:|:---:|:---:|
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookMixed_week_outlook_mixed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookDark_week_outlook_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookEvening_week_outlook_evening.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookHugeFont_week_outlook_huge_font.png" width="200"> |
 
 | Habits | Habits (dark) | Add a habit | Habits on Home |
 |:---:|:---:|:---:|:---:|
@@ -90,7 +94,8 @@ How it works:
 app/src/main/java/app/daybreak/
   domain/     Place, Forecast, AppSettings; unit conversion and formatting; WMO code descriptions;
               Precip (the one rule set for rain and snow: thresholds, the classifier, words, amounts, a day's timing and parts);
-              ActivityScorer (best time to ride/run/walk); ComingUp (holidays, long weekends, seasons);
+              OutdoorScorer (an hour's score for being outside); WeekOutlook ("This week": day scores, tiers, spells,
+              the best day and the lines); ComingUp (holidays, long weekends, seasons);
               Habits (streaks, days since, allowances, points, levels, badges, the 12-week map)
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
               saved places, settings, clocks, habits and daily meme repositories (SharedPreferences), device location,
@@ -100,7 +105,7 @@ app/src/main/java/app/daybreak/
               Meme (mood, template captions, prompt, validator, MemeWriter)
   ui/         WeatherViewModel, ClocksViewModel and HabitsViewModel (StateFlow), stateless screens (DayScreen: a day's details), WeatherApp (navigation, pickers),
               Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs),
-              MemeCard
+              MemeCard, WeekOutlookCard ("This week" and its 7-day strip)
   widget/     WeatherWidget (Jetpack Glance), its receiver, WidgetRefreshWorker (WorkManager), WidgetPublisher
 ```
 
@@ -114,7 +119,7 @@ Requires JDK 17 and the Android SDK (`ANDROID_HOME` or `local.properties` pointi
 
 [GitHub Actions](.github/workflows/ci.yml) runs the same command on every pull request and push to `main`, and uploads the test reports and screenshot diffs if a test or screenshot check fails.
 
-The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the rain rules and the day page's verdict, timing and the parts of the day, the template narrator, meme caption validation, habit streaks, points and badges, the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
+The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the rain rules and the day page's verdict, timing and the parts of the day, the "This week" outlook (spells, the best day, the today line in the evening and under polar night or day, with real and made-to-order forecasts), the template narrator, meme caption validation, habit streaks, points and badges, the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
 
 ## License
 

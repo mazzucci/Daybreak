@@ -21,7 +21,7 @@ class FormattingTest {
         assertEquals("71°F", formatTemp(21.4, TempUnit.F))
         assertEquals("21°C", formatTemp(21.4, TempUnit.C))
         assertEquals("22°C", formatTemp(21.5, TempUnit.C))
-        assertEquals("-3°C", formatTemp(-2.6, TempUnit.C))
+        assertEquals("\u22123°C", formatTemp(-2.6, TempUnit.C))
         assertEquals("27°", formatDegrees(-2.6, TempUnit.F))
     }
 
@@ -32,7 +32,7 @@ class FormattingTest {
 
     @Test fun `both units, primary first`() {
         assertEquals("74°F (23°C)", formatBothUnits(23.4, TempUnit.F))
-        assertEquals("-12°C (10°F)", formatBothUnits(-12.0, TempUnit.C))
+        assertEquals("\u221212°C (10°F)", formatBothUnits(-12.0, TempUnit.C))
         assertEquals("0°C (31°F)", formatBothUnits(-0.4, TempUnit.C)) // each unit rounds from the raw value
     }
 

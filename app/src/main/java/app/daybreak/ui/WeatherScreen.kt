@@ -107,8 +107,9 @@ import app.daybreak.domain.Forecast
 import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.formatDegrees
-import app.daybreak.domain.Activity
-import app.daybreak.domain.ActivityScorer
+import app.daybreak.domain.countryCodeOf
+import app.daybreak.domain.weekOutlook
+import app.daybreak.domain.weekendDays
 import androidx.compose.material3.minimumInteractiveComponentSize
 import app.daybreak.domain.DaySummary
 import app.daybreak.domain.Daylight
@@ -181,7 +182,6 @@ fun WeatherPagerScreen(
                 WeatherPage(
                     page = page,
                     unit = state.settings.primaryUnit,
-                    activity = state.settings.activity,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -253,7 +253,6 @@ private fun PageIndicator(pages: List<PageUi>, current: Int) {
 fun WeatherPage(
     page: PageUi,
     unit: TempUnit,
-    activity: Activity? = null,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -267,8 +266,13 @@ fun WeatherPage(
     // Which term's explanation is open; kept across rotation, cleared when the page has no forecast.
     var explaining by rememberSaveable { mutableStateOf<Term?>(null) }
     val explainTerm = explaining
+    // "This week" and its explanation are for the place's hour now, not the forecast's fetch time.
+    val outlookNow = loaded?.let { rememberOutlookNow(it.forecast, now) }
     if (explainTerm != null && loaded != null) {
-        ExplainSheet(explain(explainTerm, loaded.forecast, unit)) { explaining = null }
+        val explanation = remember(explainTerm, loaded.forecast, unit, outlookNow) {
+            explain(explainTerm, loaded.forecast, unit, now = outlookNow ?: loaded.forecast.current.time)
+        }
+        ExplainSheet(explanation) { explaining = null }
     }
     val night = loaded?.forecast?.isNightNow ?: false
     val gradient = loaded?.let { heroGradient(skyOf(it.forecast.current.code), night, dark) } ?: neutralGradient(dark)
@@ -326,7 +330,10 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content, unit, night, activity, now, onOpenDay)
+                    is PageContent.Loaded -> BodyForecast(
+                        content, unit, night, weekendDays(page.place?.let(::countryCodeOf)), now,
+                        outlookNow ?: content.forecast.current.time, onOpenDay,
+                    )
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -541,8 +548,11 @@ private fun BodyForecast(
     content: PageContent.Loaded,
     unit: TempUnit,
     night: Boolean,
-    activity: Activity?,
+    /** The place's weekend days, for the outlook's best day. */
+    weekend: Set<java.time.DayOfWeek>,
     now: Instant?,
+    /** The moment "This week" is for ([rememberOutlookNow]). */
+    outlookNow: java.time.LocalDateTime,
     onOpenDay: (LocalDate) -> Unit,
 ) {
     val forecast = content.forecast
@@ -578,17 +588,14 @@ private fun BodyForecast(
         night = { i, h -> if (i == 0) night else forecast.isNight(h) },
         rainDuring = forecast::rainDuring,
     )
-    if (activity != null) {
-        val plan = remember(forecast, activity) { ActivityScorer.plan(forecast, activity) }
-        if (plan.hours.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            ActivityCard(plan, unit, forecast.current.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
-        }
-    }
     SunAndUv(forecast.today)
+    // Every day's rain, worked out once for the outlook and the 10-day list.
     val days = forecast.upcomingDays()
+    val rains = remember(forecast) { days.map { Precip.dayRain(forecast, it.date) } }
+    val outlook = remember(forecast, unit, weekend, outlookNow, rains) { weekOutlook(forecast, unit, weekend, now = outlookNow, rains = rains) }
+    Spacer(Modifier.height(24.dp))
+    WeekOutlookSection(outlook, forecast.today.date, onOpenDay)
     if (days.size > 1) {
-        val rains = remember(forecast) { days.map { Precip.dayRain(forecast, it.date) } }
         Spacer(Modifier.height(24.dp))
         SectionHeading("Next ${days.size} days") {
             Text(
@@ -598,7 +605,7 @@ private fun BodyForecast(
             )
         }
         Spacer(Modifier.height(12.dp))
-        DailyList(days, rains, forecast.today.date, unit, onOpenDay)
+        DailyList(days, rains, forecast.today.date, unit, onOpenDay, bestDate = outlook.bestDate)
     }
 }
 
@@ -729,7 +736,15 @@ internal fun DualTemp(
  * under the weekday (whose names repeat by then). Each row opens that day's details.
  */
 @Composable
-private fun DailyList(days: List<DaySummary>, rains: List<DayRain>, today: LocalDate, unit: TempUnit, onOpenDay: (LocalDate) -> Unit) {
+private fun DailyList(
+    days: List<DaySummary>,
+    rains: List<DayRain>,
+    today: LocalDate,
+    unit: TempUnit,
+    onOpenDay: (LocalDate) -> Unit,
+    /** The outlook's best day this week, marked "Best" under its name. */
+    bestDate: LocalDate? = null,
+) {
     val palette = cardIconPalette()
     val rainColor = MaterialTheme.weatherColors.rain
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -743,12 +758,16 @@ private fun DailyList(days: List<DaySummary>, rains: List<DayRain>, today: Local
     // Snow totals take two lines ("3 cm" over "snow") so the column stays narrow enough for the bar.
     val totals = remember(rains, unit) { rains.map { Precip.dayAmount(it, unit) } }
     val dates = remember(days) { days.mapIndexed { i, d -> if (i >= LESS_CERTAIN_FROM) formatShortDate(d.date) else null } }
+    val success = MaterialTheme.weatherColors.success
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val widths = remember(days, rains, today, unit, density, lowStyle, highStyle, secondaryStyle) {
+    val widths = remember(days, rains, today, unit, density, lowStyle, highStyle, secondaryStyle, bestDate) {
         fun widest(texts: List<String>, style: TextStyle) = measurer.widest(texts, style, density)
         DailyWidths(
-            day = maxOf(widest(days.map { formatDayLabel(it.date, today) }, highStyle), widest(dates.filterNotNull(), secondaryStyle)),
+            day = maxOf(
+                widest(days.map { formatDayLabel(it.date, today) }, highStyle),
+                widest(dates.filterNotNull() + listOfNotNull("Best".takeIf { bestDate != null }), secondaryStyle),
+            ),
             low = maxOf(widest(days.map { formatDegrees(it.lowC, unit) }, lowStyle), widest(days.map { formatTemp(it.lowC, other) }, secondaryStyle)),
             high = maxOf(widest(days.map { formatDegrees(it.highC, unit) }, highStyle), widest(days.map { formatTemp(it.highC, other) }, secondaryStyle)),
             total = if (totals.all { it == null }) 0.dp else maxOf(
@@ -795,6 +814,7 @@ private fun DailyList(days: List<DaySummary>, rains: List<DayRain>, today: Local
                             contentDescription = buildString {
                                 append(name)
                                 dates[index]?.let { append(", ").append(formatLongDate(day.date)) }
+                                if (day.date == bestDate) append(", best day this week")
                                 append(", ${describeWeatherCode(day.code)}, ")
                                 append("high ${formatBothUnits(day.highC, unit)}, low ${formatBothUnits(day.lowC, unit)}")
                                 if (rain != null) append(", $rain% chance of ${dayRain.noun.lowercase()}")
@@ -813,6 +833,7 @@ private fun DailyList(days: List<DaySummary>, rains: List<DayRain>, today: Local
                             Text(formatDayLabel(day.date, today), style = highStyle, maxLines = 1, softWrap = false)
                         }
                         dates[index]?.let { Text(it, style = secondaryStyle, color = muted, maxLines = 1, softWrap = false) }
+                        if (day.date == bestDate) Text("Best", style = secondaryStyle, color = success, maxLines = 1, softWrap = false)
                     }
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.width(iconWidth), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -1,6 +1,5 @@
 package app.daybreak.data
 
-import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.Badge
 import app.daybreak.domain.Clock
@@ -117,7 +116,8 @@ class SettingsRepository(
     private val privateStore: KeyValueStore = store,
 ) {
     init {
-        // Settings of features that are gone (the summary's voice, "About me", the commute check): clear them once.
+        // Settings of features that are gone (the summary's voice, "About me", the commute check, the activity card):
+        // clear them once.
         REMOVED_KEYS.forEach { if (store.getString(it) != null) store.remove(it) }
         REMOVED_PRIVATE_KEYS.forEach { if (privateStore.getString(it) != null) privateStore.remove(it) }
     }
@@ -135,7 +135,6 @@ class SettingsRepository(
         store.putString(KEY_COMING_UP, s.comingUpEnabled.toString())
         store.putString(KEY_SKY, s.skyEnabled.toString())
         store.putString(KEY_HABITS_HOME, s.habitsOnHome.toString())
-        store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
         if (s.personalDates.isEmpty()) {
             privateStore.remove(KEY_DATES)
         } else {
@@ -180,11 +179,6 @@ class SettingsRepository(
         skyEnabled = store.getString(KEY_SKY)?.toBooleanStrictOrNull() ?: defaults.skyEnabled,
         habitsOnHome = store.getString(KEY_HABITS_HOME)?.toBooleanStrictOrNull() ?: defaults.habitsOnHome,
         personalDates = loadPersonalDates() ?: defaults.personalDates,
-        activity = when (val v = store.getString(KEY_ACTIVITY)) {
-            null -> defaults.activity
-            ACTIVITY_OFF -> null
-            else -> runCatching { Activity.valueOf(v) }.getOrDefault(defaults.activity)
-        },
     )
 
     private companion object {
@@ -195,10 +189,8 @@ class SettingsRepository(
         const val KEY_COMING_UP = "coming_up_enabled"
         const val KEY_SKY = "sky_enabled"
         const val KEY_HABITS_HOME = "habits_on_home"
-        const val KEY_ACTIVITY = "activity"
         const val KEY_DATES = "personal_dates"
-        const val ACTIVITY_OFF = "OFF"
-        val REMOVED_KEYS = listOf("tone", "commute")
+        val REMOVED_KEYS = listOf("tone", "commute", "activity")
         val REMOVED_PRIVATE_KEYS = listOf("about_me", "commute_home", "commute_office")
     }
 }
