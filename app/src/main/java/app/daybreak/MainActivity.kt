@@ -25,7 +25,6 @@ import app.daybreak.data.MemeRepository
 import app.daybreak.data.WidgetStore
 import app.daybreak.widget.GlanceWidgetPublisher
 import app.daybreak.data.NagerHolidayApi
-import app.daybreak.narration.ValidatingNarrator
 import app.daybreak.ui.WeatherApp
 import app.daybreak.ui.ClocksViewModel
 import app.daybreak.data.ClocksRepository
@@ -72,7 +71,6 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
         val store = SharedPrefsStore(context)
         val http = UrlConnectionHttpClient()
         val modelStore = GemmaModelStore.get(context)
-        val gemma = GemmaNarrator(context, modelStore::installedFile) // one engine for the summary and the meme
         WeatherViewModel(
             api = OpenMeteoApi(http),
             places = SavedPlacesRepository(store),
@@ -82,8 +80,7 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
             ),
             location = DeviceLocationProvider(context),
             model = modelStore,
-            llm = ValidatingNarrator(gemma),
-            memeWriter = MemeWriter(gemma),
+            memeWriter = MemeWriter(GemmaNarrator(context, modelStore::installedFile)),
             memes = MemeRepository(store),
             // Its own short timeout: holidays are a nice-to-have and shouldn't keep a page waiting.
             widget = GlanceWidgetPublisher(context.applicationContext, WidgetStore(SharedPrefsStore(context, WidgetStore.PREFS_FILE))),

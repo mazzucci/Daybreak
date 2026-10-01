@@ -7,7 +7,7 @@ import java.time.LocalDateTime
 
 /**
  * The widget's saved snapshot, as JSON in [store]. Unreadable data reads as "nothing yet". The app keeps it in a
- * preferences file of its own that's excluded from backup: it holds the device's location and text Gemma wrote.
+ * preferences file of its own that's excluded from backup: it holds the device's location.
  * Writers that read, work and write back use [update] so they can't overwrite a newer snapshot.
  */
 class WidgetStore(private val store: KeyValueStore) {
@@ -26,7 +26,6 @@ class WidgetStore(private val store: KeyValueStore) {
                 code = o.getInt("code"),
                 night = o.getBoolean("night"),
                 summary = o.getString("summary"),
-                summaryByGemma = o.getBoolean("gemma"),
                 updatedAt = LocalDateTime.parse(o.getString("updated")),
                 writtenAtMillis = o.getLong("written"),
             )
@@ -48,7 +47,7 @@ class WidgetStore(private val store: KeyValueStore) {
             JSONObject()
                 .put("place", s.placeName).put("lat", s.latitude).put("lon", s.longitude).put("unit", s.unit.name)
                 .put("temp", s.tempC).put("high", s.highC).put("low", s.lowC).put("precip", s.precipChance)
-                .put("code", s.code).put("night", s.night).put("summary", s.summary).put("gemma", s.summaryByGemma)
+                .put("code", s.code).put("night", s.night).put("summary", s.summary)
                 .put("updated", s.updatedAt.toString()).put("written", s.writtenAtMillis)
                 .toString(),
         )

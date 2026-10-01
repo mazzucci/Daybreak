@@ -40,7 +40,6 @@ import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.SideEffect
 import android.app.Activity
-import app.daybreak.domain.CommuteEnd
 
 /** The bottom bar's sections. Home is where the app opens. */
 enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Clocks("Clocks"), Settings("Settings") }
@@ -72,30 +71,12 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     // Each tab keeps its own scroll and state while another is shown.
     val tabStates = rememberSaveableStateHolder()
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
-    // Set while the search screen is choosing a commute end rather than adding a page.
-    var searchingFor by rememberSaveable { mutableStateOf<CommuteEnd?>(null) }
-    // The commute end waiting on the location prompt's answer.
-    var locatingFor by rememberSaveable { mutableStateOf<CommuteEnd?>(null) }
     val pagerState = rememberPagerState { state.pages.size }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(), vm::onLocationPermissionResult,
     )
     val requestPermission = { permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
-    val commutePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        // A refusal still goes through, so the row says it couldn't get the location.
-        locatingFor?.let(vm::setCommutePlaceHere)
-        locatingFor = null
-        if (granted && state.settings.useCurrentLocation) vm.onLocationPermissionResult(true)
-    }
-    val commutePlaceHere = { end: CommuteEnd ->
-        if (vm.needsLocationPermission()) {
-            locatingFor = end
-            commutePermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
-        } else {
-            vm.setCommutePlaceHere(end)
-        }
-    }
     val enableCurrentLocation = {
         vm.setUseCurrentLocation(true)
         if (vm.needsLocationPermission()) requestPermission()
@@ -132,7 +113,6 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
         if (overlay != null) {
             vm.clearSearch()
             back()
-            searchingFor = null
         } else {
             tab = Tab.Home
         }
@@ -145,14 +125,9 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     when (overlay) {
         Overlay.Search -> SearchScreen(
             search = state.search,
-            savedIds = when {
-                addingClock -> clocks.map { it.id }.toSet()
-                searchingFor == null -> state.savedPlaces.map { it.id }.toSet()
-                else -> emptySet()
-            },
+            savedIds = if (addingClock) clocks.map { it.id }.toSet() else state.savedPlaces.map { it.id }.toSet(),
             onQueryChange = vm::onSearchQueryChange,
             onPick = { place ->
-                val end = searchingFor
                 if (addingClock) {
                     // A place without a time zone this phone knows can't be a clock: stay on the search.
                     if (app.daybreak.domain.Clock.of(place) != null) {
@@ -161,11 +136,6 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                         addingClock = false
                         overlay = null
                     }
-                } else if (end != null) {
-                    vm.setCommutePlace(end, place)
-                    vm.clearSearch()
-                    searchingFor = null
-                    overlay = null
                 } else {
                     scrollTo = vm.addPlace(place)
                     searchFromPlaces = false
@@ -176,9 +146,8 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
             onBack = {
                 vm.clearSearch()
                 back()
-                searchingFor = null
             },
-            title = if (addingClock) "Add a clock" else searchingFor?.let { "Your ${it.label.lowercase()}" } ?: "Add a place",
+            title = if (addingClock) "Add a clock" else "Add a place",
         )
         Overlay.Places -> PlacesScreen(
             places = state.savedPlaces,
@@ -236,10 +205,7 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                             onRemove = { clocksVm?.remove(it) },
                             onMove = { from, to -> clocksVm?.move(from, to) },
                         )
-                        Tab.Settings -> SettingsTab(state, vm, commutePlaceHere, modelPicker::launch) { end ->
-                            searchingFor = end
-                            overlay = Overlay.Search
-                        }
+                        Tab.Settings -> SettingsTab(state, vm, modelPicker::launch)
                     }
                 }
             }
@@ -251,9 +217,7 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
 private fun SettingsTab(
     state: WeatherUiState,
     vm: WeatherViewModel,
-    commutePlaceHere: (CommuteEnd) -> Unit,
     launchModelPicker: (Array<String>) -> Unit,
-    onCommutePlaceSearch: (CommuteEnd) -> Unit,
 ) {
     SettingsScreen(
             settings = state.settings,
@@ -265,13 +229,7 @@ private fun SettingsTab(
             onComingUpEnabledChange = vm::setComingUpEnabled,
             onAddPersonalDate = vm::addPersonalDate,
             onRemovePersonalDate = vm::removePersonalDate,
-            onToneChange = vm::setTone,
-            onAboutMeChange = vm::setAboutMe,
             onActivityChange = vm::setActivity,
-            onCommuteChange = vm::setCommute,
-            commuteLocating = state.commuteLocating,
-            onCommutePlaceHere = commutePlaceHere,
-            onCommutePlaceSearch = onCommutePlaceSearch,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,
             onImportModel = { launchModelPicker(arrayOf("*/*")) },

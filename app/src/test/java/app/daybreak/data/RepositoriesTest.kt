@@ -6,11 +6,9 @@ import app.daybreak.TestData.tokyo
 import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.Clock
-import app.daybreak.domain.CommuteSettings
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
-import app.daybreak.domain.Tone
 import app.daybreak.narration.Meme
 import app.daybreak.narration.MemeMood
 import app.daybreak.narration.NarrationSource
@@ -127,40 +125,16 @@ class SettingsRepositoryTest {
         assertNull(repo.get("geo:3", date, "SF", MemeMood.RAIN))
     }
 
-    @Test fun `the note is kept in the private store only`() {
-        val store = InMemoryStore()
-        val private = InMemoryStore()
-        SettingsRepository(store, privateStore = private).update { it.copy(aboutMe = "I cycle") }
-        assertNull(store.getString("about_me"))
-        assertEquals("I cycle", private.getString("about_me"))
-        assertEquals("I cycle", SettingsRepository(store, privateStore = private).settings.value.aboutMe)
-    }
-
-    @Test fun `commute times survive switching it off, and junk falls back to the default`() {
-        val store = InMemoryStore()
-        assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
-        SettingsRepository(store).update { it.copy(commute = CommuteSettings(7, 18, enabled = true)) }
-        assertEquals(CommuteSettings(7, 18, enabled = true), SettingsRepository(store).settings.value.commute)
-        SettingsRepository(store).update { it.copy(commute = it.commute.copy(enabled = false)) }
-        assertEquals(CommuteSettings(7, 18, enabled = false), SettingsRepository(store).settings.value.commute)
-        store.putString("commute", "on-25-99")
-        assertEquals(CommuteSettings(), SettingsRepository(store).settings.value.commute)
-    }
-
-    @Test fun `home and office are kept in the private store only, and can be removed`() {
-        val store = InMemoryStore()
-        val private = InMemoryStore()
-        val home = sanFrancisco.copy(id = Place.COMMUTE_HOME_ID)
-        val office = sanFrancisco.copy(id = Place.COMMUTE_OFFICE_ID, name = "Oakland", latitude = 37.8)
-        SettingsRepository(store, privateStore = private).update { it.copy(commute = CommuteSettings(7, 18, true, home, office)) }
-        assertNull(store.getString("commute_home"))
-        assertNull(store.getString("commute_office"))
-        assertEquals(CommuteSettings(7, 18, true, home, office), SettingsRepository(store, privateStore = private).settings.value.commute)
-        SettingsRepository(store, privateStore = private).update { it.copy(commute = it.commute.copy(office = null)) }
-        assertNull(private.getString("commute_office"))
-        assertEquals(CommuteSettings(7, 18, true, home, null), SettingsRepository(store, privateStore = private).settings.value.commute)
-        private.putString("commute_home", "{not json")
-        assertNull(SettingsRepository(store, privateStore = private).settings.value.commute.home)
+    @Test fun `settings of removed features are cleared once, and your dates are kept`() {
+        val store = InMemoryStore(mapOf("tone" to "PIRATE", "commute" to "on-8-17", "primary_unit" to "C"))
+        val trip = PersonalDate(LocalDate.of(2026, 10, 12), name = "Lisbon trip")
+        val private = InMemoryStore(mapOf("about_me" to "I cycle", "commute_home" to "{}", "commute_office" to "{}"))
+        SettingsRepository(InMemoryStore(), privateStore = private).update { it.copy(personalDates = listOf(trip)) }
+        val repo = SettingsRepository(store, privateStore = private)
+        listOf("tone", "commute").forEach { assertNull(it, store.getString(it)) }
+        listOf("about_me", "commute_home", "commute_office").forEach { assertNull(it, private.getString(it)) }
+        assertEquals(TempUnit.C, repo.settings.value.primaryUnit)
+        assertEquals(listOf(trip), repo.settings.value.personalDates)
     }
 
     @Test fun `your dates are kept in the private store, sorted, and a bad entry doesn't lose the rest`() {
@@ -186,16 +160,6 @@ class SettingsRepositoryTest {
         assertEquals(Activity.RUNNING, SettingsRepository(store).settings.value.activity)
         store.putString("activity", "SKIING")
         assertEquals(Activity.CYCLING, SettingsRepository(store).settings.value.activity)
-    }
-
-    @Test fun `voice and note are saved, and an unknown voice falls back`() {
-        val store = InMemoryStore()
-        SettingsRepository(store).update { it.copy(tone = Tone.PIRATE, aboutMe = "I cycle") }
-        val loaded = SettingsRepository(store).settings.value
-        assertEquals(Tone.PIRATE, loaded.tone)
-        assertEquals("I cycle", loaded.aboutMe)
-        store.putString("tone", "OPERA")
-        assertEquals(Tone.FRIENDLY, SettingsRepository(store).settings.value.tone)
     }
 
     @Test fun `clocks are saved in order, moved, removed, and a bad entry doesn't lose the rest`() {

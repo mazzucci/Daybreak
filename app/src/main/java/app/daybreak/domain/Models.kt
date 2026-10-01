@@ -16,7 +16,6 @@ const val WEEK_DAYS = 7
 /**
  * A place the app can show weather for: either a saved search result or the device's current location.
  * [id] doubles as the page key: saved places are "geo:<geocoding id>", the device location is [CURRENT_LOCATION_ID].
- * The commute's home and office are [COMMUTE_HOME_ID] and [COMMUTE_OFFICE_ID] (they're never pages).
  */
 data class Place(
     val id: String,
@@ -36,8 +35,6 @@ data class Place(
     companion object {
         const val CURRENT_LOCATION_ID = "current"
         const val GEOCODING_PREFIX = "geo:"
-        const val COMMUTE_HOME_ID = "commute:home"
-        const val COMMUTE_OFFICE_ID = "commute:office"
 
         fun geocodingId(id: Long): String = "$GEOCODING_PREFIX$id"
     }
@@ -155,42 +152,15 @@ data class HourForecast(
 
 enum class TempUnit { F, C }
 
-/**
- * The summary's voice. The standard summary gets a light touch (a greeting or a sign-off without numbers);
- * Gemma writes the whole line in this voice.
- */
-enum class Tone(val label: String) {
-    FRIENDLY("Friendly"),
-    BRIEF("Brief"),
-    CHEERFUL("Cheerful"),
-    DEADPAN("Deadpan"),
-    PIRATE("Pirate"),
-}
-
-/** Longest "About me" note; it goes into Gemma's prompt, which has a small token budget. */
-const val ABOUT_ME_MAX_CHARS = 160
-
-/** The note trimmed and capped at [ABOUT_ME_MAX_CHARS] without splitting an emoji (a surrogate pair) in two. */
-fun capAboutMe(text: String): String {
-    val capped = text.trim().take(ABOUT_ME_MAX_CHARS)
-    return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
-}
-
 data class AppSettings(
     /** The unit shown large; the other one is shown small next to it. */
     val primaryUnit: TempUnit = TempUnit.F,
     /** Whether the device location gets its own page (first) in the pager. */
     val useCurrentLocation: Boolean = true,
-    /** Whether to try the on-device Gemma model for the summary line (needs an imported model). */
+    /** Whether the on-device Gemma model writes the daily meme (needs an installed model). */
     val gemmaEnabled: Boolean = true,
-    /** Voice of the summary line. */
-    val tone: Tone = Tone.FRIENDLY,
-    /** Optional note about the user ("I cycle to work"), used by Gemma to pick what to mention. Stays on the phone. */
-    val aboutMe: String = "",
     /** The activity to find good weather windows for; null hides the card. */
     val activity: Activity? = Activity.CYCLING,
-    /** Weekday commute times for the "office or home" card (off unless [CommuteSettings.enabled]). */
-    val commute: CommuteSettings = CommuteSettings(),
     /** Whether pages show upcoming public holidays, long weekends and the next season. */
     val comingUpEnabled: Boolean = true,
     /** The user's own dates (birthdays, presentations, days off), soonest first, counted down to on the first page. */

@@ -8,5 +8,5 @@
     <string name="widget_preview_temperature">68°F</string>
     <string name="widget_preview_temperature_other">20°C</string>
     <string name="widget_preview_details">High 72° · Low 55° · Rain 10%</string>
-    <string name="widget_preview_summary">A mild, partly cloudy afternoon with a light breeze off the bay; clearing this evening.</string>
+    <string name="widget_preview_summary">68° and partly cloudy now, with a high of 72° and a low of 55°. No rain expected.</string>
 </resources>

@@ -207,7 +207,7 @@ class MemeValidator(private val maxChars: Int = 48) {
     }
 }
 
-/** Free-form generation by the on-device model, for features beyond the summary line. */
+/** Free-form generation by the on-device model. */
 fun interface TextGenerator {
     /** [temperature] 0 = literal, 1 = playful; [seed] makes the sampling repeatable. May throw. */
     suspend fun generate(prompt: String, temperature: Float, seed: Int): String
@@ -220,7 +220,7 @@ fun interface TextGenerator {
 class MemeWriter(
     private val generator: TextGenerator? = null,
     private val validator: MemeValidator = MemeValidator(),
-) {
+) : AutoCloseable {
     val canUseModel: Boolean get() = generator != null
 
     fun template(input: NarrationInput, placeKey: String): Meme =
@@ -240,4 +240,9 @@ class MemeWriter(
         val (top, bottom) = validator.parse(raw) ?: return null
         return Meme(top, bottom, mood, NarrationSource.GEMMA)
     }
+
+    /** Frees the model's memory now, e.g. after its file was removed; it reloads on the next meme. */
+    fun releaseResources() = (generator as? GemmaNarrator)?.releaseEngine() ?: Unit
+
+    override fun close() = (generator as? AutoCloseable)?.close() ?: Unit
 }

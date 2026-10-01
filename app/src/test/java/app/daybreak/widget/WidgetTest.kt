@@ -7,7 +7,6 @@ import androidx.glance.testing.unit.hasText
 import app.daybreak.TestData
 import app.daybreak.data.InMemoryStore
 import app.daybreak.data.WidgetStore
-import app.daybreak.domain.GEMMA_KEEP_MILLIS
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.refreshedSnapshot
 import app.daybreak.domain.widgetSnapshotOf
@@ -19,7 +18,7 @@ import org.junit.Test
 
 class WidgetTest {
     private val snapshot = widgetSnapshotOf(
-        TestData.sanFrancisco, TestData.forecast(), TempUnit.F, "A mild afternoon.", summaryByGemma = true, nowMillis = 1_000,
+        TestData.sanFrancisco, TestData.forecast(), TempUnit.F, "A mild afternoon.", nowMillis = 1_000,
     )
 
     @Test fun `snapshot carries what the widget shows`() {
@@ -52,20 +51,16 @@ class WidgetTest {
         assertNull(store.load())
     }
 
-    @Test fun `a background refresh keeps a recent Gemma line, then swaps in the template`() {
-        val newer = TestData.rainyNight()
-        val soon = refreshedSnapshot(snapshot, newer, "Template.", nowMillis = 1_000 + GEMMA_KEEP_MILLIS - 1)
-        assertEquals("A mild afternoon.", soon.summary)
-        assertTrue(soon.summaryByGemma)
-        assertEquals(9.8, soon.tempC, 0.001) // numbers always refresh
-        assertTrue(soon.night)
-        val later = refreshedSnapshot(snapshot, newer, "Template.", nowMillis = 1_000 + GEMMA_KEEP_MILLIS)
-        assertEquals("Template.", later.summary)
-        assertFalse(later.summaryByGemma)
-        assertEquals(1_000 + GEMMA_KEEP_MILLIS, later.writtenAtMillis)
+    @Test fun `a background refresh brings new numbers and summary for the same place`() {
+        val refreshed = refreshedSnapshot(snapshot, TestData.rainyNight(), "Template.", nowMillis = 5_000)
+        assertEquals("Template.", refreshed.summary)
+        assertEquals(9.8, refreshed.tempC, 0.001)
+        assertTrue(refreshed.night)
+        assertEquals(5_000, refreshed.writtenAtMillis)
+        assertEquals(snapshot.placeName, refreshed.placeName)
     }
 
-    @Test fun `4x2 shows place, both units, today's numbers, summary and Gemma`() = runGlanceAppWidgetUnitTest {
+    @Test fun `4x2 shows place, both units, today's numbers and the summary`() = runGlanceAppWidgetUnitTest {
         setAppWidgetSize(WidgetSize.Full)
         provideComposable { WidgetContent(snapshot, icon = null) }
         onNode(hasText("San Francisco")).assertExists()
@@ -73,15 +68,8 @@ class WidgetTest {
         onNode(hasText("21°C")).assertExists()
         onNode(hasText("A mild afternoon.")).assertExists()
         onNode(hasText("High 74° · Low 56° · Rain 60%")).assertExists()
-        onNode(hasText("✦ Gemma")).assertExists()
-        onNode(hasText("Updated")).assertDoesNotExist()
-    }
-
-    @Test fun `a template summary has no Gemma label`() = runGlanceAppWidgetUnitTest {
-        setAppWidgetSize(WidgetSize.Full)
-        provideComposable { WidgetContent(snapshot.copy(summaryByGemma = false), icon = null) }
-        onNode(hasText("A mild afternoon.")).assertExists()
         onNode(hasText("Gemma")).assertDoesNotExist()
+        onNode(hasText("Updated")).assertDoesNotExist()
     }
 
     @Test fun `4x1 drops the summary but keeps the place and numbers`() = runGlanceAppWidgetUnitTest {
@@ -116,7 +104,7 @@ class WidgetTest {
         provideComposable { WidgetContent(snapshot, icon = null) }
         onNode(hasContentDescription("San Francisco, 71°F (21°C), Partly cloudy. High 74°, low 56°, 60% chance of rain. A mild afternoon."))
             .assertExists()
-        onNode(hasContentDescription("Summary written by Gemma.")).assertExists()
+        onNode(hasContentDescription("Gemma")).assertDoesNotExist()
         onNode(hasClickAction()).assertExists()
     }
 

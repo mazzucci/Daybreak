@@ -1,8 +1,8 @@
 # Daybreak
 
-A personal Android app for the start of your day: the weather for where you are and the places you save (in both °F and °C), your commute, holidays and your own dates, and a few fun things, with an optional on-device Gemma model writing the words. (It began as a weather app; the tabs Home · Weather · Clocks · Settings are on the way, see [docs/design/shell.md](docs/design/shell.md).)
+A personal Android app for the start of your day: the weather for where you are and the places you save (in both °F and °C), holidays and your own dates, and a few fun things, with an optional on-device Gemma model writing the daily meme. (It began as a weather app; the tabs Home · Weather · Clocks · Settings are on the way, see [docs/design/shell.md](docs/design/shell.md).)
 
-> **Coming from the old "Weather" app?** Daybreak has a new application id (`app.daybreak`), so it installs as a separate app and starts empty: add your places again, import or download the Gemma model again, and re-add your dates and commute. Then uninstall the old Weather app (its widget and background refresh go with it).
+> **Coming from the old "Weather" app?** Daybreak has a new application id (`app.daybreak`), so it installs as a separate app and starts empty: add your places again, import or download the Gemma model again, and re-add your dates. Then uninstall the old Weather app (its widget and background refresh go with it).
 
 - Tonight's sky (on Home): the moon drawn as it is tonight with its phase and how much is lit, the next full moon by its old name (the Harvest Moon, the Hunter's Moon…), the next meteor shower when one peaks within two weeks (and whether a bright moon will wash it out), and whether the forecast says it's clear enough to look up. All worked out on the phone. Turn it off in Settings → Fun
 - Clocks: the places you call or work with, each with its time, whether it's today or tomorrow there, how far ahead or behind you it is and its UTC offset, following daylight saving. A converter shows one moment in every clock ("At 12:00 PM today in Los Angeles it's 10:00 PM in Bucharest"). Places come from the same search as Weather, which gives each one's time zone
@@ -12,13 +12,11 @@ A personal Android app for the start of your day: the weather for where you are 
 - Today's sunrise, sunset, UV index and wind gusts, plus a 7-day list with each day's range on a shared scale
 - Temperatures in both units: the primary one large, the other small alongside or underneath (current, feels-like, hourly strip and 7-day list); screen readers hear both
 - "Best time to ride" (or run, or walk): each of the next 24 hours is scored for rain, wind and gusts, temperature and daylight, and the page shows the best window with a bar per hour, or what's in the way
-- "Office or home?": set your weekday travel times and the first page tells you whether it's an office day, an office day with a catch ("Rain possible on the way home · 35% at 5 PM", or "take lights" in winter) or a day to work from home, judged for your chosen activity. Weekends and public holidays are skipped. Set your home (where you are now, or by searching for a town) so the check stays put when you travel, and your office too if it's farther away: each trip is then judged at both ends ("Rain likely leaving the office · 75% at 5 PM"). Home and office stay on the phone and aren't backed up
 - Tap a tile (Feels like, Humidity, Wind, UV index, Sunrise/Sunset) or the Rain pill for a plain-language explanation of the term and of today's value ("Colder than the air: the 19 mph wind carries heat away from your skin")
-- A home-screen widget (4×2 by default, resizable down to 2×1) with the first page's place, the temperature in both units, today's high, low and rain chance, and the summary line on the same sky colour as the app; smaller sizes keep the icon and temperature and drop the rest. It mirrors the app whenever you open it (including Gemma's summary) and refreshes the numbers every couple of hours in the background with the template summary. Gemma never runs in the background, and location isn't read there either: the widget keeps the place the app last showed. Its cache (with that location) is excluded from backup
-- Pick the summary's voice (Friendly, Brief, Cheerful, Deadpan, Pirate) and optionally tell it a little about yourself ("I cycle to work"), which Gemma uses to choose what to mention. The note never leaves the phone
-- "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the week. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; it sees your IP address and each place's country, and nothing else) and are cached for a month. Only nationwide holidays are shown, so countries whose holidays are mostly regional (the UK, for example) show fewer. Add your own dates there too (a birthday that comes round every year, a big presentation, a week off): the next few count down on the first page alongside the holidays, a day off says what kind of break it makes ("Makes a 4-day weekend"), and the commute check skips days off. They stay on the phone and aren't backed up. Turn it all off in Settings → Coming up
+- A home-screen widget (4×2 by default, resizable down to 2×1) with the first page's place, the temperature in both units, today's high, low and rain chance, and the summary line on the same sky colour as the app; smaller sizes keep the icon and temperature and drop the rest. It mirrors the app whenever you open it and refreshes the numbers and summary every couple of hours in the background. Location isn't read there: the widget keeps the place the app last showed. Its cache (with that location) is excluded from backup
+- "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the week. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; it sees your IP address and each place's country, and nothing else) and are cached for a month. Only nationwide holidays are shown, so countries whose holidays are mostly regional (the UK, for example) show fewer. Add your own dates there too (a birthday that comes round every year, a big presentation, a week off): the next few count down on the first page alongside the holidays, and a day off says what kind of break it makes ("Makes a 4-day weekend"). They stay on the phone and aren't backed up. Turn it all off in Settings → Coming up
 - A daily weather meme per place, made entirely on the phone (no network): a hand-written caption for the day's mood, or a fresh one from Gemma once it's set up. Turn it off in Settings
-- Optional on-device AI summary written by [Gemma](https://ai.google.dev/gemma), run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
+- Optional on-device [Gemma](https://ai.google.dev/gemma) model for the meme's caption, run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
 - Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 8 days of hourly and daily data per place, including wind, gusts, sun times and UV
 - Uses Android's built-in location service (no Google Play Services required)
 - Kotlin + Jetpack Compose, min Android 8.0 (API 26)
@@ -27,9 +25,9 @@ A personal Android app for the start of your day: the weather for where you are 
 
 The backdrop follows the conditions and the time of day at each place (clear, cloudy, rain, snow, storm; day or night, from each place's real sunrise and sunset), and the app has its own light and dark palettes.
 
-| Weather | Dark | Gemma summary | Rainy night |
+| Weather | Dark | Home | Rainy night |
 |:---:|:---:|:---:|:---:|
-| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherLight_weather_light.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherDark_weather_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherGemma_weather_gemma.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherRainyNight_weather_rainy_night.png" width="200"> |
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherLight_weather_light.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherDark_weather_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_homeFull_home_full.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherRainyNight_weather_rainy_night.png" width="200"> |
 
 | First run | Loading | Permission | Error |
 |:---:|:---:|:---:|:---:|
@@ -55,11 +53,11 @@ These are rendered from the app's real UI code with sample data using [Paparazzi
 
 `./gradlew verifyPaparazziDebug` fails if the UI no longer matches them.
 
-## On-device Gemma summary
+## On-device Gemma meme
 
-The summary line always starts as a built-in template ("71° and partly cloudy now, with a high of 74°…"). Once a Gemma model is installed, the app also asks Gemma to describe the forecast and shows its text instead, marked "Written by Gemma on this device".
+The summary line at the top of each page is a built-in template ("71° and partly cloudy now, with a high of 74°…"). Gemma doesn't write it; it writes the caption of the daily weather meme on Home. Without Gemma, a hand-written caption is used.
 
-To set it up, go to **Settings → AI summary** and follow the three steps on screen:
+To set it up, go to **Settings → Gemma** and follow the three steps on screen:
 
 1. Open the model page, [litert-community/Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT), and accept the Gemma license (free Hugging Face account).
 2. Create a Hugging Face access token with read permission and paste it into the app. The token is only used once, to start the download; it isn't stored.
@@ -69,11 +67,10 @@ If you already have `gemma3-1b-it-int4.task` on the phone, **Import file…** co
 
 How it works:
 
-- The model runs on the CPU through MediaPipe LLM Inference (`com.google.mediapipe:tasks-genai`), with low temperature and a 30-second timeout. It's loaded on first use and kept in memory while the app runs.
-- The prompt is a short instruction plus the forecast as JSON, in your preferred unit ([`GemmaPrompt`](app/src/main/java/app/daybreak/narration/GemmaPrompt.kt)).
-- Gemma's reply is checked before it's shown ([`NarrationValidator`](app/src/main/java/app/daybreak/narration/NarrationValidator.kt)). Every temperature, percentage and other number must match the forecast data, and the reply must be short plain text: at most 2 sentences (160 characters for the Brief voice), or up to 4 with a greeting and sign-off for the playful voices. If the check fails, or the model is missing, slow or errors out, the template summary stays.
-- The same engine writes the daily meme ([`Meme.kt`](app/src/main/java/app/daybreak/narration/Meme.kt)), with a playful temperature and a per-day seed. Its prompt describes the day in words only, and [`MemeValidator`](app/src/main/java/app/daybreak/narration/Meme.kt) accepts only a two-line `TOP:`/`BOTTOM:` caption with no digits, emoji or rude words. Gemma gets one try per place, day and mood; the result, or the hand-written template if it's rejected, is cached (`MemeRepository`) so the meme stays the same all day. Gemma's memes need both **Daily weather meme** and **Describe the weather with Gemma** switched on.
-- Expect a few seconds per summary on recent phones and longer on older ones. MediaPipe's native library makes the APK bigger, so it's built only for 64-bit ARM (phones) and x86_64 (emulators). It needs a 64-bit device.
+- The model runs on the CPU through MediaPipe LLM Inference (`com.google.mediapipe:tasks-genai`), with a 30-second timeout. It's loaded on first use and released after a few idle minutes.
+- The prompt ([`Meme.kt`](app/src/main/java/app/daybreak/narration/Meme.kt)) describes the day in words only, and is sampled with a playful temperature and a per-day seed. [`MemeValidator`](app/src/main/java/app/daybreak/narration/Meme.kt) accepts only a two-line `TOP:`/`BOTTOM:` caption with no digits, emoji or rude words; the meme is marked "Written by Gemma on this device".
+- Gemma gets one try per place, day and mood; the result, or the hand-written caption if it's rejected or the model is missing, slow or errors out, is cached (`MemeRepository`) so the meme stays the same all day. Gemma's memes need both **Daily weather meme** and **Use Gemma for the meme** switched on.
+- Expect a few seconds per caption on recent phones and longer on older ones. MediaPipe's native library makes the APK bigger, so it's built only for 64-bit ARM (phones) and x86_64 (emulators). It needs a 64-bit device.
 
 ## Code layout
 
@@ -84,8 +81,8 @@ app/src/main/java/app/daybreak/
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
               saved places, settings and daily meme repositories (SharedPreferences), device location,
               Nager.Date holiday API + HolidayRepository (cached per country and year)
-  narration/  WeatherNarrator: TemplateNarrator, GemmaNarrator (MediaPipe), GemmaPrompt,
-              NarrationValidator, ValidatingNarrator, GemmaModelStore (model download + import),
+  narration/  TemplateNarrator (the summary line), GemmaNarrator (MediaPipe),
+              GemmaModelStore (model download + import),
               Meme (mood, template captions, prompt, validator, MemeWriter)
   ui/         WeatherViewModel (StateFlow), stateless screens, WeatherApp (navigation, pickers),
               Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs),
@@ -103,7 +100,7 @@ Requires JDK 17 and the Android SDK (`ANDROID_HOME` or `local.properties` pointi
 
 [GitHub Actions](.github/workflows/ci.yml) runs the same command on every pull request and push to `main`, and uploads the test reports and screenshot diffs if a test or screenshot check fails.
 
-The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the template narrator, LLM output validation, the repositories and the ViewModel (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
+The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the template narrator, meme caption validation, the repositories and the ViewModel (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
 
 ## License
 

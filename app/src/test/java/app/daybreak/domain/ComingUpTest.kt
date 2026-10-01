@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.DayOfWeek
 import java.time.LocalDate
 
 class ComingUpTest {
@@ -182,8 +183,15 @@ class ComingUpTest {
         assertEquals("2 days in a row", upcomingPersonalDates(wed, listOf(PersonalDate(LocalDate.of(2026, 10, 6), dayOff = true)), setOf(holiday)).single().note)
     }
 
-    @Test fun `yesterday's day off still counts, for a night shift's trip home`() {
+    @Test fun `yesterday's day off is still among the days off`() {
         val today = LocalDate.of(2026, 9, 30)
         assertTrue(today.minusDays(1) in dayOffDates(listOf(PersonalDate(today.minusDays(1), dayOff = true)), today))
+    }
+
+    @Test fun `the weekend follows the country`() {
+        assertEquals(setOf(DayOfWeek.FRIDAY, DayOfWeek.SATURDAY), weekendDays("SA"))
+        assertEquals(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), weekendDays("GB"))
+        assertEquals(setOf(DayOfWeek.FRIDAY), weekendDays("af"))
+        assertEquals(setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY), weekendDays(null))
     }
 }

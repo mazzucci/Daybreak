@@ -10,20 +10,15 @@ import app.daybreak.data.SavedPlacesRepository
 import app.daybreak.data.SettingsRepository
 import app.daybreak.data.WeatherApi
 import app.daybreak.domain.AppSettings
-import app.daybreak.domain.CommuteEnd
-import app.daybreak.domain.CommuteSettings
 import app.daybreak.domain.PersonalDate
-import app.daybreak.narration.NarrationInput
-import app.daybreak.domain.ABOUT_ME_MAX_CHARS
-import app.daybreak.domain.Tone
 import app.daybreak.domain.Forecast
 import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
 import app.daybreak.narration.LocalModelManager
 import app.daybreak.narration.ModelStatus
+import app.daybreak.narration.NarrationInput
 import app.daybreak.narration.NarrationSource
 import app.daybreak.narration.TemplateNarrator
-import app.daybreak.narration.ValidatingNarrator
 import app.daybreak.narration.MemeWriter
 import app.daybreak.data.MemeRepository
 import app.daybreak.domain.WidgetSnapshot
@@ -101,13 +96,6 @@ class WeatherViewModelTest {
     private val location = FakeLocation()
     private val store = InMemoryStore()
     private val places = SavedPlacesRepository(store)
-    private var gemmaReply = "71° and cloudy, with rain by 6 PM."
-    private val gemmaPlaces = mutableListOf<String>()
-    private var lastGemmaInput: NarrationInput? = null
-    private val llm = ValidatingNarrator(
-        { input -> gemmaPlaces += input.placeName; lastGemmaInput = input; gemmaReply },
-        TemplateNarrator(Locale.US),
-    )
 
     private val fakeHolidays = object : HolidayApi {
         override suspend fun publicHolidays(year: Int, countryCode: String) =
@@ -131,7 +119,7 @@ class WeatherViewModelTest {
     ): WeatherViewModel {
         val repo = SettingsRepository(store, settings)
         return WeatherViewModel(
-            api, places, repo, location, model, llm, TemplateNarrator(Locale.US),
+            api, places, repo, location, model, TemplateNarrator(Locale.US),
             memeWriter = memeWriter, memes = MemeRepository(store),
             holidays = HolidayRepository(fakeHolidays, store),
             widget = object : WidgetPublisher {
@@ -208,30 +196,13 @@ class WeatherViewModelTest {
         assertTrue(vm.content(london.id) is PageContent.Loaded)
     }
 
-    @Test fun `summary uses the template when no model is installed`() = runTest(dispatcher) {
-        places.add(london)
-        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = false)
-        val summary = (vm.content(london.id) as PageContent.Loaded).summary
-        assertEquals(NarrationSource.TEMPLATE, summary.source)
-        assertTrue(summary.text.startsWith("71° and partly cloudy now"))
-    }
-
-    @Test fun `summary uses Gemma when installed, enabled and valid`() = runTest(dispatcher) {
+    @Test fun `the summary is the template, with or without Gemma`() = runTest(dispatcher) {
         places.add(london)
         val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
         val summary = (vm.content(london.id) as PageContent.Loaded).summary
-        assertEquals(NarrationSource.GEMMA, summary.source)
-        assertEquals("71° and cloudy, with rain by 6 PM.", summary.text)
-    }
-
-    @Test fun `summary keeps the template when Gemma is disabled or invents numbers`() = runTest(dispatcher) {
-        places.add(london)
-        val disabled = viewModel(AppSettings(useCurrentLocation = false, gemmaEnabled = false), modelInstalled = true)
-        assertEquals(NarrationSource.TEMPLATE, (disabled.content(london.id) as PageContent.Loaded).summary.source)
-
-        gemmaReply = "A balmy 88° all afternoon."
-        val invented = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
-        assertEquals(NarrationSource.TEMPLATE, (invented.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(TemplateNarrator(Locale.US).describe(NarrationInput(london.name, TestData.forecast(), TempUnit.F)), summary)
+        assertTrue(summary, summary.startsWith("71° and partly cloudy now"))
+        assertEquals(1, memeCalls) // Gemma is only asked for the meme
     }
 
     @Test fun `changing the unit rewrites the summary`() = runTest(dispatcher) {
@@ -242,35 +213,38 @@ class WeatherViewModelTest {
         advanceUntilIdle()
         assertEquals("no network needed to rewrite summaries", calls, api.forecastCalls)
         val summary = (vm.content(london.id) as PageContent.Loaded).summary
-        assertTrue(summary.text, summary.text.startsWith("21° and partly cloudy now"))
+        assertTrue(summary, summary.startsWith("21° and partly cloudy now"))
         assertEquals(TempUnit.C, vm.uiState.value.settings.primaryUnit)
     }
 
-    @Test fun `turning Gemma off rewrites summaries from the cached forecast`() = runTest(dispatcher) {
+    @Test fun `switching Gemma on gives it its try at the meme without refetching, and off keeps the meme`() = runTest(dispatcher) {
         places.add(london)
-        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
-        assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        val vm = viewModel(AppSettings(useCurrentLocation = false, gemmaEnabled = false), modelInstalled = true)
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(london.id)?.source)
+        assertEquals(0, memeCalls)
         val calls = api.forecastCalls
 
+        vm.setGemmaEnabled(true)
+        advanceUntilIdle()
+        assertEquals(NarrationSource.GEMMA, vm.meme(london.id)?.source)
         vm.setGemmaEnabled(false)
         advanceUntilIdle()
-        assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(NarrationSource.GEMMA, vm.meme(london.id)?.source)
+        assertEquals(1, memeCalls)
         assertEquals(calls, api.forecastCalls)
     }
 
-    @Test fun `hidden current-location page is dropped and not re-narrated`() = runTest(dispatcher) {
+    @Test fun `a hidden current-location page is dropped and the rest are rewritten`() = runTest(dispatcher) {
         places.add(london)
-        val vm = viewModel(modelInstalled = true)
-        assertTrue(here.name in gemmaPlaces)
-
+        val vm = viewModel()
         vm.setUseCurrentLocation(false)
         advanceUntilIdle()
         assertEquals(listOf(london.id), vm.pages.map { it.key })
-        gemmaPlaces.clear()
 
         vm.setPrimaryUnit(TempUnit.C)
         advanceUntilIdle()
-        assertEquals(listOf("London"), gemmaPlaces)
+        assertEquals(listOf(london.id), vm.pages.map { it.key })
+        assertTrue((vm.content(london.id) as PageContent.Loaded).summary.startsWith("21°"))
     }
 
     @Test fun `location permission is answered by the provider`() = runTest(dispatcher) {
@@ -336,22 +310,23 @@ class WeatherViewModelTest {
         assertEquals(listOf(tokyo.id, london.id), vm.pages.map { it.key })
     }
 
-    @Test fun `importing a model switches summaries to Gemma`() = runTest(dispatcher) {
+    @Test fun `importing a model gives Gemma its try at the meme, and removing it keeps the meme`() = runTest(dispatcher) {
         places.add(london)
         val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = false)
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(london.id)?.source)
         val calls = api.forecastCalls
         vm.importModel("content://picked/gemma3-1b-it-int4.task")
         advanceUntilIdle()
         assertTrue(vm.uiState.value.modelStatus is ModelStatus.Installed)
-        assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(NarrationSource.GEMMA, vm.meme(london.id)?.source)
 
         vm.removeModel()
         advanceUntilIdle()
-        assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(NarrationSource.GEMMA, vm.meme(london.id)?.source)
         assertEquals(calls, api.forecastCalls)
     }
 
-    @Test fun `a finished download switches summaries to Gemma without a manual refresh`() = runTest(dispatcher) {
+    @Test fun `a finished download brings Gemma's meme without a manual refresh`() = runTest(dispatcher) {
         places.add(london)
         val model = FakeModel(installed = false)
         val vm = viewModel(AppSettings(useCurrentLocation = false), model = model)
@@ -360,38 +335,11 @@ class WeatherViewModelTest {
         advanceUntilIdle()
         assertEquals("hf_token", model.lastToken)
         assertTrue(vm.uiState.value.modelStatus is ModelStatus.Downloading)
-        assertEquals(NarrationSource.TEMPLATE, (vm.content(london.id) as PageContent.Loaded).summary.source)
+        assertEquals(NarrationSource.TEMPLATE, vm.meme(london.id)?.source)
 
         model.status.value = ModelStatus.Installed(500L shl 20) // DownloadManager reports completion later
         advanceUntilIdle()
-        assertEquals(NarrationSource.GEMMA, (vm.content(london.id) as PageContent.Loaded).summary.source)
-    }
-
-    @Test fun `changing the voice rewrites summaries without refetching`() = runTest(dispatcher) {
-        places.add(sanFrancisco)
-        val vm = viewModel(AppSettings(useCurrentLocation = false))
-        val fetches = api.forecastCalls
-        vm.setTone(Tone.PIRATE)
-        advanceUntilIdle()
-        val summary = (vm.content(sanFrancisco.id) as PageContent.Loaded).summary.text
-        assertTrue(summary, summary.startsWith("Ahoy"))
-        assertEquals(fetches, api.forecastCalls)
-    }
-
-    @Test fun `the note about me reaches Gemma, trimmed and capped`() = runTest(dispatcher) {
-        places.add(sanFrancisco)
-        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
-        val calls = gemmaPlaces.size
-        vm.setAboutMe("  I cycle to work  ")
-        advanceUntilIdle()
-        assertEquals("I cycle to work", lastGemmaInput?.aboutMe)
-        assertEquals(calls + 1, gemmaPlaces.size)
-        vm.setAboutMe("I cycle to work") // unchanged: nothing to redo
-        advanceUntilIdle()
-        assertEquals(calls + 1, gemmaPlaces.size)
-        vm.setAboutMe("x".repeat(400))
-        advanceUntilIdle()
-        assertEquals(ABOUT_ME_MAX_CHARS, vm.uiState.value.settings.aboutMe.length)
+        assertEquals(NarrationSource.GEMMA, vm.meme(london.id)?.source)
     }
 
     @Test fun `pages count down to the country's next holiday and season, and the switch hides them`() = runTest(dispatcher) {
@@ -405,93 +353,6 @@ class WeatherViewModelTest {
         vm.setComingUpEnabled(true)
         advanceUntilIdle()
         assertEquals(2, (vm.content(sanFrancisco.id) as PageContent.Loaded).comingUp.size)
-    }
-
-    @Test fun `with a home set, the commute gets home's and the office's forecasts and home's holidays`() = runTest(dispatcher) {
-        val homeForecast = TestData.forecast().let { it.copy(current = it.current.copy(tempC = 1.0)) }
-        val officeForecast = TestData.forecast().let { it.copy(current = it.current.copy(tempC = 2.0)) }
-        api.forecasts[sanFrancisco.latitude] = homeForecast
-        api.forecasts[london.latitude] = officeForecast
-        val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true, home = sanFrancisco)))
-        assertEquals(homeForecast, vm.uiState.value.commute?.homeForecast)
-        assertNull(vm.uiState.value.commute?.officeForecast)
-        assertEquals(setOf(LocalDate.of(2026, 11, 11), LocalDate.of(2027, 11, 11)), vm.uiState.value.commute?.holidays)
-
-        vm.setCommutePlace(CommuteEnd.OFFICE, london)
-        advanceUntilIdle()
-        val commute = vm.uiState.value.commute!!
-        assertEquals(Place.COMMUTE_OFFICE_ID, commute.office?.id)
-        assertEquals(officeForecast, commute.officeForecast)
-        assertEquals(london.copy(id = Place.COMMUTE_OFFICE_ID), vm.uiState.value.settings.commute.office)
-
-        // New times need nothing new; switching off drops the forecasts.
-        val calls = api.forecastCalls
-        vm.setCommute(vm.uiState.value.settings.commute.copy(leaveHour = 7))
-        advanceUntilIdle()
-        assertEquals(calls, api.forecastCalls)
-        vm.setCommute(vm.uiState.value.settings.commute.copy(enabled = false))
-        advanceUntilIdle()
-        assertNull(vm.uiState.value.commute)
-    }
-
-    @Test fun `a failed refresh keeps the commute's forecasts`() = runTest(dispatcher) {
-        val vm = viewModel(AppSettings(useCurrentLocation = false, commute = CommuteSettings(enabled = true, home = sanFrancisco)))
-        val before = vm.uiState.value.commute
-        assertTrue(before != null)
-        api.failing = true
-        vm.refresh("anything")
-        advanceUntilIdle()
-        assertEquals(before, vm.uiState.value.commute)
-    }
-
-    @Test fun `home's forecast failing lets the card fall back, and a failed office refresh keeps the office's`() = runTest(dispatcher) {
-        api.failingAt += sanFrancisco.latitude
-        val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true, home = sanFrancisco)))
-        assertNull(vm.uiState.value.commute)
-        assertTrue(vm.uiState.value.commuteUnavailable)
-
-        api.failingAt.clear()
-        vm.setCommutePlace(CommuteEnd.OFFICE, london)
-        advanceUntilIdle()
-        assertFalse(vm.uiState.value.commuteUnavailable)
-        val officeForecast = vm.uiState.value.commute?.officeForecast
-        assertTrue(officeForecast != null)
-        api.failingAt += london.latitude
-        vm.refresh(WeatherViewModel.CURRENT)
-        advanceUntilIdle()
-        assertEquals(officeForecast, vm.uiState.value.commute?.officeForecast)
-    }
-
-    @Test fun `a lookup error goes once anything else changes`() = runTest(dispatcher) {
-        location.place = null
-        val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true)))
-        vm.setCommutePlaceHere(CommuteEnd.HOME)
-        advanceUntilIdle()
-        assertTrue(vm.uiState.value.commuteLocating?.error != null)
-        vm.setCommute(vm.uiState.value.settings.commute.copy(leaveHour = 7))
-        advanceUntilIdle()
-        assertNull(vm.uiState.value.commuteLocating)
-    }
-
-    @Test fun `use where I am now sets the end from the device location`() = runTest(dispatcher) {
-        val vm = viewModel(AppSettings(commute = CommuteSettings(enabled = true)))
-        assertNull(vm.uiState.value.commute) // no home yet: the card uses the first page
-        vm.setCommutePlaceHere(CommuteEnd.HOME)
-        advanceUntilIdle()
-        assertNull(vm.uiState.value.commuteLocating)
-        assertEquals(here.copy(id = Place.COMMUTE_HOME_ID), vm.uiState.value.settings.commute.home)
-        assertTrue(vm.uiState.value.commute != null)
-
-        location.place = null
-        vm.setCommutePlaceHere(CommuteEnd.OFFICE)
-        advanceUntilIdle()
-        assertEquals(CommuteLocating(CommuteEnd.OFFICE, "Couldn't get your location. Is location turned on?"), vm.uiState.value.commuteLocating)
-        assertNull(vm.uiState.value.settings.commute.office)
-
-        location.granted = false
-        vm.setCommutePlaceHere(CommuteEnd.OFFICE)
-        runCurrent()
-        assertEquals(CommuteLocating(CommuteEnd.OFFICE, "Location access is off for this app."), vm.uiState.value.commuteLocating)
     }
 
     @Test fun `adding a date keeps them sorted and drops one-off dates that are over`() = runTest(dispatcher) {
@@ -515,13 +376,12 @@ class WeatherViewModelTest {
         assertNull(vm.meme(london.id))
     }
 
-    @Test fun `the widget mirrors the first loaded page, and Gemma's summary when it lands`() = runTest(dispatcher) {
+    @Test fun `the widget mirrors the first loaded page and its summary`() = runTest(dispatcher) {
         places.add(sanFrancisco); places.add(london)
-        viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
+        val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
         val last = published.last()
         assertEquals("San Francisco", last.placeName)
-        assertEquals(gemmaReply, last.summary)
-        assertTrue(last.summaryByGemma)
+        assertEquals((vm.content(sanFrancisco.id) as PageContent.Loaded).summary, last.summary)
         assertEquals(42L, last.writtenAtMillis)
         assertTrue(published.none { it.placeName == "London" })
     }
@@ -608,16 +468,16 @@ class WeatherViewModelTest {
         assertEquals(2, memeCalls)
     }
 
-    @Test fun `turning memes on keeps Gemma's summary and doesn't ask for it again`() = runTest(dispatcher) {
+    @Test fun `turning memes on brings Gemma's meme without a refetch`() = runTest(dispatcher) {
         places.add(sanFrancisco)
         val vm = viewModel(AppSettings(useCurrentLocation = false, memesEnabled = false), modelInstalled = true)
-        val summaries = gemmaPlaces.size
         assertNull(vm.meme(sanFrancisco.id))
+        assertEquals(0, memeCalls)
+        val fetches = api.forecastCalls
         vm.setMemesEnabled(true)
         advanceUntilIdle()
         assertEquals(NarrationSource.GEMMA, vm.meme(sanFrancisco.id)?.source)
-        assertEquals(NarrationSource.GEMMA, (vm.content(sanFrancisco.id) as PageContent.Loaded).summary.source)
-        assertEquals(summaries, gemmaPlaces.size)
+        assertEquals(fetches, api.forecastCalls)
     }
 
     @Test fun `removing a place forgets its meme`() = runTest(dispatcher) {
