@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
@@ -67,6 +68,11 @@ sealed interface PageContent {
         val comingUp: List<Countdown> = emptyList(),
         /** Public holiday dates for the place's country (this year and next), for the breaks your days off make. */
         val holidays: Set<LocalDate> = emptySet(),
+        /**
+         * When the app fetched [forecast], for the "Updated 8 min ago" line. Our own clock, not the forecast's
+         * current.time (that's the model's time step). Null where it isn't known (previews).
+         */
+        val fetchedAt: Instant? = null,
     ) : PageContent
 }
 
@@ -144,8 +150,10 @@ class WeatherViewModel(
                         s.pages.firstNotNullOfOrNull { page ->
                             val loaded = page.content as? PageContent.Loaded ?: return@firstNotNullOfOrNull null
                             val place = page.place ?: return@firstNotNullOfOrNull null
+                            // The page's summary without the rain total, which the widget has no room for.
+                            val summary = template.describe(NarrationInput(place.name, loaded.forecast, s.settings.primaryUnit), withTotal = false)
                             WidgetUpdate.Show(
-                                widgetSnapshotOf(place, loaded.forecast, s.settings.primaryUnit, loaded.summary, nowMillis = 0),
+                                widgetSnapshotOf(place, loaded.forecast, s.settings.primaryUnit, summary, nowMillis = 0),
                             )
                         } ?: WidgetUpdate.Keep
                     }
@@ -237,7 +245,7 @@ class WeatherViewModel(
     private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
         val input = narrationInput(place, forecast)
         val quickMeme = if (memesOn() && key == homePageKey()) savedOrTemplateMeme(key, place, input).meme else null
-        setContent(key, PageContent.Loaded(forecast, template.describe(input), quickMeme))
+        setContent(key, PageContent.Loaded(forecast, template.describe(input), quickMeme, fetchedAt = Instant.ofEpochMilli(clock())))
         // Alongside the meme rather than before it: a slow holiday lookup must never hold up the page.
         viewModelScope.launch { showComingUp(key, place, forecast) }
         showMeme(key, place, input)

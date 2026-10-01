@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import app.daybreak.domain.Place
+import app.daybreak.domain.Precip
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.countryCodeOf
 import app.daybreak.domain.describeWeatherCode
@@ -242,7 +243,7 @@ private fun WeatherGlance(
         val f = content.forecast
         val name = page.place?.name ?: "My location"
         val today = f.today
-        val rain = today.precipChance.takeIf { it >= 20 }
+        val rain = today.precipChance.takeIf { Precip.showDayChance(it) }
         val condition = describeWeatherCode(f.current.code)
         val range = "↑${formatDegrees(today.highC, unit)} ↓${formatDegrees(today.lowC, unit)}"
         // Don't say rain twice: when the sky already is rain (or snow, or storms), the chance stands alone.

@@ -1,6 +1,8 @@
 package app.daybreak.narration
 
 import app.daybreak.domain.Forecast
+import app.daybreak.domain.Likelihood
+import app.daybreak.domain.Precip
 import app.daybreak.domain.describeWeatherCode
 import java.time.LocalDate
 
@@ -139,10 +141,12 @@ object MemePrompt {
             today.highC >= 3 -> "chilly"
             else -> "freezing"
         }
-        val rain = when {
-            today.precipChance >= 60 -> "rain likely"
-            today.precipChance >= 20 -> "a chance of rain"
-            else -> "dry"
+        // The same chance words as the rest of the app.
+        val rain = when (Precip.likelihood(today.precipChance)) {
+            Likelihood.LIKELY -> "rain likely"
+            Likelihood.POSSIBLE -> "rain possible"
+            Likelihood.SMALL -> "a small chance of rain"
+            Likelihood.UNLIKELY -> "dry"
         }
         val windy = if ((today.gustMaxKmh ?: 0.0) >= 40) ", windy" else ""
         return """

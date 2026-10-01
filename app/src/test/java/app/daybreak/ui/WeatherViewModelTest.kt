@@ -146,6 +146,12 @@ class WeatherViewModelTest {
         assertTrue(vm.pages.all { it.content is PageContent.Loaded })
     }
 
+    @Test fun `a loaded page remembers when it was fetched, by our clock`() = runTest(dispatcher) {
+        places.add(london)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        assertEquals(java.time.Instant.ofEpochMilli(42), (vm.content(london.id) as PageContent.Loaded).fetchedAt)
+    }
+
     @Test fun `current location page asks for permission, then loads once granted`() = runTest(dispatcher) {
         location.granted = false
         val vm = viewModel()
@@ -376,12 +382,14 @@ class WeatherViewModelTest {
         assertNull(vm.meme(london.id))
     }
 
-    @Test fun `the widget mirrors the first loaded page and its summary`() = runTest(dispatcher) {
+    @Test fun `the widget mirrors the first loaded page and its summary, without the rain total`() = runTest(dispatcher) {
         places.add(sanFrancisco); places.add(london)
         val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
         val last = published.last()
         assertEquals("San Francisco", last.placeName)
-        assertEquals((vm.content(sanFrancisco.id) as PageContent.Loaded).summary, last.summary)
+        val page = (vm.content(sanFrancisco.id) as PageContent.Loaded).summary
+        assertTrue(page, page.endsWith("(60% chance, about 0.3 inches)."))
+        assertEquals(page.replace(", about 0.3 inches", ""), last.summary)
         assertEquals(42L, last.writtenAtMillis)
         assertTrue(published.none { it.placeName == "London" })
     }

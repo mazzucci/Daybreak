@@ -59,7 +59,7 @@ class WidgetMockScreenshotTest {
     private val night = snapshot(TestData.london, TestData.rainyNight(), TempUnit.C)
 
     private fun snapshot(place: Place, forecast: Forecast, unit: TempUnit) = widgetSnapshotOf(
-        place, forecast, unit, TemplateNarrator(Locale.US).describe(NarrationInput(place.name, forecast, unit)), nowMillis = 0,
+        place, forecast, unit, TemplateNarrator(Locale.US).describe(NarrationInput(place.name, forecast, unit), withTotal = false), nowMillis = 0,
     )
 
     /** Realistic launcher sizes (a Pixel's 4×2 is about 300 × 180 dp) and the grid minimums the breakpoints are keyed to. */

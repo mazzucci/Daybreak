@@ -91,6 +91,13 @@ class WidgetTest {
         onNode(hasText("21°C")).assertDoesNotExist()
     }
 
+    @Test fun `a chance under 20 percent is left out, as on Home`() = runGlanceAppWidgetUnitTest {
+        setAppWidgetSize(WidgetSize.Full)
+        provideComposable { WidgetContent(snapshot.copy(precipChance = 10), icon = null) }
+        onNode(hasText("High 74° · Low 56°")).assertExists()
+        onNode(hasText("High 74° · Low 56° · Rain 10%")).assertDoesNotExist()
+    }
+
     @Test fun `2x2 shows the temperature and place`() = runGlanceAppWidgetUnitTest {
         setAppWidgetSize(WidgetSize.Square)
         provideComposable { WidgetContent(snapshot, icon = null) }

@@ -49,6 +49,7 @@ import androidx.glance.unit.ColorProvider
 import app.daybreak.MainActivity
 import app.daybreak.data.SharedPrefsStore
 import app.daybreak.data.WidgetStore
+import app.daybreak.domain.Precip
 import app.daybreak.domain.WidgetSnapshot
 import app.daybreak.domain.describeWeatherCode
 import app.daybreak.domain.formatBothUnits
@@ -237,13 +238,15 @@ private fun Temperature(s: WidgetSnapshot, primarySp: Int, otherSp: Int, otherLi
     }
 }
 
-/** "High 74° · Low 56° · Rain 60%": the same words as the hero's pills. */
+/** "High 74° · Low 56° · Rain 60%": the same words as the hero's pills; the chance only from 20%, as on Home. */
 private fun details(s: WidgetSnapshot) =
-    "High ${formatDegrees(s.highC, s.unit)} · Low ${formatDegrees(s.lowC, s.unit)} · Rain ${s.precipChance}%"
+    "High ${formatDegrees(s.highC, s.unit)} · Low ${formatDegrees(s.lowC, s.unit)}" + rainSuffix(s)
 
 /** "↑74° ↓56° · Rain 60%": the same numbers where a row has no room for the words. */
 private fun shortDetails(s: WidgetSnapshot) =
-    "↑${formatDegrees(s.highC, s.unit)} ↓${formatDegrees(s.lowC, s.unit)} · Rain ${s.precipChance}%"
+    "↑${formatDegrees(s.highC, s.unit)} ↓${formatDegrees(s.lowC, s.unit)}" + rainSuffix(s)
+
+private fun rainSuffix(s: WidgetSnapshot) = if (Precip.showDayChance(s.precipChance)) " · Rain ${s.precipChance}%" else ""
 
 /** One description for the whole widget, so a screen reader reads it as a single item rather than five fragments. */
 private fun GlanceModifier.describe(s: WidgetSnapshot): GlanceModifier = semantics {
@@ -251,7 +254,9 @@ private fun GlanceModifier.describe(s: WidgetSnapshot): GlanceModifier = semanti
         append(s.placeName).append(", ")
         append(formatBothUnits(s.tempC, s.unit)).append(", ")
         append(describeWeatherCode(s.code)).append(". ")
-        append("High ${formatDegrees(s.highC, s.unit)}, low ${formatDegrees(s.lowC, s.unit)}, ${s.precipChance}% chance of rain. ")
+        append("High ${formatDegrees(s.highC, s.unit)}, low ${formatDegrees(s.lowC, s.unit)}")
+        if (Precip.showDayChance(s.precipChance)) append(", ${s.precipChance}% chance of rain")
+        append(". ")
         append(s.summary)
     }
 }

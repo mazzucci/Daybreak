@@ -5,6 +5,7 @@ package app.daybreak.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -122,6 +123,21 @@ import kotlin.math.roundToInt
 import app.daybreak.domain.formatTemp
 import app.daybreak.domain.formatWind
 import app.daybreak.domain.other
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import app.daybreak.domain.HourForecast
+import app.daybreak.domain.LESS_CERTAIN_FROM
+import app.daybreak.domain.Precip
+import app.daybreak.domain.feelsLikeWorthShowing
+import app.daybreak.domain.formatUpdated
+import app.daybreak.domain.formatWindFrom
+import app.daybreak.domain.formatWindFromSpoken
+import app.daybreak.domain.isStale
+import java.time.Instant
 
 /** Height of the transparent action row that floats over each page's hero (below the status bar). */
 private val TopBarHeight = 56.dp
@@ -142,7 +158,12 @@ fun WeatherPagerScreen(
     onUseCurrentLocation: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenPlaces: () -> Unit,
+    /** A day in a page's 10-day list was tapped: open its details. */
+    onOpenDay: (pageKey: String, date: LocalDate) -> Unit = { _, _ -> },
+    /** The moment the "Updated … ago" lines count from; ticks with the clock when null (screenshots pass one). */
+    now: Instant? = null,
 ) {
+    val moment = now ?: rememberMinuteClock()
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         if (state.pages.isEmpty()) {
             EmptyState(onOpenSearch, onUseCurrentLocation)
@@ -160,6 +181,8 @@ fun WeatherPagerScreen(
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
+                    onOpenDay = { onOpenDay(page.key, it) },
+                    now = moment,
                 )
             }
         }
@@ -230,6 +253,8 @@ fun WeatherPage(
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenDay: (LocalDate) -> Unit = {},
+    now: Instant = Instant.now(),
 ) {
     val dark = MaterialTheme.isDark
     val content = page.content
@@ -296,7 +321,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, activity)
+                    is PageContent.Loaded -> BodyForecast(content.forecast, unit, night, activity, content.fetchedAt, now, onOpenDay)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -419,12 +444,33 @@ private fun HeroForecast(forecast: Forecast, summary: String, unit: TempUnit, ni
     ) {
         HeroPill("High", formatDegrees(forecast.today.highC, unit), formatBothUnits(forecast.today.highC, unit))
         HeroPill("Low", formatDegrees(forecast.today.lowC, unit), formatBothUnits(forecast.today.lowC, unit))
-        HeroPill("Rain", "${forecast.today.precipChance}%", term = Term.RAIN_CHANCE)
+        val (rainValue, rainSpoken) = rainPill(forecast.today, unit)
+        HeroPill(Precip.noun(forecast.today), rainValue, rainSpoken, term = Term.RAIN_CHANCE)
     }
 }
 
+/**
+ * The rain pill's value and its spoken form: "60% · 4 mm" (the chance from 20%, the total from 0.5 mm, by the
+ * shared rules), "unlikely" when neither is worth a number.
+ */
+private fun rainPill(day: DaySummary, unit: TempUnit): Pair<String, String> {
+    val chance = day.precipChance.takeIf { Precip.showDayChance(it) }
+    val amount = Precip.dayAmount(day, unit)
+    if (chance == null && amount == null) return "unlikely" to "unlikely"
+    val shown = listOfNotNull(chance?.let { "$it%" }, amount).joinToString(" · ")
+    val spoken = listOfNotNull(
+        chance?.let { "$it% chance" },
+        Precip.dayTotalSpoken(day, unit)?.removeSuffix(" of snow"),
+    ).joinToString(", ")
+    return shown to spoken
+}
+
+/**
+ * A rounded label-and-value chip on the sky ("High 74°"), with an optional [secondary] value in small text
+ * ("23°C"). Tappable with an info mark when it has a [term] to explain.
+ */
 @Composable
-private fun HeroPill(label: String, value: String, spoken: String = value, term: Term? = null) {
+internal fun HeroPill(label: String, value: String, spoken: String = value, term: Term? = null, secondary: String? = null) {
     val explain = LocalExplain.current
     val onClick = if (term != null && explain != null) ({ explain(term) }) else null
     Row(
@@ -441,6 +487,10 @@ private fun HeroPill(label: String, value: String, spoken: String = value, term:
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Text(value, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        if (secondary != null) {
+            Spacer(Modifier.width(5.dp))
+            Text(secondary, style = MaterialTheme.typography.labelMedium, color = LocalContentColor.current.copy(alpha = 0.85f), maxLines = 1)
+        }
         if (onClick != null) {
             // Marks this pill as the one that opens something; High and Low next to it don't.
             Spacer(Modifier.width(5.dp))
@@ -451,7 +501,7 @@ private fun HeroPill(label: String, value: String, spoken: String = value, term:
 
 /** The "tap to explain" mark beside a label, sized to that label's text so it grows with the font setting. */
 @Composable
-private fun InfoGlyph(tint: Color, style: TextStyle) {
+internal fun InfoGlyph(tint: Color, style: TextStyle) {
     val size = with(LocalDensity.current) { style.fontSize.toDp() }
     Icon(Icons.Outlined.Info, contentDescription = null, Modifier.size(size), tint = tint)
 }
@@ -471,7 +521,15 @@ internal fun SummaryBlock(summary: String) {
 
 /** Detail tiles and the hourly strip, on the normal surface below the hero. */
 @Composable
-private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, activity: Activity?) {
+private fun BodyForecast(
+    forecast: Forecast,
+    unit: TempUnit,
+    night: Boolean,
+    activity: Activity?,
+    fetchedAt: Instant?,
+    now: Instant,
+    onOpenDay: (LocalDate) -> Unit,
+) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
     TileRow {
@@ -481,23 +539,28 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, act
             term = Term.FEELS_LIKE,
         )
         StatTile("Humidity", "${cur.humidity}%", Modifier.weight(1f), term = Term.HUMIDITY)
-        val gust = forecast.nextHours.firstOrNull()?.gustKmh
+        val thisHour = forecast.nextHours.firstOrNull()
+        val gust = thisHour?.gustKmh
         StatTile(
             "Wind",
             formatWind(cur.windKmh, unit),
             Modifier.weight(1f),
             detail = gust?.takeIf { it > cur.windKmh }?.let { "Gusts ${formatWind(it, unit)}" },
+            direction = thisHour?.windDirectionDeg,
             term = Term.WIND,
         )
     }
     Spacer(Modifier.height(24.dp))
-    Text(
-        "Next ${forecast.nextHours.size} hours",
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(horizontal = PageMargin),
-    )
+    SectionHeading("Next ${forecast.nextHours.size} hours") {
+        if (fetchedAt != null) UpdatedLine(fetchedAt, now)
+    }
     Spacer(Modifier.height(12.dp))
-    HourlyStrip(forecast, unit, night)
+    HourStrip(
+        hours = forecast.nextHours,
+        unit = unit,
+        label = { i, h -> if (i == 0) "Now" else formatHour(h.time) },
+        night = { i, h -> if (i == 0) night else forecast.isNight(h) },
+    )
     if (activity != null) {
         val plan = remember(forecast, activity) { ActivityScorer.plan(forecast, activity) }
         if (plan.hours.isNotEmpty()) {
@@ -505,50 +568,91 @@ private fun BodyForecast(forecast: Forecast, unit: TempUnit, night: Boolean, act
             ActivityCard(plan, unit, forecast.current.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
         }
     }
-    SunAndUv(forecast.today, unit)
-    val week = forecast.upcomingDays()
-    if (week.size > 1) {
+    SunAndUv(forecast.today)
+    val days = forecast.upcomingDays()
+    if (days.size > 1) {
         Spacer(Modifier.height(24.dp))
-        Text(
-            "Next ${week.size} days",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = PageMargin),
-        )
+        SectionHeading("Next ${days.size} days") {
+            Text(
+                "Tap a day for details",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(12.dp))
-        DailyList(week, forecast.today.date, unit)
+        DailyList(days, forecast.today.date, unit, onOpenDay)
     }
 }
 
-/** Sunrise, sunset and UV for today; skipped when the forecast has none of them. */
+/**
+ * A section title with something small at its other end ("Updated 8 min ago", "Tap a day for details"); the
+ * extra moves under the title when both don't fit on one line.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SunAndUv(today: DaySummary, unit: TempUnit) {
-    val daylight = today.daylight
-    val uv = today.uvIndexMax
+internal fun SectionHeading(title: String, extra: @Composable () -> Unit = {}) {
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = PageMargin),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(end = 12.dp).align(Alignment.CenterVertically).semantics { heading() },
+        )
+        Box(Modifier.align(Alignment.CenterVertically)) { extra() }
+    }
+}
+
+/**
+ * "Updated 8 min ago" from our own fetch time; past 90 minutes it turns amber and suggests pulling to refresh.
+ * Spoken with the same words.
+ */
+@Composable
+private fun UpdatedLine(fetchedAt: Instant, now: Instant) {
+    val stale = isStale(fetchedAt, now)
+    Text(
+        formatUpdated(fetchedAt, now) + if (stale) " · pull to refresh" else "",
+        style = MaterialTheme.typography.labelMedium,
+        color = if (stale) MaterialTheme.weatherColors.attention else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * Sunrise, sunset and UV for [day]; skipped when the forecast has none of them. On the Weather page ([explainable])
+ * each tile opens its explanation, which describes today; the day page shows the same tiles without one.
+ */
+@Composable
+internal fun SunAndUv(day: DaySummary, explainable: Boolean = true) {
+    val daylight = day.daylight
+    val uv = day.uvIndexMax
     if (daylight == Daylight.UNKNOWN && uv == null) return
+    fun term(t: Term) = t.takeIf { explainable }
     Spacer(Modifier.height(16.dp))
     TileRow {
         when (daylight) {
             Daylight.NORMAL -> {
-                val sunrise = today.sunrise!!
-                val sunset = today.sunset!!
-                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true, term = Term.SUN)
+                val sunrise = day.sunrise!!
+                val sunset = day.sunset!!
+                StatTile("Sunrise", formatClock(sunrise), Modifier.weight(1f), compact = true, term = term(Term.SUN))
                 StatTile(
                     "Sunset", formatClock(sunset), Modifier.weight(1f), compact = true,
-                    detail = "next day".takeIf { sunset.toLocalDate() != today.date },
-                    term = Term.SUN,
+                    detail = "next day".takeIf { sunset.toLocalDate() != day.date },
+                    term = term(Term.SUN),
                 )
             }
-            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night", term = Term.DAYLIGHT)
-            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun", term = Term.DAYLIGHT)
+            Daylight.POLAR_NIGHT -> StatTile("Daylight", "None", Modifier.weight(2f), detail = "Polar night", term = term(Term.DAYLIGHT))
+            Daylight.MIDNIGHT_SUN -> StatTile("Daylight", "24 hours", Modifier.weight(2f), detail = "Midnight sun", term = term(Term.DAYLIGHT))
             Daylight.UNKNOWN -> Unit
         }
-        if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv), term = Term.UV)
+        if (uv != null) StatTile("UV index", "${uv.roundToInt()}", Modifier.weight(1f), detail = describeUv(uv), term = term(Term.UV))
     }
 }
 
 /** A row of equal-height tiles, so a tile with a detail line doesn't stand taller than its neighbours. */
 @Composable
-private fun TileRow(content: @Composable RowScope.() -> Unit) {
+internal fun TileRow(content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = PageMargin).height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -590,22 +694,26 @@ internal fun DualTemp(
 }
 
 /**
- * One row per day: name, icon with the rain chance under it, and the low–high range drawn on a bar shared by the
- * whole week, so warmer and cooler days line up visually. Low and high each carry the other unit underneath.
- * Every column has one width for the whole week (the widest entry), so the bars start and end at the same x in
- * every row whatever the font size or the values.
+ * One row per day: name, icon with the rain chance under it, the low–high range drawn on a bar shared by the
+ * whole list (so warmer and cooler days line up visually), and the day's rain or snow total at the end. Low and
+ * high each carry the other unit underneath. Every column has one width for the whole list (the widest entry),
+ * so the bars start and end at the same x in every row whatever the font size or the values. Days from the
+ * eighth on are drawn lighter under a "less certain" rule. Each row opens that day's details.
  */
 @Composable
-private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) {
+private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit, onOpenDay: (LocalDate) -> Unit) {
     val palette = cardIconPalette()
     val rainColor = MaterialTheme.weatherColors.rain
-    val weekLow = days.minOf { it.lowC }
-    val weekHigh = days.maxOf { it.highC }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val listLow = days.minOf { it.lowC }
+    val listHigh = days.maxOf { it.highC }
     val type = MaterialTheme.typography
     val lowStyle = type.bodyMedium
     val highStyle = type.titleSmall
     val secondaryStyle = type.labelSmall
     val other = unit.other()
+    // Snow totals take two lines ("3 cm" over "snow") so the column stays narrow enough for the bar.
+    val totals = days.map { Precip.dayAmount(it, unit) }
     val dayWidth = widestText(days.map { formatDayLabel(it.date, today) }, highStyle)
     val lowWidth = maxOf(
         widestText(days.map { formatDegrees(it.lowC, unit) }, lowStyle),
@@ -615,31 +723,50 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
         widestText(days.map { formatDegrees(it.highC, unit) }, highStyle),
         widestText(days.map { formatTemp(it.highC, other) }, secondaryStyle),
     )
+    val totalWidth = if (totals.all { it == null }) 0.dp else maxOf(
+        widestText(totals.filterNotNull(), secondaryStyle),
+        if (days.any { Precip.isSnowDay(it) }) widestText(listOf("snow"), secondaryStyle) else 0.dp,
+    )
     val iconWidth = maxOf(26.dp, widestText(listOf("100%"), secondaryStyle))
     val density = LocalDensity.current
     // Line heights scale with the font, so the bar keeps tracking the primary numbers at any font size.
     val primaryLine = with(density) { highStyle.lineHeight.toDp() }
-    val secondaryLine = with(density) { secondaryStyle.lineHeight.toDp() }
     Card(
         Modifier.fillMaxWidth().padding(horizontal = PageMargin),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
+        BoxWithConstraints {
+        // The totals get their own column at the end of the row while that leaves the bar room to read; on a narrow
+        // screen with large text they move to a line of their own under the bar instead.
+        val fixed = 32.dp + dayWidth + 8.dp + iconWidth + 12.dp + lowWidth + 8.dp + 8.dp + highWidth
+        val totalsAtEnd = totalWidth > 0.dp && maxWidth - fixed - 6.dp - totalWidth >= MIN_BAR
+        val barStart = 16.dp + dayWidth + 8.dp + iconWidth + 12.dp + lowWidth + 8.dp
         Column(Modifier.padding(vertical = 6.dp)) {
-            days.forEach { day ->
-                val rain = day.precipChance.takeIf { it >= 20 }
-                Row(
+            days.forEachIndexed { index, day ->
+                val lessCertain = index >= LESS_CERTAIN_FROM
+                if (index == LESS_CERTAIN_FROM) LessCertainRule()
+                val rain = day.precipChance.takeIf { Precip.showDayChance(it) }
+                val total = totals[index]
+                val snow = Precip.isSnowDay(day)
+                val name = formatDayName(day.date, today)
+                Column(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable(onClickLabel = "Open details", role = Role.Button) { onOpenDay(day.date) }
+                        .padding(vertical = 8.dp)
+                        // Further out than a week: drawn lighter, the same way for every part of the row.
+                        .graphicsLayer { alpha = if (lessCertain) LESS_CERTAIN_ALPHA else 1f }
                         .semantics(mergeDescendants = true) {
                             contentDescription = buildString {
-                                append("${formatDayName(day.date, today)}, ${describeWeatherCode(day.code)}, ")
+                                append("$name, ${describeWeatherCode(day.code)}, ")
                                 append("high ${formatBothUnits(day.highC, unit)}, low ${formatBothUnits(day.lowC, unit)}")
-                                if (rain != null) append(", $rain% chance of rain")
+                                if (rain != null) append(", $rain% chance of ${if (snow) "snow" else "rain"}")
+                                Precip.dayTotalSpoken(day, unit)?.let { append(", $it") }
+                                if (lessCertain) append(", less certain")
                             }
                         },
-                    verticalAlignment = Alignment.Top,
                 ) {
+                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.Top) {
                     // Everything is top-aligned and each cell starts with a primary-line-tall box, so the day,
                     // icon, numbers and bar all centre on the same line; the second line holds the other unit
                     // (and the rain chance under the icon).
@@ -655,13 +782,16 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                             )
                         }
                         if (rain != null) {
-                            Text("$rain%", style = secondaryStyle, color = rainColor, maxLines = 1, softWrap = false)
+                            Text(
+                                "$rain%", style = secondaryStyle, maxLines = 1, softWrap = false,
+                                color = if (Precip.highlightChance(rain)) rainColor else muted,
+                            )
                         }
                     }
                     Spacer(Modifier.width(12.dp))
                     DualTemp(
                         day.lowC, unit,
-                        primaryStyle = lowStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        primaryStyle = lowStyle.copy(color = muted),
                         modifier = Modifier.width(lowWidth),
                         alignment = Alignment.End,
                         primaryLine = primaryLine,
@@ -671,7 +801,7 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                         Modifier.weight(1f).height(primaryLine),
                         contentAlignment = Alignment.Center,
                     ) {
-                        RangeBar(day.lowC, day.highC, weekLow, weekHigh, Modifier.fillMaxWidth())
+                        RangeBar(day.lowC, day.highC, listLow, listHigh, Modifier.fillMaxWidth())
                     }
                     Spacer(Modifier.width(8.dp))
                     DualTemp(
@@ -681,15 +811,59 @@ private fun DailyList(days: List<DaySummary>, today: LocalDate, unit: TempUnit) 
                         alignment = Alignment.Start,
                         primaryLine = primaryLine,
                     )
+                    if (totalsAtEnd) {
+                        Spacer(Modifier.width(6.dp))
+                        Column(Modifier.width(totalWidth), horizontalAlignment = Alignment.End) {
+                            Box(Modifier.height(primaryLine), contentAlignment = Alignment.CenterEnd) {
+                                if (total != null) Text(total, style = secondaryStyle, color = muted, maxLines = 1, softWrap = false)
+                            }
+                            if (total != null && snow) Text("snow", style = secondaryStyle, color = muted, maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+                if (!totalsAtEnd && total != null) {
+                    Text(
+                        if (snow) "$total snow" else total,
+                        style = secondaryStyle,
+                        color = muted,
+                        modifier = Modifier.padding(start = barStart, end = 16.dp, top = 2.dp),
+                    )
+                }
                 }
             }
         }
+        }
+    }
+}
+
+/** Below this the range bar is too short to read, so the day totals leave the end of the row. */
+private val MIN_BAR = 48.dp
+
+/** How much lighter the days beyond a week are drawn. */
+private const val LESS_CERTAIN_ALPHA = 0.6f
+
+/** A hairline with "less certain" in it, above the days beyond a week. Read out with each of those days instead. */
+@Composable
+private fun LessCertainRule() {
+    val line = MaterialTheme.colorScheme.outlineVariant
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clearAndSetSemantics { },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.weight(1f).height(1.dp).background(line))
+        Text(
+            "less certain",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        Box(Modifier.weight(1f).height(1.dp).background(line))
     }
 }
 
 /** Width of the widest of [texts] set in [style] on one line, so a column can use one width for every row. */
 @Composable
-private fun widestText(texts: List<String>, style: TextStyle): Dp {
+internal fun widestText(texts: List<String>, style: TextStyle): Dp {
     val measurer = rememberTextMeasurer()
     val px = texts.maxOfOrNull { measurer.measure(it, style, maxLines = 1, softWrap = false).size.width } ?: 0
     // A pixel of slack so rounding never pushes the text onto a clip.
@@ -721,19 +895,24 @@ private fun RangeBar(low: Double, high: Double, min: Double, max: Double, modifi
     }
 }
 
+/**
+ * A labelled value on a card. [detail] is a small line under the value; [direction] (degrees, where the wind comes
+ * from) adds a small arrow and "from the SW" above it. With a [term], tapping opens its explanation.
+ */
 @Composable
-private fun StatTile(
+internal fun StatTile(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
     detail: String? = null,
     compact: Boolean = false,
     term: Term? = null,
+    direction: Double? = null,
 ) {
     val explain = LocalExplain.current
     val onClick = if (term != null && explain != null) ({ explain(term) }) else null
     val tileModifier = modifier.fillMaxHeight().semantics(mergeDescendants = true) {
-        contentDescription = listOfNotNull(label, value, detail).joinToString(" ")
+        contentDescription = listOfNotNull(label, value, direction?.let { formatWindFromSpoken(it) }, detail).joinToString(" ")
     }
     val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     if (onClick != null) {
@@ -743,15 +922,15 @@ private fun StatTile(
             onClick(label = "Explain", action = null)
         }
         Card(onClick = onClick, modifier = explainable, colors = colors) {
-            StatTileContent(label, value, detail, compact, explainable = true)
+            StatTileContent(label, value, detail, direction, compact, explainable = true)
         }
     } else {
-        Card(tileModifier, colors = colors) { StatTileContent(label, value, detail, compact, explainable = false) }
+        Card(tileModifier, colors = colors) { StatTileContent(label, value, detail, direction, compact, explainable = false) }
     }
 }
 
 @Composable
-private fun StatTileContent(label: String, value: String, detail: String?, compact: Boolean, explainable: Boolean) {
+private fun StatTileContent(label: String, value: String, detail: String?, direction: Double?, compact: Boolean, explainable: Boolean) {
     run {
         Column(Modifier.padding(vertical = 14.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             // The glyph is part of the label's text, so on a narrow tile at a large font size the line breaks
@@ -781,6 +960,7 @@ private fun StatTileContent(label: String, value: String, detail: String?, compa
                 style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center,
             )
+            if (direction != null) WindFrom(direction)
             if (detail != null) {
                 Text(
                     detail,
@@ -793,19 +973,89 @@ private fun StatTileContent(label: String, value: String, detail: String?, compa
     }
 }
 
+/** A small arrow showing where the wind blows, then "from the SW" (where it comes from, as forecasts say it). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HourlyStrip(forecast: Forecast, unit: TempUnit, nightNow: Boolean) {
-    val hours = forecast.nextHours
+internal fun WindFrom(degrees: Double, style: TextStyle = MaterialTheme.typography.labelSmall) {
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val text = formatWindFrom(degrees)
+    // The arrow is part of the text, so it wraps with it and grows with the font size.
+    Text(
+        buildAnnotatedString {
+            appendInlineContent(ARROW_GLYPH)
+            append(' ')
+            append(text)
+        },
+        style = style,
+        color = color,
+        textAlign = TextAlign.Center,
+        inlineContent = mapOf(
+            ARROW_GLYPH to InlineTextContent(
+                Placeholder(style.fontSize, style.fontSize, PlaceholderVerticalAlign.TextCenter),
+            ) { WindArrow(degrees, color, Modifier.fillMaxSize()) },
+        ),
+    )
+}
+
+/** Inline-content id of the wind arrow in "↗ from the SW". */
+private const val ARROW_GLYPH = "arrow"
+
+/**
+ * An arrow pointing the way the wind blows: downwind, opposite [fromDegrees], with north up. Hidden from screen
+ * readers; the words carry the direction.
+ */
+@Composable
+internal fun WindArrow(fromDegrees: Double, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.rotate((fromDegrees + 180).toFloat())) {
+        val w = size.width
+        val h = size.height
+        val stroke = (w * 0.13f).coerceAtLeast(1.dp.toPx())
+        // Shaft from the bottom to near the top, and an arrowhead at the top.
+        drawLine(color, Offset(w / 2, h * 0.92f), Offset(w / 2, h * 0.14f), strokeWidth = stroke, cap = StrokeCap.Round)
+        val head = Path().apply {
+            moveTo(w / 2, h * 0.04f)
+            lineTo(w * 0.82f, h * 0.42f)
+            lineTo(w * 0.18f, h * 0.42f)
+            close()
+        }
+        drawPath(head, color)
+    }
+}
+
+/**
+ * A row of hour cards: label, icon, temperature in both units, then muted lines for the feels-like temperature
+ * (when it's 3° or more away), the chance of rain (10% and up, blue from 40%) and the amount (0.1 mm and up). A line
+ * is reserved in every card once any card needs it, so the cards stay level; a line nobody needs isn't drawn.
+ * [showPrecip] false leaves the rain lines out (the day page has its own rain card). The first card is highlighted
+ * when [highlightFirst] (it's "Now").
+ */
+@Composable
+internal fun HourStrip(
+    hours: List<HourForecast>,
+    unit: TempUnit,
+    label: (Int, HourForecast) -> String,
+    night: (Int, HourForecast) -> Boolean,
+    showPrecip: Boolean = true,
+    highlightFirst: Boolean = true,
+) {
     val type = MaterialTheme.typography
+    val labels = hours.mapIndexed(label)
+    val feels = hours.map { h -> feelsLikeWorthShowing(h.tempC, h.feelsLikeC, unit)?.let { "feels ${formatDegrees(it, unit)}" } }
+    val chances = hours.map { h -> h.precipChance.takeIf { showPrecip && Precip.showHourChance(it) } }
+    val amounts = hours.map { h -> if (showPrecip) Precip.hourAmount(h, unit) else null }
+    val feelsLine = feels.any { it != null }
+    val chanceLine = chances.any { it != null }
+    val amountLine = amounts.any { it != null }
     // One width for every card (the widest label or value), so large fonts widen the strip evenly.
     val cardWidth = maxOf(
         52.dp,
-        widestText(hours.mapIndexed { i, h -> if (i == 0) "Now" else formatHour(h.time) }, type.labelMedium),
+        widestText(labels, type.labelMedium),
         widestText(hours.map { formatDegrees(it.tempC, unit) }, type.titleMedium),
-        widestText(hours.map { formatTemp(it.tempC, unit.other()) }, type.labelSmall),
+        widestText(hours.map { formatTemp(it.tempC, unit.other()) } + feels.filterNotNull() + amounts.filterNotNull(), type.labelSmall),
     )
     val palette = cardIconPalette()
     val rainColor = MaterialTheme.weatherColors.rain
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
     // The strip runs edge to edge so a partly visible last tile hints that it scrolls.
     LazyRow(
         Modifier.fillMaxWidth(),
@@ -813,14 +1063,19 @@ private fun HourlyStrip(forecast: Forecast, unit: TempUnit, nightNow: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         itemsIndexed(hours) { i, hour ->
-            val label = if (i == 0) "Now" else formatHour(hour.time)
-            val night = if (i == 0) nightNow else forecast.isNight(hour)
+            val chance = chances[i]
             Card(
                 Modifier.semantics(mergeDescendants = true) {
-                    contentDescription = "$label, ${formatBothUnits(hour.tempC, unit)}, ${hour.precipChance}% chance of rain"
+                    contentDescription = listOfNotNull(
+                        labels[i],
+                        formatBothUnits(hour.tempC, unit),
+                        feels[i]?.let { "feels like ${formatBothUnits(hour.feelsLikeC!!, unit)}" },
+                        chance?.let { "$it% chance of ${if (Precip.isSnowHour(hour)) "snow" else "rain"}" },
+                        if (showPrecip) Precip.hourAmountSpoken(hour, unit) else null,
+                    ).joinToString(", ")
                 },
                 colors = CardDefaults.cardColors(
-                    containerColor = if (i == 0) MaterialTheme.colorScheme.primaryContainer
+                    containerColor = if (i == 0 && highlightFirst) MaterialTheme.colorScheme.primaryContainer
                     else MaterialTheme.colorScheme.surfaceContainer
                 ),
             ) {
@@ -828,17 +1083,27 @@ private fun HourlyStrip(forecast: Forecast, unit: TempUnit, nightNow: Boolean) {
                     Modifier.padding(horizontal = 10.dp, vertical = 12.dp).width(cardWidth),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    Text(labels[i], style = type.labelMedium, maxLines = 1, softWrap = false)
                     Spacer(Modifier.height(8.dp))
-                    WeatherIcon(hour.code, night, palette, size = 30.dp)
+                    WeatherIcon(hour.code, night(i, hour), palette, size = 30.dp)
                     Spacer(Modifier.height(8.dp))
-                    DualTemp(hour.tempC, unit, primaryStyle = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${hour.precipChance}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (hour.precipChance >= 30) rainColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    DualTemp(hour.tempC, unit, primaryStyle = type.titleMedium)
+                    if (feelsLine) {
+                        Text(feels[i] ?: "", style = type.labelSmall, color = muted, maxLines = 1, softWrap = false)
+                    }
+                    if (chanceLine || amountLine) Spacer(Modifier.height(4.dp))
+                    if (chanceLine) {
+                        Text(
+                            chance?.let { "$it%" } ?: "",
+                            style = type.labelSmall,
+                            color = if (chance != null && Precip.highlightChance(chance)) rainColor else muted,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                    if (amountLine) {
+                        Text(amounts[i] ?: "", style = type.labelSmall, color = muted, maxLines = 1, softWrap = false)
+                    }
                 }
             }
         }

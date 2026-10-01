@@ -1,13 +1,18 @@
 package app.daybreak.domain
 
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Weather terms the app can explain when their tile is tapped. */
-enum class Term { FEELS_LIKE, HUMIDITY, WIND, UV, SUN, DAYLIGHT, RAIN_CHANCE }
+enum class Term {
+    FEELS_LIKE, HUMIDITY, WIND, UV, SUN, DAYLIGHT, RAIN_CHANCE,
+    /** A whole day's rain or snow, from the day page (needs the day's date). */
+    RAIN_DAY,
+}
 
 /**
  * A plain-language explanation of a term and of today's value.
@@ -53,11 +58,17 @@ private const val GALE_KMH = 75.0
 /** Top of the UV scale: "extreme" starts at 11. */
 private const val UV_EXTREME = 11f
 
+/** Top of the day-rain scale: 20 mm is a wet day. */
+private const val WET_DAY_SCALE_MM = 20.0
+
+/** Gusts from about here make an umbrella more trouble than it's worth, km/h. */
+private const val UMBRELLA_GUST_KMH = 40.0
+
 /**
  * Explains [term] with this forecast's values, in the primary [unit]. Hand-written and built from the data (no
- * model involved), so every number matches the page.
+ * model involved), so every number matches the page. [date] picks the day for [Term.RAIN_DAY] (today if null).
  */
-fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Locale.US): Explanation {
+fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Locale.US, date: LocalDate? = null): Explanation {
     val cur = forecast.current
     val today = forecast.today
     return when (term) {
@@ -194,21 +205,72 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
         }
         Term.RAIN_CHANCE -> {
             val p = today.precipChance
-            val amount = today.precipSumMm?.takeIf { it >= 0.1 }?.let { "About ${formatPrecip(it, unit, locale)} expected in total. " } ?: ""
-            val umbrella = when {
-                p >= 70 -> "Take an umbrella."
-                p >= 30 -> "Worth having an umbrella nearby."
-                else -> "Unlikely to need an umbrella."
-            }
+            val rain = Precip.dayRain(forecast, today.date)
+            // "About 4 mm over 3 hours, mostly this evening." when the total is worth a number.
+            val amount = Precip.dayAmount(today, unit, locale)?.let {
+                val total = if (Precip.isSnowDay(today)) Precip.proseSnow(today.snowSumCm!!, unit, locale) else Precip.proseRain(today.precipSumMm!!, unit, locale)
+                val hours = today.precipHours?.roundToInt()?.takeIf { h -> h > 0 }?.let { h -> " over ${plural(h.toLong(), "hour")}" } ?: ""
+                val timing = rain.timing?.let { t -> ", ${Precip.timingToday(t)}" } ?: ""
+                "About $total$hours$timing. "
+            } ?: ""
             Explanation(
                 title = "Chance of rain",
                 value = "$p%",
                 detail = "Highest hourly chance today",
-                now = amount + umbrella,
+                now = amount + umbrella(p, today.gustMaxKmh),
                 meaning = "The chance that at least a little rain (or snow) falls at this place in a given hour. We show today's highest hour, so the chance of some rain at some point today can be higher. It says nothing about how long it rains or how heavy it is.",
                 gauge = Gauge.Scale(p / 100f, "0%", "100%", Gauge.Scale.Kind.MOISTURE),
             )
         }
+        Term.RAIN_DAY -> {
+            val day = date?.let { forecast.day(it) } ?: today
+            val snow = Precip.isSnowDay(day)
+            val name = formatDayName(day.date, today.date, locale).let { if (it == "Today") "today" else it }
+            val sumMm = day.precipSumMm ?: 0.0
+            val rain = Precip.dayRain(forecast, day.date)
+            val hours = day.precipHours?.roundToInt() ?: 0
+            val what = if (snow) "snow" else "rain"
+            val timing = rain.timing?.let { Precip.timingSentence(it, locale) }
+            val spell = when {
+                hours > 0 && timing != null -> "About ${plural(hours.toLong(), "hour")} of $what. $timing"
+                hours > 0 -> "About ${plural(hours.toLong(), "hour")} of $what."
+                timing != null -> timing
+                else -> "No $what expected."
+            }
+            Explanation(
+                title = if (snow) "Snow" else "Rain",
+                value = if (snow) Precip.formatSnow(day.snowSumCm!!, unit, locale) else Precip.formatRain(sumMm, unit, locale),
+                detail = if (snow) "Expected snowfall for $name" else "Expected total for $name",
+                now = "$spell ${umbrella(day.precipChance, day.gustMaxKmh)}",
+                meaning = if (snow) {
+                    "The fresh snow the forecast expects over the day, as depth before it settles. 1 cm dusts the ground; 5 cm covers it; 20 cm is deep. Hours count any hour with at least 0.1 mm of rain or melted snow."
+                } else {
+                    "The total rain (and melted snow) the forecast expects to fall over the day. 1 mm is a few drops on the pavement; 5 mm wets everything; 20 mm is a wet day. Hours count any hour with at least 0.1 mm."
+                },
+                gauge = Gauge.Scale(
+                    (sumMm / WET_DAY_SCALE_MM).toFloat().coerceIn(0f, 1f),
+                    if (unit == TempUnit.C) "0 mm" else "0 in",
+                    Precip.formatRain(WET_DAY_SCALE_MM, unit, locale),
+                    Gauge.Scale.Kind.MOISTURE,
+                ),
+                spoken = listOfNotNull(
+                    if (snow) Precip.spokenSnow(day.snowSumCm!!, unit, locale) else Precip.spokenRain(sumMm, unit, locale),
+                    if (snow) "expected snowfall for $name" else "expected in total for $name",
+                ).joinToString(", "),
+            )
+        }
+    }
+}
+
+/** What to take, by the chance (with the same words as everywhere else) and how gusty it gets. */
+private fun umbrella(chance: Int, gustKmh: Double?): String {
+    val likelihood = Precip.likelihood(chance)
+    val wet = likelihood == Likelihood.LIKELY || likelihood == Likelihood.POSSIBLE
+    return when {
+        wet && (gustKmh ?: 0.0) >= UMBRELLA_GUST_KMH -> "Take a proper coat rather than an umbrella: it'll be gusty too."
+        likelihood == Likelihood.LIKELY -> "Take an umbrella."
+        wet -> "Worth having an umbrella nearby."
+        else -> "Unlikely to need an umbrella."
     }
 }
 
@@ -247,9 +309,3 @@ private fun dewPointC(tempC: Double, humidity: Int): Double {
 private const val MUGGY_DEW_POINT_C = 16.0
 
 private fun plural(n: Long, word: String) = "$n $word${if (n == 1L) "" else "s"}"
-
-/** Rain total in the unit system that goes with [unit]: "6.5 mm" for °C, "0.26 inches" for °F. */
-private fun formatPrecip(mm: Double, unit: TempUnit, locale: Locale): String = when (unit) {
-    TempUnit.C -> "${String.format(locale, "%.1f", mm)} mm"
-    TempUnit.F -> "${String.format(locale, "%.2f", mm / 25.4)} inches"
-}

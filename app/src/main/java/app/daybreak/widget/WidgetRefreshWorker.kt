@@ -44,7 +44,7 @@ class WidgetRefreshWorker(context: Context, params: WorkerParameters) : Coroutin
         } catch (e: Exception) {
             return if (runAttemptCount < 2) Result.retry() else Result.success()
         }
-        val summary = TemplateNarrator().describe(NarrationInput(old.placeName, forecast, old.unit))
+        val summary = TemplateNarrator().describe(NarrationInput(old.placeName, forecast, old.unit), withTotal = false)
         // The app may have published while this was fetching (another place, a newer forecast): theirs wins.
         store.update { current ->
             if (current == null || current.writtenAtMillis != old.writtenAtMillis || current.latitude != old.latitude ||

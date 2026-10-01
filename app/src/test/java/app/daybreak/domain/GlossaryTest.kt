@@ -5,6 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
+import java.time.LocalDate
 
 class GlossaryTest {
     private val f = TestData.forecast() // 71°F, feels 68°F, humidity 58%, wind 9 mph, UV 6.2, sun 7:02–18:56, rain 60%
@@ -54,8 +56,29 @@ class GlossaryTest {
         val rain = explain(Term.RAIN_CHANCE, f, TempUnit.F)
         assertEquals("60%", rain.value)
         assertEquals("Highest hourly chance today", rain.detail)
-        assertEquals("About 0.26 inches expected in total. Worth having an umbrella nearby.", rain.now)
-        assertEquals("About 6.5 mm expected in total. Worth having an umbrella nearby.", explain(Term.RAIN_CHANCE, f, TempUnit.C).now)
+        assertEquals("About 0.3 inches over 5 hours, mostly this evening. Worth having an umbrella nearby.", rain.now)
+        assertEquals("About 6.5 mm over 5 hours, mostly this evening. Worth having an umbrella nearby.", explain(Term.RAIN_CHANCE, f, TempUnit.C).now)
+    }
+
+    @Test fun `a day's rain explains its total, hours and timing`() {
+        val alps = TestData.alps()
+        val wet = explain(Term.RAIN_DAY, alps, TempUnit.C, Locale.US, LocalDate.of(2026, 10, 2))
+        assertEquals("Rain", wet.title)
+        assertEquals("12 mm", wet.value)
+        assertEquals("Expected total for Friday", wet.detail)
+        assertEquals("About 5 hours of rain. Overnight, clearing by morning. Worth having an umbrella nearby.", wet.now)
+        assertEquals(12.1f / 20, (wet.gauge as Gauge.Scale).fraction, 0.001f)
+        assertEquals("0 mm", (wet.gauge as Gauge.Scale).low)
+
+        val snow = explain(Term.RAIN_DAY, alps, TempUnit.F, Locale.US, LocalDate.of(2026, 10, 8))
+        assertEquals("Snow", snow.title)
+        assertEquals("7.6 in", snow.value)
+        assertEquals("Expected snowfall for Thursday", snow.detail)
+        assertTrue(snow.now, snow.now.startsWith("About 21 hours of snow. "))
+
+        val dry = explain(Term.RAIN_DAY, alps, TempUnit.C, Locale.US, LocalDate.of(2026, 10, 6))
+        assertEquals("0 mm", dry.value)
+        assertEquals("No rain expected. Unlikely to need an umbrella.", dry.now)
     }
 
     @Test fun `gauges put the value on their scale`() {

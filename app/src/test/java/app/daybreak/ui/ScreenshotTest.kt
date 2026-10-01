@@ -138,14 +138,27 @@ class ScreenshotTest {
         paparazzi.snapshot(name) { WeatherTheme(darkTheme = night, content = content) }
     }
 
+    /** The moment the sample pages are viewed: 2:30 PM in San Francisco, 8 minutes after [fetched]. */
+    private val viewedAt = java.time.Instant.parse("2026-09-28T21:30:00Z")
+    private val fetched = viewedAt.minusSeconds(8 * 60)
+
     @Composable
-    private fun Weather(state: WeatherUiState) {
+    private fun Weather(state: WeatherUiState, now: java.time.Instant = viewedAt) {
         WeatherPagerScreen(
             state = state,
             pagerState = rememberPagerState { state.pages.size },
             onRefresh = {}, onRequestPermission = {}, onUseCurrentLocation = {},
             onOpenSearch = {}, onOpenPlaces = {},
+            now = now,
         )
+    }
+
+    /** The Jungfraujoch fixture (3,200 m): evening showers today, a wet night, then snow on the 8th and 9th. */
+    private val alps = TestData.alps()
+
+    @Composable
+    private fun Day(date: java.time.LocalDate, unit: TempUnit, forecast: app.daybreak.domain.Forecast = alps) {
+        DayScreen("Jungfraujoch", forecast, date, unit, onBack = {})
     }
 
     @Composable
@@ -288,7 +301,20 @@ class ScreenshotTest {
     }
 
     @Test fun weatherFullPage() = snap("weather_full_page", tall = true) {
-        Weather(weatherState(PageContent.Loaded(forecast, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp)))
+        Weather(weatherState(PageContent.Loaded(forecast, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp, fetchedAt = fetched)))
+    }
+
+    /**
+     * Rain and snow amounts on a real forecast: the hourly strip with chances and amounts from 5 PM, and the 10-day
+     * list with each day's total (snow days in cm of snow), the last three days lighter under "less certain".
+     */
+    @Test fun weatherAmounts() = snap("weather_amounts", tall = true) {
+        val afternoon = alps.copy(current = alps.current.copy(time = java.time.LocalDateTime.of(2026, 10, 1, 15, 15), isDay = true))
+        val place = Place("geo:2659811", "Jungfraujoch", "Bern", "Switzerland", 46.55, 7.98)
+        val summary = TemplateNarrator(Locale.US).describe(NarrationInput(place.name, afternoon, TempUnit.C))
+        Weather(
+            weatherState(PageContent.Loaded(afternoon, summary, fetchedAt = fetched), place = place, key = place.id, settings = AppSettings(primaryUnit = TempUnit.C, activity = null)),
+        )
     }
 
     @Test fun weatherFullPageDark() = snap("weather_full_page_dark", night = true, tall = true) {
@@ -329,7 +355,7 @@ class ScreenshotTest {
 
     /** Extremes on the narrow screen at 1.5x: negative and three-digit values must keep the 7-day columns aligned. */
     @Test fun weatherExtremesLargeFont() = snap("weather_extremes_large_font", tall = true, narrow = true, fontScale = 1.5f) {
-        val lows = listOf(-12.0, -8.5, 3.0, 12.0, 20.0, 24.0, 30.0, 18.0)
+        val lows = listOf(-12.0, -8.5, 3.0, 12.0, 20.0, 24.0, 30.0, 18.0, 9.0, -3.0)
         val extremes = forecast.copy(days = forecast.days.mapIndexed { i, d -> d.copy(lowC = lows[i], highC = lows[i] + 8.5) })
         Weather(
             weatherState(
@@ -359,17 +385,19 @@ class ScreenshotTest {
     @Test fun weatherRainyNight() = snap("weather_rainy_night") {
         Weather(
             weatherState(
-                PageContent.Loaded(rainyNight, rainyNightSummary),
+                PageContent.Loaded(rainyNight, rainyNightSummary, fetchedAt = fetched),
                 place = london, key = london.id,
                 settings = AppSettings(primaryUnit = TempUnit.C),
             )
         )
     }
 
+    /** Fetched two hours ago: the "updated" line turns amber and suggests pulling to refresh. */
     @Test fun weatherRainyNightDark() = snap("weather_rainy_night_dark", night = true) {
         Weather(
-            weatherState(
-                PageContent.Loaded(rainyNight, rainyNightSummary),
+            now = fetched.plusSeconds(2 * 3600),
+            state = weatherState(
+                PageContent.Loaded(rainyNight, rainyNightSummary, fetchedAt = fetched),
                 place = london, key = london.id,
                 settings = AppSettings(primaryUnit = TempUnit.C),
             )
@@ -386,6 +414,25 @@ class ScreenshotTest {
                 savedPlaces = base.savedPlaces + extra,
             )
         )
+    }
+
+    // --- Day details ----------------------------------------------------------------------------
+
+    /** Today, with showers this evening and a wet night: the chart, the timing and both halves of the day. */
+    @Test fun dayWet() = snap("day_wet", tall = true) { Day(java.time.LocalDate.of(2026, 10, 1), TempUnit.C) }
+
+    /** A dry day five days out: "Rain unlikely" alone, no chart, no hedge. */
+    @Test fun dayDry() = snap("day_dry", tall = true) { Day(java.time.LocalDate.of(2026, 10, 6), TempUnit.F) }
+
+    /** A snow day a week out, in °F: the Snow card in inches, the hedge, and feels-like well below the air. */
+    @Test fun daySnowy() = snap("day_snowy", tall = true) { Day(java.time.LocalDate.of(2026, 10, 8), TempUnit.F) }
+
+    /** Tomorrow in the dark theme: rain overnight, clearing by morning. */
+    @Test fun dayDark() = snap("day_dark", night = true, tall = true) { Day(java.time.LocalDate.of(2026, 10, 2), TempUnit.C) }
+
+    /** The narrow screen at 1.5x: pills wrap, the chart drops its % signs, the rows and tiles grow instead of clipping. */
+    @Test fun dayLargeFont() = snap("day_large_font", tall = true, narrow = true, fontScale = 1.5f) {
+        Day(java.time.LocalDate.of(2026, 10, 9), TempUnit.F)
     }
 
     @Test fun loading() = snap("loading") {

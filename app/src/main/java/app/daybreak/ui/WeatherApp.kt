@@ -40,12 +40,13 @@ import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.SideEffect
 import android.app.Activity
+import java.time.LocalDate
 
 /** The bottom bar's sections. Home is where the app opens. */
 enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Clocks("Clocks"), Settings("Settings") }
 
 /** Full-screen tasks opened from a tab; the bottom bar hides while one is open. */
-private enum class Overlay { Search, Places }
+private enum class Overlay { Search, Places, Day }
 
 /** Wires the ViewModel to the stateless screens and owns navigation and system pickers/prompts. */
 @Composable
@@ -58,11 +59,14 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     var addingClock by rememberSaveable { mutableStateOf(false) }
     // Whether Search was opened from Places (its "Add"), so back returns there.
     var searchFromPlaces by rememberSaveable { mutableStateOf(false) }
+    // The page and date (ISO) of the day whose details are open.
+    var dayPage by rememberSaveable { mutableStateOf<String?>(null) }
+    var dayDate by rememberSaveable { mutableStateOf<String?>(null) }
     // White status-bar icons over Home's and Weather's sky (and the strip that replaces it when scrolled); the
     // theme's own on Clocks, Settings and the overlays.
     val view = LocalView.current
     val dark = MaterialTheme.isDark
-    val onSky = overlay == null && (tab == Tab.Home || tab == Tab.Weather)
+    val onSky = (overlay == null && (tab == Tab.Home || tab == Tab.Weather)) || overlay == Overlay.Day
     if (!view.isInEditMode) {
         SideEffect {
             (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars = !dark && !onSky }
@@ -123,6 +127,23 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     }
 
     when (overlay) {
+        Overlay.Day -> {
+            val page = state.pages.firstOrNull { it.key == dayPage }
+            val loaded = page?.content as? PageContent.Loaded
+            val date = dayDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            if (loaded != null && date != null && loaded.forecast.day(date) != null) {
+                DayScreen(
+                    placeName = page.place?.name ?: "My location",
+                    forecast = loaded.forecast,
+                    date = date,
+                    unit = state.settings.primaryUnit,
+                    onBack = { overlay = null },
+                )
+            } else {
+                // The place was removed, or a refresh moved the forecast past that day: back to the pages.
+                LaunchedEffect(Unit) { overlay = null }
+            }
+        }
         Overlay.Search -> SearchScreen(
             search = state.search,
             savedIds = if (addingClock) clocks.map { it.id }.toSet() else state.savedPlaces.map { it.id }.toSet(),
@@ -194,6 +215,11 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                             onUseCurrentLocation = enableCurrentLocation,
                             onOpenSearch = openSearch,
                             onOpenPlaces = { overlay = Overlay.Places },
+                            onOpenDay = { key, date ->
+                                dayPage = key
+                                dayDate = date.toString()
+                                overlay = Overlay.Day
+                            },
                         )
                         Tab.Clocks -> ClocksScreen(
                             clocks = clocks,
