@@ -142,7 +142,7 @@ class SettingsRepositoryTest {
 
     @Test fun `settings of removed features are cleared once, and your dates are kept`() {
         val store = InMemoryStore(mapOf("tone" to "PIRATE", "commute" to "on-8-17", "primary_unit" to "C"))
-        val trip = PersonalDate(LocalDate.of(2026, 10, 12), name = "Lisbon trip")
+        val trip = PersonalDate(LocalDate.of(2026, 10, 12), name = "Lisbon trip", id = "t")
         // Your dates saved by an earlier version, alongside the old keys, all in the private store the cleanup reads.
         val scratch = InMemoryStore()
         SettingsRepository(InMemoryStore(), privateStore = scratch).update { it.copy(personalDates = listOf(trip)) }
@@ -159,8 +159,8 @@ class SettingsRepositoryTest {
     @Test fun `your dates are kept in the private store, sorted, and a bad entry doesn't lose the rest`() {
         val store = InMemoryStore()
         val private = InMemoryStore()
-        val trip = PersonalDate(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 16), "Lisbon trip", dayOff = true)
-        val birthday = PersonalDate(LocalDate.of(2026, 10, 2), name = "Mum's birthday", yearly = true)
+        val trip = PersonalDate(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 16), "Lisbon trip", dayOff = true, id = "t")
+        val birthday = PersonalDate(LocalDate.of(2026, 10, 2), name = "Mum's birthday", yearly = true, id = "b")
         SettingsRepository(store, privateStore = private).update { it.copy(personalDates = listOf(trip, birthday)) }
         assertNull(store.getString("personal_dates"))
         assertEquals(listOf(birthday, trip), SettingsRepository(store, privateStore = private).settings.value.personalDates)

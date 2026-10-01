@@ -28,12 +28,12 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +46,24 @@ import androidx.compose.runtime.SideEffect
 import android.app.Activity
 import java.time.LocalDate
 import app.daybreak.domain.Forecast
+import app.daybreak.reminders.Reminders
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import android.content.Context
+import android.os.Build
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.rememberCoroutineScope
+import app.daybreak.domain.PersonalDate
+import kotlinx.coroutines.launch
+
+/** What the system lets reminders do right now. */
+private fun reminderAccess(context: Context) =
+    ReminderAccess(notificationsAllowed = Reminders.notificationsAllowed(context), exactAlarms = Reminders.canScheduleExact(context))
 
 /** The bottom bar's sections. Home is where the app opens. */
 enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Habits("Habits"), Clocks("Clocks"), Settings("Settings") }
@@ -80,6 +98,8 @@ fun WeatherApp(
     clocksVm: ClocksViewModel? = null,
     habitsVm: HabitsViewModel? = null,
     onThisDayVm: OnThisDayViewModel? = null,
+    /** Goes up each time a reminder is tapped while the app is open: back to Home. */
+    homeRequests: kotlinx.coroutines.flow.StateFlow<Int>? = null,
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
@@ -111,6 +131,50 @@ fun WeatherApp(
         }
     }
     // Each tab keeps its own scroll and state while another is shown.
+    val homeRequest = homeRequests?.collectAsStateWithLifecycle()?.value ?: 0
+    LaunchedEffect(homeRequest) {
+        if (homeRequest > 0) {
+            overlay = null
+            tab = Tab.Home
+        }
+    }
+    val context = LocalContext.current
+    // What the system lets reminders do, read again whenever the app comes back to the front: the user may have just
+    // changed it in the system's pages.
+    var access by remember { mutableStateOf(reminderAccess(context)) }
+    LifecycleResumeEffect(Unit) {
+        access = reminderAccess(context)
+        onPauseOrDispose {}
+    }
+    // Asked for once, when a date is first saved with a reminder and no date had one; after that the hint offers the way.
+    var askedForNotifications by rememberSaveable { mutableStateOf(false) }
+    val notificationsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        access = reminderAccess(context)
+    }
+    val saveDate = { old: PersonalDate?, new: PersonalDate ->
+        val first = new.reminders.isNotEmpty() && state.settings.personalDates.none { it.reminders.isNotEmpty() }
+        vm.savePersonalDate(old, new)
+        if (first && !askedForNotifications && Reminders.needsNotificationPermission(context) && Build.VERSION.SDK_INT >= 33) {
+            askedForNotifications = true
+            notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undoMessage: (String, () -> Unit) -> Unit = { message, onUndo ->
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            if (snackbar.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) onUndo()
+        }
+    }
+    /** The date editor, for Settings' "Your dates" and Home's Coming up alike. */
+    val editorHost: @Composable (@Composable (PersonalDateEditing) -> Unit) -> Unit = { content ->
+        PersonalDateEditorHost(
+            state.settings.personalDates, LocalDate.now(), saveDate, vm::removePersonalDate, vm::addPersonalDate,
+            access, { Reminders.exactAlarmSettings(context)?.let { runCatching { context.startActivity(it) } } },
+            state.settings.lastAllDayReminders, state.settings.lastTimedReminders, content,
+        )
+    }
     val tabStates = rememberSaveableStateHolder()
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
     val pagerState = rememberPagerState { state.pages.size }
@@ -221,6 +285,7 @@ fun WeatherApp(
         )
         null -> Scaffold(
             bottomBar = { DaybreakNavigationBar(tab) { tab = it } },
+            snackbarHost = { SnackbarHost(snackbar) },
             // Each tab handles the status bar itself (Home and Weather draw their sky behind it).
             contentWindowInsets = WindowInsets(0),
         ) { padding ->
@@ -230,72 +295,79 @@ fun WeatherApp(
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
             ) {
                 tabStates.SaveableStateProvider(tab) {
-                    when (tab) {
-                        Tab.Home -> HomeScreen(
-                            state = state,
-                            onOpenWeather = { index ->
-                                scrollTo = index
-                                tab = Tab.Weather
-                            },
-                            onRefresh = { key ->
-                                vm.refresh(key)
-                                // A card that couldn't be fetched (offline) gets another go.
-                                if (state.settings.onThisDayEnabled) onThisDayVm?.load(force = true)
-                            },
-                            onRequestPermission = requestPermission,
-                            onOpenSearch = openSearch,
-                            onOpenSettings = { tab = Tab.Settings },
-                            habits = habits,
-                            celebration = celebration,
-                            onLogHabit = { habitsVm?.log(it, fromHome = true) },
-                            onUndoHabit = { habitsVm?.undo(it) },
-                            onCelebrationShown = { habitsVm?.celebrationShown(it) },
-                            habitsUndoHint = undoHint,
-                            onOpenHabits = { tab = Tab.Habits },
-                            onThisDay = onThisDay,
-                            onAnotherOnThisDay = { onThisDayVm?.another() },
-                            images = onThisDayVm?.images,
-                        )
-                        Tab.Weather -> WeatherPagerScreen(
-                            state = state,
-                            pagerState = pagerState,
-                            onRefresh = vm::refresh,
-                            onRequestPermission = requestPermission,
-                            onUseCurrentLocation = enableCurrentLocation,
-                            onOpenSearch = openSearch,
-                            onOpenPlaces = { overlay = Overlay.Places },
-                            onOpenDay = { key, date ->
-                                dayPage = key
-                                dayDate = date.toString()
-                                overlay = Overlay.Day
-                            },
-                        )
-                        Tab.Habits -> HabitsScreen(
-                            summary = habits ?: app.daybreak.domain.summarize(app.daybreak.domain.HabitsData(), java.time.LocalDate.now()),
-                            celebration = celebration,
-                            onLog = { habitsVm?.log(it) },
-                            onUndo = { habitsVm?.undo(it) },
-                            onAdd = { habitsVm?.add(it) },
-                            onUpdate = { id, draft -> habitsVm?.update(id, draft) },
-                            onRemove = { habitsVm?.remove(it) },
-                            onMove = { id, by -> habitsVm?.move(id, by) },
-                            onCelebrationShown = { habitsVm?.celebrationShown(it) },
-                        )
-                        Tab.Clocks -> ClocksScreen(
-                            clocks = clocks,
-                            onAdd = {
-                                addingClock = true
-                                searchFromPlaces = false
-                                overlay = Overlay.Search
-                            },
-                            onRemove = { clocksVm?.remove(it) },
-                            onMove = { from, to -> clocksVm?.move(from, to) },
-                        )
-                        Tab.Settings -> SettingsTab(
-                            state, vm, modelPicker::launch,
-                            habitsWeekStart = habitsData?.weekStart,
-                            onHabitsWeekStartChange = { habitsVm?.setWeekStart(it) },
-                        )
+                    CompositionLocalProvider(LocalUndoMessage provides undoMessage) {
+                        when (tab) {
+                            Tab.Home -> editorHost { editor ->
+                                HomeScreen(
+                                    state = state,
+                                    onOpenWeather = { index ->
+                                        scrollTo = index
+                                        tab = Tab.Weather
+                                    },
+                                    onRefresh = { key ->
+                                        vm.refresh(key)
+                                        // A card that couldn't be fetched (offline) gets another go.
+                                        if (state.settings.onThisDayEnabled) onThisDayVm?.load(force = true)
+                                    },
+                                    onRequestPermission = requestPermission,
+                                    onOpenSearch = openSearch,
+                                    onOpenSettings = { tab = Tab.Settings },
+                                    habits = habits,
+                                    celebration = celebration,
+                                    onLogHabit = { habitsVm?.log(it, fromHome = true) },
+                                    onUndoHabit = { habitsVm?.undo(it) },
+                                    onCelebrationShown = { habitsVm?.celebrationShown(it) },
+                                    habitsUndoHint = undoHint,
+                                    onOpenHabits = { tab = Tab.Habits },
+                                    onThisDay = onThisDay,
+                                    onAnotherOnThisDay = { onThisDayVm?.another() },
+                                    images = onThisDayVm?.images,
+                                    onEditDate = { id -> state.settings.personalDates.firstOrNull { it.id == id }?.let(editor.edit) },
+                                )
+                            }
+                            Tab.Weather -> WeatherPagerScreen(
+                                state = state,
+                                pagerState = pagerState,
+                                onRefresh = vm::refresh,
+                                onRequestPermission = requestPermission,
+                                onUseCurrentLocation = enableCurrentLocation,
+                                onOpenSearch = openSearch,
+                                onOpenPlaces = { overlay = Overlay.Places },
+                                onOpenDay = { key, date ->
+                                    dayPage = key
+                                    dayDate = date.toString()
+                                    overlay = Overlay.Day
+                                },
+                            )
+                            Tab.Habits -> HabitsScreen(
+                                summary = habits ?: app.daybreak.domain.summarize(app.daybreak.domain.HabitsData(), java.time.LocalDate.now()),
+                                celebration = celebration,
+                                onLog = { habitsVm?.log(it) },
+                                onUndo = { habitsVm?.undo(it) },
+                                onAdd = { habitsVm?.add(it) },
+                                onUpdate = { id, draft -> habitsVm?.update(id, draft) },
+                                onRemove = { habitsVm?.remove(it) },
+                                onMove = { id, by -> habitsVm?.move(id, by) },
+                                onCelebrationShown = { habitsVm?.celebrationShown(it) },
+                            )
+                            Tab.Clocks -> ClocksScreen(
+                                clocks = clocks,
+                                onAdd = {
+                                    addingClock = true
+                                    searchFromPlaces = false
+                                    overlay = Overlay.Search
+                                },
+                                onRemove = { clocksVm?.remove(it) },
+                                onMove = { from, to -> clocksVm?.move(from, to) },
+                            )
+                            Tab.Settings -> SettingsTab(
+                                state, vm, modelPicker::launch,
+                                habitsWeekStart = habitsData?.weekStart,
+                                onHabitsWeekStartChange = { habitsVm?.setWeekStart(it) },
+                                access = access,
+                                onSaveDate = saveDate,
+                            )
+                        }
                     }
                 }
             }
@@ -330,9 +402,17 @@ private fun SettingsTab(
     launchModelPicker: (Array<String>) -> Unit,
     habitsWeekStart: java.time.DayOfWeek?,
     onHabitsWeekStartChange: (java.time.DayOfWeek) -> Unit,
+    access: ReminderAccess,
+    onSaveDate: (PersonalDate?, PersonalDate) -> Unit,
 ) {
+    val context = LocalContext.current
     SettingsScreen(
             settings = state.settings,
+            onSavePersonalDate = onSaveDate,
+            onRestorePersonalDate = vm::addPersonalDate,
+            reminderAccess = access,
+            onOpenNotificationSettings = { runCatching { context.startActivity(Reminders.notificationSettings(context)) } },
+            onAllowExactAlarms = { Reminders.exactAlarmSettings(context)?.let { runCatching { context.startActivity(it) } } },
             modelStatus = state.modelStatus,
             onUnitChange = vm::setPrimaryUnit,
             onGemmaEnabledChange = vm::setGemmaEnabled,
@@ -343,7 +423,6 @@ private fun SettingsTab(
             habitsWeekStart = habitsWeekStart,
             onHabitsWeekStartChange = onHabitsWeekStartChange,
             onComingUpEnabledChange = vm::setComingUpEnabled,
-            onAddPersonalDate = vm::addPersonalDate,
             onRemovePersonalDate = vm::removePersonalDate,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,

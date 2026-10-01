@@ -124,6 +124,8 @@ fun HomeScreen(
     onAnotherOnThisDay: () -> Unit = {},
     /** Loads the card's picture; null for words only. */
     images: ImageLoader? = null,
+    /** Opens the editor for one of your dates in Coming up, by its id; null leaves them as they are. */
+    onEditDate: ((String) -> Unit)? = null,
 ) {
     val now = now ?: rememberMinuteClock().atZone(zone).toLocalDateTime()
     val index = glancePageIndex(state.pages)
@@ -180,7 +182,7 @@ fun HomeScreen(
                     undoHint = habitsUndoHint, onOpenHabits = onOpenHabits,
                 )
             }
-            HomeCards(state, page, loaded, now, zone, onThisDay, onAnotherOnThisDay, images)
+            HomeCards(state, page, loaded, now, zone, onThisDay, onAnotherOnThisDay, images, onEditDate)
             // Only when every card is switched off (not while they're waiting for a forecast), or habits have none.
             val settings = state.settings
             if (!settings.comingUpEnabled && !settings.skyEnabled && !settings.onThisDayEnabled && !settings.memesEnabled && !showHabits) {
@@ -213,6 +215,7 @@ private fun HomeCards(
     onThisDay: OnThisDayToday?,
     onAnotherOnThisDay: () -> Unit,
     images: ImageLoader?,
+    onEditDate: ((String) -> Unit)?,
 ) {
     val settings = state.settings
     val unit = settings.primaryUnit
@@ -228,7 +231,7 @@ private fun HomeCards(
     }
     if (upcoming.isNotEmpty()) {
         SectionHeading("Coming up")
-        ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin), today = today)
+        ComingUpCard(upcoming, forecast, unit, Modifier.padding(horizontal = PageMargin), today = today, onEditDate = onEditDate)
     }
 
     if (settings.skyEnabled) {

@@ -22,3 +22,9 @@ class InMemoryStore(initial: Map<String, String> = emptyMap()) : KeyValueStore {
     override fun putString(key: String, value: String) { values[key] = value }
     override fun remove(key: String) { values.remove(key) }
 }
+
+/**
+ * Preferences that must never leave the phone (your dates and their reminders, habits); excluded in
+ * res/xml/backup_rules.xml and data_extraction_rules.xml.
+ */
+const val PRIVATE_PREFS = "private"

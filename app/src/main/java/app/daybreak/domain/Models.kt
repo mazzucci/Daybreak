@@ -214,4 +214,7 @@ data class AppSettings(
     val habitsOnHome: Boolean = true,
     /** Whether Home shows a cheerful moment from today's date in history, from Wikipedia. */
     val onThisDayEnabled: Boolean = true,
+    /** The reminders last saved with an all-day date and with a timed one: a new date starts with them. */
+    val lastAllDayReminders: List<Reminder> = emptyList(),
+    val lastTimedReminders: List<Reminder> = emptyList(),
 )

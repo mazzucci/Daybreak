@@ -2,6 +2,7 @@ package app.daybreak.domain
 
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.Month
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -21,6 +22,10 @@ data class Countdown(
     val endDate: LocalDate? = null,
     /** Extra context: "4-day weekend", "Take Friday off for a 4-day weekend". */
     val note: String? = null,
+    /** When it starts on [date], for your own dates that have a time ("Thu, Oct 1 · 2:00 PM"). */
+    val time: LocalTime? = null,
+    /** For your own dates, the [PersonalDate.id] it counts down to, so tapping it can edit it. */
+    val dateId: String? = null,
 ) {
     enum class Kind { HOLIDAY, LONG_WEEKEND, SEASON, DAY_OFF, PERSONAL }
 
@@ -31,6 +36,11 @@ data class Countdown(
  * A date of the user's own: a birthday, a big presentation, leave. One day or a run of them ([end] inclusive), with
  * their [name] for it. A [dayOff] is counted down with the break it makes; a
  * [yearly] one comes round every year on the same dates.
+ *
+ * It can start at a [time] (wall-clock, in whatever zone the phone is in, like a calendar's local event; for a run of
+ * days, the time on the first) and have up to [REMINDERS_MAX] [reminders], which a yearly date repeats every year.
+ * [id] keeps a date's reminders and notifications its own while it's edited; dates saved before reminders have none
+ * ("") until they're next edited.
  */
 data class PersonalDate(
     val start: LocalDate,
@@ -38,6 +48,9 @@ data class PersonalDate(
     val name: String = "",
     val dayOff: Boolean = false,
     val yearly: Boolean = false,
+    val time: LocalTime? = null,
+    val reminders: List<Reminder> = emptyList(),
+    val id: String = "",
 ) {
     init {
         require(!end.isBefore(start)) { "A date can't end before it starts" }
@@ -58,12 +71,13 @@ data class PersonalDate(
      */
     fun next(today: LocalDate): PersonalDate? {
         if (!yearly) return takeIf { !end.isBefore(today) }
-        val years = end.year - start.year
-        return (today.year - 1..today.year + 1).firstNotNullOfOrNull { y ->
-            val s = start.withYear(y)
-            val e = maxOf(s, end.withYear(y + years))
-            if (e.isBefore(today)) null else copy(start = s, end = e)
-        }
+        return (today.year - 1..today.year + 1).firstNotNullOfOrNull { y -> inYear(y).takeIf { !it.end.isBefore(today) } }
+    }
+
+    /** A yearly date's time round in [year] (the year it starts). */
+    fun inYear(year: Int): PersonalDate {
+        val s = start.withYear(year)
+        return copy(start = s, end = maxOf(s, end.withYear(year + (end.year - start.year))))
     }
 }
 
@@ -106,10 +120,10 @@ fun upcomingPersonalDates(
         .map { d ->
             val kind = if (d.dayOff) Countdown.Kind.DAY_OFF else Countdown.Kind.PERSONAL
             if (d.start.isBefore(today)) {
-                return@map Countdown(kind, d.title, today, d.end, if (d.end == today) "Last day" else "Until ${dayName(d.end)}")
+                return@map Countdown(kind, d.title, today, d.end, if (d.end == today) "Last day" else "Until ${dayName(d.end)}", dateId = d.id.ifBlank { null })
             }
             val end = d.end.takeIf { it != d.start }
-            if (!d.dayOff) return@map Countdown(kind, d.title, d.start, end, if (d.dayCount > 1) "${d.dayCount} days" else null)
+            if (!d.dayOff) return@map Countdown(kind, d.title, d.start, end, if (d.dayCount > 1) "${d.dayCount} days" else null, d.time, d.id.ifBlank { null })
             // The whole break: out past the weekend, holidays and other days off on either side.
             fun off(x: LocalDate) = x.dayOfWeek in weekend || x in holidays || x in offDates
             var first = d.start
@@ -126,7 +140,7 @@ fun upcomingPersonalDates(
                 total <= 4 && run.any { it.dayOfWeek in weekend } -> "Makes a $total-day weekend"
                 else -> "$total days in a row"
             }
-            Countdown(kind, d.title, d.start, end, note)
+            Countdown(kind, d.title, d.start, end, note, d.time, d.id.ifBlank { null })
         }
 }
 

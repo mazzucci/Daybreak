@@ -2,6 +2,7 @@ package app.daybreak.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import app.daybreak.domain.describeWeatherCode
 import app.daybreak.domain.formatBothUnits
 import app.daybreak.domain.formatCountdown
 import app.daybreak.domain.formatDegrees
+import app.daybreak.domain.formatTimeOfDay
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -58,6 +60,8 @@ fun ComingUpCard(
     unit: TempUnit,
     modifier: Modifier = Modifier,
     today: java.time.LocalDate = forecast?.current?.time?.toLocalDate() ?: java.time.LocalDate.now(),
+    /** Opens the editor for one of your dates, by its id; null where dates can't be edited (their rows aren't tappable). */
+    onEditDate: ((String) -> Unit)? = null,
 ) {
     val palette = cardIconPalette()
     Card(
@@ -68,14 +72,21 @@ fun ComingUpCard(
             items.forEachIndexed { i, item ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 val day = forecast?.days?.firstOrNull { it.date == item.date }
-                // A range shows both ends ("Oct 12–16"); a single day keeps its weekday.
-                val date = item.endDate?.let { formatRange(item.date, it, spoken = false) }
-                    ?: item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US))
+                // A range shows both ends ("Oct 12–16"); a single day keeps its weekday. One of your dates with a
+                // time has it after the day ("Thu, Oct 1 · 2:00 PM").
+                val time = item.time?.let { formatTimeOfDay(it) }
+                val date = listOfNotNull(
+                    item.endDate?.let { formatRange(item.date, it, spoken = false) }
+                        ?: item.date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)),
+                    time,
+                ).joinToString(" · ")
                 val countdown = formatCountdown(item.daysFrom(today))
                 // TalkBack gets the full weekday and month (the short form's comma would split the list) and the
                 // high in both units, like the 7-day rows.
-                val spokenDate = item.endDate?.let { formatRange(item.date, it, spoken = true) }
-                    ?: item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+                val spokenDate = (
+                    item.endDate?.let { formatRange(item.date, it, spoken = true) }
+                        ?: item.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US))
+                    ) + (time?.let { " at $it" } ?: "")
                 val spokenWeather = day?.let { "${describeWeatherCode(it.code)}, high ${formatBothUnits(it.highC, unit)}" }
                 CountdownRow(
                     item, day, unit, palette,
@@ -83,6 +94,10 @@ fun ComingUpCard(
                     countdown = countdown,
                     Modifier
                         .fillMaxWidth()
+                        .then(
+                            item.dateId?.let { id -> onEditDate?.let { edit -> Modifier.clickable(onClickLabel = "Edit") { edit(id) } } }
+                                ?: Modifier,
+                        )
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .clearAndSetSemantics {
                             contentDescription = listOfNotNull(item.title, spokenDate, item.note, countdown, spokenWeather).joinToString(", ")

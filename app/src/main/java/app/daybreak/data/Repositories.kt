@@ -11,7 +11,11 @@ import app.daybreak.domain.HabitGoal
 import app.daybreak.domain.HabitKind
 import app.daybreak.domain.HabitPeriod
 import app.daybreak.domain.HabitsData
+import app.daybreak.domain.DEFAULT_REMINDER_TIME
 import app.daybreak.domain.PersonalDate
+import app.daybreak.domain.REMINDERS_MAX
+import app.daybreak.domain.Reminder
+import app.daybreak.domain.reminderOf
 import app.daybreak.domain.Place
 import app.daybreak.domain.countryCodeOf
 import app.daybreak.domain.TempUnit
@@ -32,7 +36,9 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.temporal.WeekFields
+import java.util.UUID
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 
@@ -125,6 +131,15 @@ class SettingsRepository(
     private val _settings = MutableStateFlow(load(defaults))
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
+    init {
+        // Dates saved before they had ids get theirs when they're read (see decodePersonalDates); write them down, so
+        // they keep them from here on whatever's edited.
+        val raw = privateStore.getString(KEY_DATES)
+        if (raw != null && _settings.value.personalDates.isNotEmpty() && !storedDatesHaveIds(raw)) {
+            privateStore.putString(KEY_DATES, encodePersonalDates(_settings.value.personalDates))
+        }
+    }
+
     fun update(transform: (AppSettings) -> AppSettings) {
         _settings.update(transform)
         val s = _settings.value
@@ -136,39 +151,16 @@ class SettingsRepository(
         store.putString(KEY_SKY, s.skyEnabled.toString())
         store.putString(KEY_HABITS_HOME, s.habitsOnHome.toString())
         store.putString(KEY_ON_THIS_DAY, s.onThisDayEnabled.toString())
+        store.putString(KEY_LAST_ALL_DAY, s.lastAllDayReminders.joinToString(",") { it.key })
+        store.putString(KEY_LAST_TIMED, s.lastTimedReminders.joinToString(",") { it.key })
         if (s.personalDates.isEmpty()) {
             privateStore.remove(KEY_DATES)
         } else {
-            privateStore.putString(
-                KEY_DATES,
-                JSONArray(
-                    s.personalDates.map {
-                        JSONObject().put("start", it.start.toString()).put("end", it.end.toString()).put("name", it.name)
-                            .put("dayOff", it.dayOff).put("yearly", it.yearly)
-                    },
-                ).toString(),
-            )
+            privateStore.putString(KEY_DATES, encodePersonalDates(s.personalDates))
         }
     }
 
-    /** Stored dates; any entry that doesn't parse is dropped rather than losing the rest. */
-    private fun loadPersonalDates(): List<PersonalDate>? {
-        val raw = privateStore.getString(KEY_DATES) ?: return null
-        val array = try {
-            JSONArray(raw)
-        } catch (e: JSONException) {
-            return emptyList()
-        }
-        return (0 until array.length()).mapNotNull { i ->
-            runCatching {
-                val o = array.getJSONObject(i)
-                PersonalDate(
-                    LocalDate.parse(o.getString("start")), LocalDate.parse(o.getString("end")), o.optString("name"),
-                    dayOff = o.optBoolean("dayOff"), yearly = o.optBoolean("yearly"),
-                )
-            }.getOrNull()
-        }.sortedBy { it.start }
-    }
+    private fun loadPersonalDates(): List<PersonalDate>? = privateStore.getString(KEY_DATES)?.let(::decodePersonalDates)
 
     private fun load(defaults: AppSettings) = AppSettings(
         primaryUnit = store.getString(KEY_UNIT)?.let { runCatching { TempUnit.valueOf(it) }.getOrNull() }
@@ -181,6 +173,8 @@ class SettingsRepository(
         habitsOnHome = store.getString(KEY_HABITS_HOME)?.toBooleanStrictOrNull() ?: defaults.habitsOnHome,
         onThisDayEnabled = store.getString(KEY_ON_THIS_DAY)?.toBooleanStrictOrNull() ?: defaults.onThisDayEnabled,
         personalDates = loadPersonalDates() ?: defaults.personalDates,
+        lastAllDayReminders = store.getString(KEY_LAST_ALL_DAY)?.let(::remindersOf) ?: defaults.lastAllDayReminders,
+        lastTimedReminders = store.getString(KEY_LAST_TIMED)?.let(::remindersOf) ?: defaults.lastTimedReminders,
     )
 
     private companion object {
@@ -192,11 +186,83 @@ class SettingsRepository(
         const val KEY_SKY = "sky_enabled"
         const val KEY_HABITS_HOME = "habits_on_home"
         const val KEY_ON_THIS_DAY = "on_this_day_enabled"
-        const val KEY_DATES = "personal_dates"
+        const val KEY_DATES = PERSONAL_DATES_KEY
+        const val KEY_LAST_ALL_DAY = "last_reminders_all_day"
+        const val KEY_LAST_TIMED = "last_reminders_timed"
         val REMOVED_KEYS = listOf("tone", "commute", "activity")
         val REMOVED_PRIVATE_KEYS = listOf("about_me", "commute_home", "commute_office")
     }
 }
+
+/** Where [SettingsRepository] keeps your dates in its private store. */
+const val PERSONAL_DATES_KEY = "personal_dates"
+
+/** Your dates as stored: a JSON array of objects. */
+fun encodePersonalDates(dates: List<PersonalDate>): String = JSONArray(
+    dates.map { d ->
+        JSONObject().put("start", d.start.toString()).put("end", d.end.toString()).put("name", d.name)
+            .put("dayOff", d.dayOff).put("yearly", d.yearly)
+            .apply {
+                if (d.id.isNotBlank()) put("id", d.id)
+                d.time?.let { put("time", it.toString()) }
+                if (d.reminders.isNotEmpty()) put("reminders", JSONArray(d.reminders.map { it.toJson() }))
+            }
+    },
+).toString()
+
+/** Reminders from their keys, comma-separated ("d0@09:00,d1@09:00"); any that doesn't parse is left out. */
+private fun remindersOf(keys: String): List<Reminder> =
+    keys.split(",").mapNotNull(::reminderOf).distinct().take(REMINDERS_MAX)
+
+/** Whether every stored date already has its id. */
+private fun storedDatesHaveIds(raw: String): Boolean = runCatching {
+    val a = JSONArray(raw)
+    (0 until a.length()).all { a.getJSONObject(it).optString("id").isNotBlank() }
+}.getOrDefault(true)
+
+/**
+ * Stored dates, soonest first. Dates saved before times and reminders have neither; a date that doesn't parse is
+ * dropped rather than losing the rest, as is a reminder (a date keeps the rest of its own).
+ *
+ * A date saved before dates had ids gets one made from its place in the list and what's stored for it, so it's the
+ * same every time it's read (by the app or by the reminders' receiver, which may read first), two dates stored the
+ * same still differ, and SettingsRepository can write it down once.
+ */
+fun decodePersonalDates(raw: String): List<PersonalDate> {
+    val array = try {
+        JSONArray(raw)
+    } catch (e: JSONException) {
+        return emptyList()
+    }
+    return (0 until array.length()).mapNotNull { i ->
+        runCatching {
+            val o = array.getJSONObject(i)
+            val reminders = o.optJSONArray("reminders")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.toReminder() } }
+            PersonalDate(
+                LocalDate.parse(o.getString("start")), LocalDate.parse(o.getString("end")), o.optString("name"),
+                dayOff = o.optBoolean("dayOff"), yearly = o.optBoolean("yearly"),
+                time = o.optString("time").takeIf { it.isNotBlank() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
+                reminders = reminders.orEmpty().distinct().take(REMINDERS_MAX),
+                id = o.optString("id").ifBlank { UUID.nameUUIDFromBytes("$i|$o".toByteArray()).toString() },
+            )
+        }.getOrNull()
+    }.sortedBy { it.start }
+}
+
+/** {"days": 1, "at": "09:00"} or {"minutes": 15}. */
+private fun Reminder.toJson(): JSONObject = when (this) {
+    is Reminder.DaysBefore -> JSONObject().put("days", days).put("at", at.toString())
+    is Reminder.MinutesBefore -> JSONObject().put("minutes", minutes)
+}
+
+/** Null for anything this version doesn't know or can't use. */
+private fun JSONObject.toReminder(): Reminder? = runCatching {
+    when {
+        has("days") -> Reminder.DaysBefore(getInt("days"), optString("at").takeIf { it.isNotBlank() }?.let(LocalTime::parse) ?: DEFAULT_REMINDER_TIME)
+        has("minutes") -> Reminder.MinutesBefore(getInt("minutes"))
+        else -> null
+    }
+}.getOrNull()
 
 /** The user's clocks, in display order, persisted as a JSON array. */
 class ClocksRepository(private val store: KeyValueStore) {

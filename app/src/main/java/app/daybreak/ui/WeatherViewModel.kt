@@ -159,6 +159,8 @@ class WeatherViewModel(
     private val widget: WidgetPublisher? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val searchDebounceMs: Long = 350,
+    /** Called once your dates are saved after a change, so their reminders' alarm is worked out again. */
+    private val onPersonalDatesChanged: () -> Unit = {},
 ) : ViewModel() {
 
     private val contents = MutableStateFlow<Map<String, PageContent>>(emptyMap())
@@ -498,9 +500,31 @@ class WeatherViewModel(
 
     fun removePersonalDate(date: PersonalDate) = updatePersonalDates { it - date }
 
+    /**
+     * Saves [new] in place of [old] (its dates, label, time or reminders edited), found by its id. If [old] has gone
+     * meanwhile (removed elsewhere), nothing changes: the edit isn't brought back as a new date.
+     */
+    fun updatePersonalDate(old: PersonalDate, new: PersonalDate) {
+        fun PersonalDate.isOld() = if (old.id.isNotBlank()) id == old.id else this == old
+        if (settingsRepo.settings.value.personalDates.none { it.isOld() }) return
+        updatePersonalDates { list -> list.map { if (it.isOld()) new else it } }
+    }
+
+    /**
+     * The editor's Save: adds [new] (when [old] is null) or updates [old], and remembers its reminders as the last
+     * picked for its kind of date (all-day or timed), which a new date then starts with.
+     */
+    fun savePersonalDate(old: PersonalDate?, new: PersonalDate) {
+        settingsRepo.update {
+            if (new.time == null) it.copy(lastAllDayReminders = new.reminders) else it.copy(lastTimedReminders = new.reminders)
+        }
+        if (old == null) addPersonalDate(new) else updatePersonalDate(old, new)
+    }
+
     private fun updatePersonalDates(change: (List<PersonalDate>) -> List<PersonalDate>) {
         val today = LocalDate.now()
         settingsRepo.update { s -> s.copy(personalDates = change(s.personalDates).filter { it.next(today) != null }.distinct().sortedBy { it.start }) }
+        onPersonalDatesChanged()
         if (settingsRepo.settings.value.comingUpEnabled) refreshHolidays()
     }
 
