@@ -65,6 +65,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -400,7 +401,15 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
                     TextButton({ pickingTime = false }) { Text("Cancel") }
                 }
             },
-            text = { TimePicker(state) },
+            // The app's display style is sized for the big temperature (104sp); the picker's digits need the standard one.
+            text = {
+                val digits = MaterialTheme.typography.displayLarge.copy(
+                    fontSize = 57.sp, lineHeight = 64.sp, letterSpacing = (-0.25).sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
+                )
+                MaterialTheme(typography = MaterialTheme.typography.copy(displayLarge = digits)) {
+                    TimePicker(state)
+                }
+            },
         )
     }
 }

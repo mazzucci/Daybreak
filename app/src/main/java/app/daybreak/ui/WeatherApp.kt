@@ -35,6 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.unit.isSpecified
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.runtime.SideEffect
+import android.app.Activity
 import app.daybreak.domain.CommuteEnd
 
 /** The bottom bar's sections. Home is where the app opens. */
@@ -54,6 +59,16 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     var addingClock by rememberSaveable { mutableStateOf(false) }
     // Whether Search was opened from Places (its "Add"), so back returns there.
     var searchFromPlaces by rememberSaveable { mutableStateOf(false) }
+    // White status-bar icons over Home's and Weather's sky (and the strip that replaces it when scrolled); the
+    // theme's own on Clocks, Settings and the overlays.
+    val view = LocalView.current
+    val dark = MaterialTheme.isDark
+    val onSky = overlay == null && (tab == Tab.Home || tab == Tab.Weather)
+    if (!view.isInEditMode) {
+        SideEffect {
+            (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars = !dark && !onSky }
+        }
+    }
     // Each tab keeps its own scroll and state while another is shown.
     val tabStates = rememberSaveableStateHolder()
     var scrollTo by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -265,6 +280,16 @@ private fun SettingsTab(
         )
 }
 
+/** The bar's label style, growing with the font size setting only up to 1.3x, so four labels always fit. */
+@Composable
+private fun cappedLabel(): androidx.compose.ui.text.TextStyle {
+    val style = MaterialTheme.typography.labelMedium
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    if (scale <= 1.3f) return style
+    val f = 1.3f / scale
+    return style.copy(fontSize = style.fontSize * f, lineHeight = if (style.lineHeight.isSpecified) style.lineHeight * f else style.lineHeight)
+}
+
 /** Home · Weather · Clocks · Settings, labels always shown, flat on the card colour like the cards themselves. */
 @Composable
 fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
@@ -274,7 +299,8 @@ fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
             NavigationBarItem(
                 selected = on,
                 onClick = { onSelect(t) },
-                label = { Text(t.label) },
+                // One line always; at the largest font sizes the labels stop growing at 1.3x rather than breaking.
+                label = { Text(t.label, maxLines = 1, softWrap = false, style = cappedLabel()) },
                 icon = {
                     when (t) {
                         Tab.Home -> Icon(if (on) Icons.Filled.Home else Icons.Outlined.Home, contentDescription = null)

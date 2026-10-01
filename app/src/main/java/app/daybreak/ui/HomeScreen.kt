@@ -34,6 +34,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -125,8 +126,10 @@ fun HomeScreen(
             )
         },
     ) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Hero(gradient, top = 16.dp, alignment = Alignment.Start) {
+        val scroll = rememberScrollState()
+        var heroBottom by remember { mutableStateOf(Int.MAX_VALUE) }
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+            Hero(gradient, Modifier.onSizeChanged { heroBottom = it.height }, top = 16.dp, alignment = Alignment.Start) {
                 Text(
                     // "Monday, September 28" in the phone's own language and order.
                     now.format(DateTimeFormatter.ofPattern(android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEEMMMMd"), Locale.getDefault())),
@@ -163,6 +166,7 @@ fun HomeScreen(
             }
             Spacer(Modifier.height(24.dp))
         }
+        StatusBarScrim(scroll, heroBottom, gradient.first())
     }
 }
 
