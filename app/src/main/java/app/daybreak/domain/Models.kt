@@ -5,13 +5,16 @@ import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 
 /** Days of forecast fetched per place (today included). Open-Meteo allows up to 16. */
-const val FORECAST_DAYS = 8
+const val FORECAST_DAYS = 10
 
 /** Length of the hourly strip and of the window the summary describes. */
 const val NEXT_HOURS = 12
 
 /** Length of the multi-day list on each page (today included). */
-const val WEEK_DAYS = 7
+const val LIST_DAYS = 10
+
+/** Days in the list from this one on (0 = today) are further out than a week, so they're drawn as less certain. */
+const val LESS_CERTAIN_FROM = 7
 
 /**
  * A place the app can show weather for: either a saved search result or the device's current location.
@@ -63,8 +66,28 @@ data class Forecast(
     }
 
     /** Today and the days after it, for the multi-day list (at most [count]). */
-    fun upcomingDays(count: Int = WEEK_DAYS): List<DaySummary> =
+    fun upcomingDays(count: Int = LIST_DAYS): List<DaySummary> =
         days.filter { !it.date.isBefore(today.date) }.take(count)
+
+    /**
+     * The hours of [date], stamped midnight to 11 PM (fewer if the data starts or ends that day). Their rain covers 11 PM
+     * the evening before to 11 PM, the same hours as Open-Meteo's daily sums (see [Precip]).
+     */
+    fun hoursOf(date: LocalDate): List<HourForecast> = hours.filter { it.time.toLocalDate() == date }
+
+    private val byTime: Map<LocalDateTime, HourForecast> by lazy { hours.associateBy { it.time } }
+
+    /** The hour stamped [time], if the forecast has it. */
+    fun hourAt(time: LocalDateTime): HourForecast? = byTime[time]
+
+    /**
+     * The hour whose precipitation, snowfall and chance fall during [hour]: Open-Meteo stamps them at the end of
+     * the hour they cover, so it's the one stamped an hour later. Null past the end of the data.
+     */
+    fun rainDuring(hour: HourForecast): HourForecast? = hourAt(hour.time.plusHours(1))
+
+    /** The day with this date, if the forecast has it. */
+    fun day(date: LocalDate): DaySummary? = days.firstOrNull { it.date == date }
 
     /** Whether it's dark now at the place, from Open-Meteo's is_day flag or else from sunrise/sunset. */
     val isNightNow: Boolean get() = current.isDay?.not() ?: isNight(current.time)
@@ -101,6 +124,8 @@ data class CurrentConditions(
     val code: Int,
     /** Open-Meteo's is_day flag; null if the response didn't include it. */
     val isDay: Boolean? = null,
+    /** Direction the wind blows from now, degrees clockwise from north; null if missing. */
+    val windDirectionDeg: Double? = null,
 ) {
     val description: String get() = describeWeatherCode(code)
 }
@@ -122,6 +147,12 @@ data class DaySummary(
     val precipSumMm: Double? = null,
     /** Highest UV index of the day. */
     val uvIndexMax: Double? = null,
+    /** Hours with any precipitation (Open-Meteo's precipitation_hours). */
+    val precipHours: Double? = null,
+    /** Total snowfall, cm (not water equivalent). */
+    val snowSumCm: Double? = null,
+    /** Direction the wind mostly blows from, degrees clockwise from north. */
+    val windDirectionDeg: Double? = null,
 ) {
     /**
      * How the sun behaves on [date]. Open-Meteo marks polar night with sunrise == sunset (both midnight) and
@@ -141,6 +172,7 @@ enum class Daylight { NORMAL, POLAR_NIGHT, MIDNIGHT_SUN, UNKNOWN }
 data class HourForecast(
     val time: LocalDateTime,
     val tempC: Double,
+    /** Chance of at least 0.1 mm in the hour ending at [time], 0–100. */
     val precipChance: Int,
     val code: Int,
     /** Sustained wind and gusts at 10 m, km/h; null if missing. */
@@ -148,6 +180,17 @@ data class HourForecast(
     val gustKmh: Double? = null,
     /** Open-Meteo's is_day flag for the start of the hour; null if missing. */
     val isDay: Boolean? = null,
+    /** Apparent ("feels like") temperature, °C; null if missing. */
+    val feelsLikeC: Double? = null,
+    /**
+     * Precipitation (rain, showers and snow as water) over the hour ending at [time], mm; null if missing. Like
+     * [precipChance] and [snowCm], it describes the hour before the stamp (see [Precip]).
+     */
+    val precipMm: Double? = null,
+    /** Snowfall over the hour ending at [time], cm; null if missing. */
+    val snowCm: Double? = null,
+    /** Direction the wind blows from, degrees clockwise from north; null if missing. */
+    val windDirectionDeg: Double? = null,
 )
 
 enum class TempUnit { F, C }

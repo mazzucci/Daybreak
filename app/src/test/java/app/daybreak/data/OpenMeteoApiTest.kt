@@ -17,9 +17,16 @@ class OpenMeteoApiTest {
         assertTrue(url.startsWith("https://api.open-meteo.com/v1/forecast?latitude=37.77&longitude=-122.42"))
         assertTrue("current=" in url && "hourly=" in url && "daily=" in url)
         assertTrue("timezone=auto" in url)
-        assertTrue("forecast_days=8" in url)
-        listOf("sunrise", "sunset", "wind_gusts_10m_max", "uv_index_max", "precipitation_sum", "wind_gusts_10m", "is_day")
-            .forEach { assertTrue("missing $it", it in url) }
+        assertTrue("forecast_days=10" in url)
+        listOf(
+            "sunrise", "sunset", "wind_gusts_10m_max", "uv_index_max", "precipitation_sum", "wind_gusts_10m", "is_day",
+            "apparent_temperature", "precipitation", "snowfall", "wind_direction_10m", "precipitation_hours",
+            "snowfall_sum", "wind_direction_10m_dominant",
+        ).forEach { assertTrue("missing $it", Regex("[=,]$it(,|&)").containsMatchIn(url)) }
+        // The wind's direction now, to go with its speed now.
+        assertTrue(Regex("current=[^&]*wind_direction_10m").containsMatchIn(url))
+        // Nothing reads the mean chance, so it isn't asked for.
+        assertTrue("precipitation_probability_mean" !in url)
         assertEquals(12, f.nextHours.size)
     }
 

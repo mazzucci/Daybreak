@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import app.daybreak.domain.Place
+import app.daybreak.domain.Precip
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.countryCodeOf
 import app.daybreak.domain.describeWeatherCode
@@ -242,18 +243,20 @@ private fun WeatherGlance(
         val f = content.forecast
         val name = page.place?.name ?: "My location"
         val today = f.today
-        val rain = today.precipChance.takeIf { it >= 20 }
+        // The same classifier as everywhere else: the chance from 20%, and "Snow" when it's mostly snow.
+        val todayRain = remember(f) { Precip.dayRain(f, today.date) }
+        val rain = todayRain.chance.takeIf { !todayRain.dry && Precip.showDayChance(it) }
         val condition = describeWeatherCode(f.current.code)
         val range = "↑${formatDegrees(today.highC, unit)} ↓${formatDegrees(today.lowC, unit)}"
         // Don't say rain twice: when the sky already is rain (or snow, or storms), the chance stands alone.
-        val chance = rain?.let { if (condition in DRY_SKIES) "Rain $it%" else "$it% chance" }
+        val chance = rain?.let { if (condition in DRY_SKIES) "${todayRain.noun} $it%" else "$it% chance" }
         val line = listOfNotNull(condition, range, chance).joinToString(" · ")
         val spoken = listOfNotNull(
             name,
             formatBothUnits(f.current.tempC, unit),
             describeWeatherCode(f.current.code).lowercase(),
             "high ${formatDegrees(today.highC, unit)}, low ${formatDegrees(today.lowC, unit)}",
-            rain?.let { "$it percent chance of rain" },
+            rain?.let { "$it percent chance of ${todayRain.noun.lowercase()}" },
         ).joinToString(", ") + ". Opens Weather."
         Card(
             onClick = onOpen,

@@ -75,8 +75,8 @@ class OpenMeteoParsersTest {
         assertEquals(8, f.days.size)
         assertEquals(192, f.hours.size)
         assertEquals(LocalDate.of(2026, 9, 28), f.today.date)
-        assertEquals(7, f.upcomingDays().size)
-        assertEquals(LocalDate.of(2026, 10, 4), f.upcomingDays().last().date)
+        assertEquals(8, f.upcomingDays().size) // an 8-day response from before the list grew to 10
+        assertEquals(LocalDate.of(2026, 10, 5), f.upcomingDays().last().date)
 
         val today = f.today
         assertEquals(LocalDateTime.of(2026, 9, 28, 7, 2), today.sunrise)
@@ -95,26 +95,59 @@ class OpenMeteoParsersTest {
         assertEquals(false, f.nextHours.last().isDay)
     }
 
-    @Test fun `older responses without the detail fields still parse`() {
+    @Test fun `parses ten days with amounts, snow, hours, feels-like and wind direction`() {
+        val f = parseForecast(fixture("forecast_alps_10day.json"))
+        assertEquals(10, f.days.size)
+        assertEquals(240, f.hours.size)
+        assertEquals(10, f.upcomingDays().size)
+        val snowy = f.days[7]
+        assertEquals(LocalDate.of(2026, 10, 8), snowy.date)
+        assertEquals(27.6, snowy.precipSumMm!!, 0.001)
+        assertEquals(19.32, snowy.snowSumCm!!, 0.001)
+        assertEquals(21.0, snowy.precipHours!!, 0.001)
+        assertEquals(4.0, snowy.windDirectionDeg!!, 0.001)
+        val wet = f.hours.first { it.time == LocalDateTime.of(2026, 10, 2, 1, 0) }
+        assertEquals(6.3, wet.precipMm!!, 0.001)
+        assertEquals(0.0, wet.snowCm!!, 0.001)
+        assertEquals(-0.7, wet.feelsLikeC!!, 0.001)
+        assertEquals(333.0, wet.windDirectionDeg!!, 0.001)
+    }
+
+    @Test fun `the wind's direction now comes with its speed now`() {
+        val json = fixture("forecast_alps_10day.json").replace("\"wind_speed_10m\":3.1,", "\"wind_speed_10m\":3.1,\"wind_direction_10m\":225,")
+        val f = parseForecast(json)
+        assertEquals(3.1, f.current.windKmh, 0.001)
+        assertEquals(225.0, f.current.windDirectionDeg!!, 0.001)
+        assertNull(parseForecast(fixture("forecast_alps_10day.json")).current.windDirectionDeg)
+    }
+
+    @Test fun `responses without the detail fields still parse`() {
         val f = parseForecast(fixture("forecast_sf.json"))
         assertNull(f.today.sunrise)
         assertNull(f.today.uvIndexMax)
         assertNull(f.nextHours.first().gustKmh)
         assertNull(f.nextHours.first().isDay)
+        assertNull(f.nextHours.first().precipMm)
+        assertNull(f.nextHours.first().feelsLikeC)
+        assertNull(f.today.snowSumCm)
+        assertNull(f.today.windDirectionDeg)
     }
 
     @Test fun `null detail values become null, not zero`() {
         val json = """
             {"current":{"time":"2026-06-21T12:00","temperature_2m":1,"apparent_temperature":0,
-              "relative_humidity_2m":90,"wind_speed_10m":3,"weather_code":3,"is_day":null},
+              "relative_humidity_2m":90,"wind_speed_10m":3,"weather_code":3,"is_day":null,"wind_direction_10m":null},
              "hourly":{"time":["2026-06-21T12:00"],"temperature_2m":[1],"precipitation_probability":[0],"weather_code":[3],
-              "wind_speed_10m":[null],"wind_gusts_10m":[null],"is_day":[null]},
+              "wind_speed_10m":[null],"wind_gusts_10m":[null],"is_day":[null],"apparent_temperature":[null],
+              "precipitation":[null],"snowfall":[null],"wind_direction_10m":[null]},
              "daily":{"time":["2026-06-21"],"temperature_2m_max":[2],"temperature_2m_min":[-1],
               "precipitation_probability_max":[0],"weather_code":[3],"sunrise":[null],"sunset":["not a time"],
-              "wind_speed_10m_max":[null],"wind_gusts_10m_max":[null],"precipitation_sum":[null],"uv_index_max":[null]}}
+              "wind_speed_10m_max":[null],"wind_gusts_10m_max":[null],"precipitation_sum":[null],"uv_index_max":[null],
+              "precipitation_hours":[null],"snowfall_sum":[null],"wind_direction_10m_dominant":[null]}}
         """.trimIndent()
         val f = parseForecast(json)
         assertNull(f.current.isDay)
+        assertNull(f.current.windDirectionDeg)
         with(f.today) {
             assertNull(sunrise)
             assertNull(sunset)
@@ -122,11 +155,18 @@ class OpenMeteoParsersTest {
             assertNull(gustMaxKmh)
             assertNull(precipSumMm)
             assertNull(uvIndexMax)
+            assertNull(precipHours)
+            assertNull(snowSumCm)
+            assertNull(windDirectionDeg)
         }
         with(f.nextHours.single()) {
             assertNull(windKmh)
             assertNull(gustKmh)
             assertNull(isDay)
+            assertNull(feelsLikeC)
+            assertNull(precipMm)
+            assertNull(snowCm)
+            assertNull(windDirectionDeg)
         }
     }
 

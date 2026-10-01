@@ -32,6 +32,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -48,7 +49,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
-import java.util.Locale
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WeatherViewModelTest {
@@ -119,7 +119,7 @@ class WeatherViewModelTest {
     ): WeatherViewModel {
         val repo = SettingsRepository(store, settings)
         return WeatherViewModel(
-            api, places, repo, location, model, TemplateNarrator(Locale.US),
+            api, places, repo, location, model, TemplateNarrator(),
             memeWriter = memeWriter, memes = MemeRepository(store),
             holidays = HolidayRepository(fakeHolidays, store),
             widget = object : WidgetPublisher {
@@ -144,6 +144,12 @@ class WeatherViewModelTest {
         assertEquals(listOf(Place.CURRENT_LOCATION_ID, sanFrancisco.id, london.id), vm.pages.map { it.key })
         assertEquals(here, vm.pages.first().place)
         assertTrue(vm.pages.all { it.content is PageContent.Loaded })
+    }
+
+    @Test fun `a loaded page remembers when it was fetched, by our clock`() = runTest(dispatcher) {
+        places.add(london)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        assertEquals(java.time.Instant.ofEpochMilli(42), (vm.content(london.id) as PageContent.Loaded).fetchedAt)
     }
 
     @Test fun `current location page asks for permission, then loads once granted`() = runTest(dispatcher) {
@@ -196,11 +202,62 @@ class WeatherViewModelTest {
         assertTrue(vm.content(london.id) is PageContent.Loaded)
     }
 
+    @Test fun `a failed refresh keeps the forecast it had and says so`() = runTest(dispatcher) {
+        places.add(london)
+        val vm = viewModel(AppSettings(useCurrentLocation = false))
+        val before = vm.content(london.id) as PageContent.Loaded
+        assertFalse(before.refreshFailed)
+        api.failing = true
+        vm.refresh(london.id)
+        advanceUntilIdle()
+        val after = vm.content(london.id) as PageContent.Loaded
+        assertEquals(before.forecast, after.forecast)
+        assertEquals(before.fetchedAt, after.fetchedAt)
+        assertTrue(after.refreshFailed)
+        // The next good fetch clears it.
+        api.failing = false
+        vm.refresh(london.id)
+        advanceUntilIdle()
+        assertFalse((vm.content(london.id) as PageContent.Loaded).refreshFailed)
+    }
+
+    @Test fun `losing the location keeps the forecast it had`() = runTest(dispatcher) {
+        val vm = viewModel()
+        assertTrue(vm.content(WeatherViewModel.CURRENT) is PageContent.Loaded)
+        location.place = null
+        vm.refresh(WeatherViewModel.CURRENT)
+        advanceUntilIdle()
+        assertTrue((vm.content(WeatherViewModel.CURRENT) as PageContent.Loaded).refreshFailed)
+    }
+
+    @Test fun `the state says when it's real, so an open day page can wait for it`() = runTest(dispatcher) {
+        assertFalse(WeatherUiState().ready)
+        assertTrue(viewModel().uiState.value.ready)
+    }
+
+    @Test fun `the widget's summary is only written when what it shows changes`() = runTest(dispatcher) {
+        val loaded = PageContent.Loaded(TestData.forecast(), "Summary")
+        val state = WeatherUiState(
+            pages = listOf(PageUi(sanFrancisco.id, sanFrancisco, loaded)), savedPlaces = listOf(sanFrancisco), ready = true,
+        )
+        var described = 0
+        val updates = widgetUpdates(
+            kotlinx.coroutines.flow.flowOf(
+                state,
+                state.copy(search = SearchUi(query = "Par")), // unrelated
+                state.copy(pages = state.pages.map { it.copy(refreshing = true) }), // unrelated
+                state.copy(pages = state.pages.map { it.copy(content = loaded.copy(summary = "Rewritten")) }), // the clock format changed
+            ),
+        ) { described++; "Widget summary" }.toList()
+        assertEquals(2, described)
+        assertEquals(1, updates.size) // the same snapshot twice is published once
+    }
+
     @Test fun `the summary is the template, with or without Gemma`() = runTest(dispatcher) {
         places.add(london)
         val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
         val summary = (vm.content(london.id) as PageContent.Loaded).summary
-        assertEquals(TemplateNarrator(Locale.US).describe(NarrationInput(london.name, TestData.forecast(), TempUnit.F)), summary)
+        assertEquals(TemplateNarrator().describe(NarrationInput(london.name, TestData.forecast(), TempUnit.F)), summary)
         assertTrue(summary, summary.startsWith("71° and partly cloudy now"))
         assertEquals(1, memeCalls) // Gemma is only asked for the meme
     }
@@ -376,12 +433,14 @@ class WeatherViewModelTest {
         assertNull(vm.meme(london.id))
     }
 
-    @Test fun `the widget mirrors the first loaded page and its summary`() = runTest(dispatcher) {
+    @Test fun `the widget mirrors the first loaded page and its summary, without the rain total`() = runTest(dispatcher) {
         places.add(sanFrancisco); places.add(london)
         val vm = viewModel(AppSettings(useCurrentLocation = false), modelInstalled = true)
         val last = published.last()
         assertEquals("San Francisco", last.placeName)
-        assertEquals((vm.content(sanFrancisco.id) as PageContent.Loaded).summary, last.summary)
+        val page = (vm.content(sanFrancisco.id) as PageContent.Loaded).summary
+        assertTrue(page, page.endsWith("(60% chance, about 0.16 inches still to come today)."))
+        assertEquals(page.replace(", about 0.16 inches still to come today", ""), last.summary)
         assertEquals(42L, last.writtenAtMillis)
         assertTrue(published.none { it.placeName == "London" })
     }

@@ -38,12 +38,29 @@ class WidgetTest {
         assertEquals(TestData.now, snapshot.updatedAt)
     }
 
+    @Test fun `the snapshot judges the day by the shared classifier, and says snow when it's snow`() {
+        assertFalse(snapshot.snow)
+        // A 5% day with nothing modelled is dry: no chance to show.
+        assertEquals(0, widgetSnapshotOf(TestData.sanFrancisco, TestData.forecast(rainAt = null), TempUnit.F, "", 0).precipChance)
+        val alps = TestData.alps()
+        val snowDay = alps.copy(current = alps.current.copy(time = java.time.LocalDateTime.of(2026, 10, 8, 10, 0)))
+        val snowy = widgetSnapshotOf(TestData.sanFrancisco, snowDay, TempUnit.C, "", 0)
+        assertTrue(snowy.snow)
+        assertEquals(53, snowy.precipChance)
+        assertTrue(refreshedSnapshot(snapshot, snowDay, "", 0).snow)
+    }
+
     @Test fun `store round-trips and ignores junk`() {
         val kv = InMemoryStore()
         val store = WidgetStore(kv)
         assertNull(store.load())
         store.save(snapshot)
         assertEquals(snapshot, WidgetStore(kv).load())
+        store.save(snapshot.copy(snow = true))
+        assertTrue(WidgetStore(kv).load()!!.snow)
+        // A snapshot saved before snow was kept reads as rain.
+        kv.putString("widget_snapshot", kv.getString("widget_snapshot")!!.replace(",\"snow\":true", ""))
+        assertFalse(WidgetStore(kv).load()!!.snow)
         kv.putString("widget_snapshot", "{oops")
         assertNull(store.load())
     }
@@ -89,6 +106,21 @@ class WidgetTest {
         onNode(hasText("↑74° ↓56° · Rain 60%")).assertExists()
         onNode(hasText("A mild afternoon.")).assertDoesNotExist()
         onNode(hasText("21°C")).assertDoesNotExist()
+    }
+
+    @Test fun `a chance under 20 percent is left out, as on Home`() = runGlanceAppWidgetUnitTest {
+        setAppWidgetSize(WidgetSize.Full)
+        provideComposable { WidgetContent(snapshot.copy(precipChance = 10), icon = null) }
+        onNode(hasText("High 74° · Low 56°")).assertExists()
+        onNode(hasText("High 74° · Low 56° · Rain 10%")).assertDoesNotExist()
+    }
+
+    @Test fun `a snow day says snow`() = runGlanceAppWidgetUnitTest {
+        setAppWidgetSize(WidgetSize.Full)
+        provideComposable { WidgetContent(snapshot.copy(snow = true), icon = null) }
+        onNode(hasText("High 74° · Low 56° · Snow 60%")).assertExists()
+        onNode(hasContentDescription("San Francisco, 71°F (21°C), Partly cloudy. High 74°, low 56°, 60% chance of snow. A mild afternoon."))
+            .assertExists()
     }
 
     @Test fun `2x2 shows the temperature and place`() = runGlanceAppWidgetUnitTest {

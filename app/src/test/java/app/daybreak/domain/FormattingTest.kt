@@ -1,6 +1,9 @@
 package app.daybreak.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -73,5 +76,45 @@ class FormattingTest {
         assertEquals("Snow showers", describeWeatherCode(86))
         assertEquals("Thunderstorm with hail", describeWeatherCode(99))
         assertEquals("Unknown", describeWeatherCode(42))
+    }
+
+    @Test fun `feels-like shows from 3 degrees away, in the unit shown`() {
+        assertNull(feelsLikeWorthShowing(20.0, 19.0, TempUnit.C)) // 2°C
+        assertEquals(17.0, feelsLikeWorthShowing(20.0, 17.0, TempUnit.C)!!, 0.0)
+        assertEquals(18.3, feelsLikeWorthShowing(20.0, 18.3, TempUnit.F)!!, 0.0) // 68°F vs 65°F
+        assertNull(feelsLikeWorthShowing(20.0, 18.3, TempUnit.C)) // 20°C vs 18°C
+        assertNull(feelsLikeWorthShowing(20.0, null, TempUnit.F))
+    }
+
+    @Test fun `compass points and wind direction words`() {
+        assertEquals("N", compassPoint(0.0))
+        assertEquals("N", compassPoint(22.4))
+        assertEquals("NE", compassPoint(22.5))
+        assertEquals("SW", compassPoint(225.0))
+        assertEquals("NW", compassPoint(-45.0))
+        assertEquals("N", compassPoint(359.0))
+        assertEquals("from the SW", formatWindFrom(230.0))
+        assertEquals("from the southwest", formatWindFromSpoken(230.0))
+    }
+
+    @Test fun `under 2 km per hour the wind is calm`() {
+        assertTrue(isCalm(0.0))
+        assertTrue(isCalm(1.9))
+        assertFalse(isCalm(2.0))
+    }
+
+    @Test fun `updated lines count from our fetch time`() {
+        val at = java.time.Instant.parse("2026-10-01T12:00:00Z")
+        assertEquals("Updated just now", formatUpdated(at, at.plusSeconds(30)))
+        assertEquals("Updated 8 min ago", formatUpdated(at, at.plusSeconds(8 * 60)))
+        assertEquals("Updated 59 min ago", formatUpdated(at, at.plusSeconds(59 * 60)))
+        assertEquals("Updated over an hour ago", formatUpdated(at, at.plusSeconds(60 * 60)))
+        assertEquals("Updated over an hour ago", formatUpdated(at, at.plusSeconds(119 * 60)))
+        assertEquals("Updated 2 hours ago", formatUpdated(at, at.plusSeconds(120 * 60)))
+        assertEquals("Updated 2 hours ago", formatUpdated(at, at.plusSeconds(150 * 60)))
+        assertEquals("Updated 3 days ago", formatUpdated(at, at.plusSeconds(3 * 24 * 3600)))
+        assertEquals("Updated just now", formatUpdated(at, at.minusSeconds(60))) // a clock that went back
+        assertFalse(isStale(at, at.plusSeconds(90 * 60)))
+        assertTrue(isStale(at, at.plusSeconds(91 * 60)))
     }
 }

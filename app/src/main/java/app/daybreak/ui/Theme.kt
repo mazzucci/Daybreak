@@ -108,6 +108,8 @@ data class WeatherColors(
     val gemma: Color,
     /** Installed / success accents. */
     val success: Color,
+    /** Text that asks for attention without being an error (a stale forecast). AA on the background. */
+    val attention: Color,
     /** Skeleton blocks while loading. */
     val skeleton: Color,
 )
@@ -118,6 +120,7 @@ private val LightWeatherColors = WeatherColors(
     rain = Color(0xFF1E6FC0),
     gemma = Amber,
     success = Color(0xFF2E7D32),
+    attention = Amber,
     skeleton = Color(0xFFDCE4EE),
 )
 
@@ -127,6 +130,7 @@ private val DarkWeatherColors = WeatherColors(
     rain = SkyBlueLight,
     gemma = AmberLight,
     success = Color(0xFF5BC38A),
+    attention = AmberLight,
     skeleton = Color(0xFF29344A),
 )
 

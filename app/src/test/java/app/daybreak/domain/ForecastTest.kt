@@ -66,19 +66,30 @@ class ForecastTest {
         assertFalse(base.isNightNow)
     }
 
-    @Test fun `upcoming days start today and stop at a week`() {
+    @Test fun `upcoming days start today and stop at ten`() {
         val f = TestData.forecast()
-        assertEquals(8, f.days.size)
-        val week = f.upcomingDays()
-        assertEquals(WEEK_DAYS, week.size)
-        assertEquals(date, week.first().date)
-        assertEquals(date.plusDays(6), week.last().date)
+        assertEquals(10, f.days.size)
+        val days = f.upcomingDays()
+        assertEquals(LIST_DAYS, days.size)
+        assertEquals(date, days.first().date)
+        assertEquals(date.plusDays(9), days.last().date)
+    }
+
+    @Test fun `a day's hours and the day itself by date`() {
+        val f = TestData.alps()
+        val date = java.time.LocalDate.of(2026, 10, 2)
+        val hours = f.hoursOf(date)
+        assertEquals(24, hours.size)
+        assertEquals(date.atStartOfDay(), hours.first().time)
+        assertEquals(23, hours.last().time.hour)
+        assertEquals(12.1, f.day(date)!!.precipSumMm!!, 0.001)
+        assertEquals(null, f.day(date.plusDays(30)))
     }
 
     @Test fun `upcoming days skip days before the place's today`() {
         // Just after midnight the API can still return yesterday first.
         val f = TestData.forecast().let { it.copy(current = it.current.copy(time = date.plusDays(1).atTime(0, 10))) }
         assertEquals(date.plusDays(1), f.upcomingDays().first().date)
-        assertEquals(7, f.upcomingDays().size)
+        assertEquals(9, f.upcomingDays().size)
     }
 }

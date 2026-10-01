@@ -15,8 +15,9 @@ import java.time.LocalDateTime
  * Parses an Open-Meteo /v1/forecast response requested with `timezone=auto` and the
  * current/hourly/daily fields from [OpenMeteoApi.forecastUrl]. Times are the place's local time.
  * All returned days and hours are kept; [Forecast] derives today and the next-hours window.
- * The core fields are required; the detail fields (wind, gusts, sun times, UV, is_day) are optional, and a missing
- * array or a null value becomes null rather than failing the whole forecast.
+ * The core fields are required; the detail fields (wind and its direction, gusts, sun times, UV, is_day, feels-like,
+ * precipitation amounts, hours and snow) are optional, and a missing array or a null value becomes null rather than
+ * failing the whole forecast: some weather models leave some of them out for some places or hours.
  */
 fun parseForecast(json: String): Forecast {
     val root = JSONObject(json)
@@ -30,6 +31,7 @@ fun parseForecast(json: String): Forecast {
         windKmh = cur.getDouble("wind_speed_10m"),
         code = cur.getInt("weather_code"),
         isDay = cur.optBooleanFlag("is_day"),
+        windDirectionDeg = cur.optDoubleOrNull("wind_direction_10m"),
     )
 
     val hourly = root.getJSONObject("hourly")
@@ -40,6 +42,10 @@ fun parseForecast(json: String): Forecast {
     val hourWind = hourly.optJSONArray("wind_speed_10m")
     val hourGusts = hourly.optJSONArray("wind_gusts_10m")
     val hourIsDay = hourly.optJSONArray("is_day")
+    val hourFeels = hourly.optJSONArray("apparent_temperature")
+    val hourPrecipMm = hourly.optJSONArray("precipitation")
+    val hourSnow = hourly.optJSONArray("snowfall")
+    val hourWindDir = hourly.optJSONArray("wind_direction_10m")
     val hours = (0 until hourTimes.length()).map { i ->
         HourForecast(
             time = LocalDateTime.parse(hourTimes.getString(i)),
@@ -49,6 +55,10 @@ fun parseForecast(json: String): Forecast {
             windKmh = hourWind.doubleOrNull(i),
             gustKmh = hourGusts.doubleOrNull(i),
             isDay = hourIsDay.doubleOrNull(i)?.let { it != 0.0 },
+            feelsLikeC = hourFeels.doubleOrNull(i),
+            precipMm = hourPrecipMm.doubleOrNull(i),
+            snowCm = hourSnow.doubleOrNull(i),
+            windDirectionDeg = hourWindDir.doubleOrNull(i),
         )
     }
 
@@ -65,6 +75,9 @@ fun parseForecast(json: String): Forecast {
     val gustMax = daily.optJSONArray("wind_gusts_10m_max")
     val precipSum = daily.optJSONArray("precipitation_sum")
     val uvMax = daily.optJSONArray("uv_index_max")
+    val precipHours = daily.optJSONArray("precipitation_hours")
+    val snowSum = daily.optJSONArray("snowfall_sum")
+    val windDir = daily.optJSONArray("wind_direction_10m_dominant")
     val days = (0 until dayDates.length()).map { i ->
         DaySummary(
             date = LocalDate.parse(dayDates.getString(i)),
@@ -78,6 +91,9 @@ fun parseForecast(json: String): Forecast {
             gustMaxKmh = gustMax.doubleOrNull(i),
             precipSumMm = precipSum.doubleOrNull(i),
             uvIndexMax = uvMax.doubleOrNull(i),
+            precipHours = precipHours.doubleOrNull(i),
+            snowSumCm = snowSum.doubleOrNull(i),
+            windDirectionDeg = windDir.doubleOrNull(i),
         )
     }
 
@@ -123,6 +139,9 @@ private fun JSONObject.optBooleanFlag(key: String): Boolean? = when (val v = opt
     is Number -> v.toInt() != 0
     else -> null
 }
+
+private fun JSONObject.optDoubleOrNull(key: String): Double? =
+    if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
 
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (has(key) && !isNull(key)) getString(key).ifBlank { null } else null

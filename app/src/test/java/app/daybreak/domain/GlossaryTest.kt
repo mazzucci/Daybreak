@@ -5,6 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDateTime
+import java.time.LocalDate
 
 class GlossaryTest {
     private val f = TestData.forecast() // 71°F, feels 68°F, humidity 58%, wind 9 mph, UV 6.2, sun 7:02–18:56, rain 60%
@@ -52,10 +54,68 @@ class GlossaryTest {
         assertNull(explain(Term.WIND, night, TempUnit.C).detail) // no gust data
 
         val rain = explain(Term.RAIN_CHANCE, f, TempUnit.F)
+        assertEquals("Chance of rain", rain.title)
         assertEquals("60%", rain.value)
         assertEquals("Highest hourly chance today", rain.detail)
-        assertEquals("About 0.26 inches expected in total. Worth having an umbrella nearby.", rain.now)
-        assertEquals("About 6.5 mm expected in total. Worth having an umbrella nearby.", explain(Term.RAIN_CHANCE, f, TempUnit.C).now)
+        // At 2:30 PM: the rain from 5 PM on is all still to come.
+        assertEquals(
+            "Still to come today: about 0.16 inches over 5 hours, mostly this afternoon and evening. Worth having an umbrella nearby.",
+            rain.now,
+        )
+        assertEquals(
+            "Still to come today: about 4.1 mm over 5 hours, mostly this afternoon and evening. Worth having an umbrella nearby.",
+            explain(Term.RAIN_CHANCE, f, TempUnit.C).now,
+        )
+    }
+
+    @Test fun `today's rain says how much is still to come, or that the figure is the whole day's`() {
+        val alps = TestData.alps()
+        fun at(hour: Int, minute: Int = 30) = alps.copy(current = alps.current.copy(time = LocalDateTime.of(2026, 10, 1, hour, minute)))
+        assertEquals(
+            "Still to come today: about 2.1 mm over 4 hours, mostly this evening. Worth having an umbrella nearby.",
+            explain(Term.RAIN_CHANCE, at(19), TempUnit.C).now,
+        )
+        assertEquals(
+            "Today in all: about 4.2 mm over 7 hours, mostly this afternoon and evening. Worth having an umbrella nearby.",
+            explain(Term.RAIN_CHANCE, at(23), TempUnit.C).now,
+        )
+        // A snowy day is a chance of snow.
+        val snowDay = alps.copy(current = alps.current.copy(time = LocalDateTime.of(2026, 10, 8, 10, 0)))
+        assertEquals("Chance of snow", explain(Term.RAIN_CHANCE, snowDay, TempUnit.C).title)
+        // A dry day has no amount at all.
+        val dryDay = alps.copy(current = alps.current.copy(time = LocalDateTime.of(2026, 10, 6, 10, 0)))
+        assertEquals("Unlikely to need an umbrella.", explain(Term.RAIN_CHANCE, dryDay, TempUnit.C).now)
+    }
+
+    @Test fun `a day's rain explains its total, hours and timing`() {
+        val alps = TestData.alps()
+        val wet = explain(Term.RAIN_DAY, alps, TempUnit.C, LocalDate.of(2026, 10, 2))
+        assertEquals("Rain", wet.title)
+        assertEquals("12 mm", wet.value)
+        assertEquals("Expected total for Friday", wet.detail)
+        assertEquals("About 5 hours of rain. Before sunrise, clearing by morning. Worth having an umbrella nearby.", wet.now)
+        assertEquals(12.1f / 20, (wet.gauge as Gauge.Scale).fraction, 0.001f)
+        assertEquals("0 mm", (wet.gauge as Gauge.Scale).low)
+        assertEquals("20 mm", (wet.gauge as Gauge.Scale).high)
+
+        val snow = explain(Term.RAIN_DAY, alps, TempUnit.F, LocalDate.of(2026, 10, 8))
+        assertEquals("Snow", snow.title)
+        assertEquals("7.6 in", snow.value)
+        assertEquals("Expected snowfall for Thursday", snow.detail)
+        assertTrue(snow.now, snow.now.startsWith("About 21 hours of snow. "))
+        // Snow is measured on a depth gauge: 0 to 8 inches (20 cm), not millimetres of water.
+        val gauge = snow.gauge as Gauge.Scale
+        assertEquals("0 in", gauge.low)
+        assertEquals("8 in", gauge.high)
+        assertEquals(7.606f / 8, gauge.fraction, 0.001f)
+        val snowC = explain(Term.RAIN_DAY, alps, TempUnit.C, LocalDate.of(2026, 10, 8)).gauge as Gauge.Scale
+        assertEquals("0 cm", snowC.low)
+        assertEquals("20 cm", snowC.high)
+
+        val dry = explain(Term.RAIN_DAY, alps, TempUnit.C, LocalDate.of(2026, 10, 6))
+        assertEquals("0 mm", dry.value)
+        assertEquals("No rain expected. Unlikely to need an umbrella.", dry.now)
+        assertEquals("0 in", explain(Term.RAIN_DAY, alps, TempUnit.F, LocalDate.of(2026, 10, 6)).value)
     }
 
     @Test fun `gauges put the value on their scale`() {
