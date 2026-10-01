@@ -38,6 +38,7 @@ import app.daybreak.domain.describeSky
 import app.daybreak.domain.moonPhase
 import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.PersonalDate
+import app.daybreak.domain.Reminder
 import app.daybreak.data.parseLongWeekends
 import app.daybreak.data.parsePublicHolidays
 import app.daybreak.domain.Holiday
@@ -182,11 +183,17 @@ class ScreenshotTest {
     }
 
     @Composable
-    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings(), weekStart: java.time.DayOfWeek? = null) {
+    private fun Settings(
+        status: ModelStatus,
+        settings: AppSettings = AppSettings(),
+        weekStart: java.time.DayOfWeek? = null,
+        access: ReminderAccess = ReminderAccess(),
+    ) {
         SettingsScreen(
             today = forecast.current.time.toLocalDate(),
             settings = settings,
             habitsWeekStart = weekStart,
+            reminderAccess = access,
             modelStatus = status,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = null,
@@ -854,11 +861,11 @@ class ScreenshotTest {
     }
 
     /** Narrow screen at 1.5x: the detail line wraps without stranding a separator, the countdown stays on one line. */
-    /** A presentation and a week off (joined to the weekends either side) among the place's holidays. */
+    /** A presentation at 2 PM and a week off (joined to the weekends either side) among the place's holidays. */
     @Test fun comingUpPersonalDates() = snap("coming_up_personal_dates") {
         val today = forecast.current.time.toLocalDate()
         val mine = listOf(
-            PersonalDate(today.plusDays(1), name = "Board presentation"),
+            PersonalDate(today.plusDays(1), name = "Board presentation", time = java.time.LocalTime.of(14, 0)),
             PersonalDate(today.plusDays(5), today.plusDays(9), "Lisbon trip", dayOff = true),
         )
         Column(Modifier.padding(vertical = 16.dp)) {
@@ -869,19 +876,122 @@ class ScreenshotTest {
         }
     }
 
-    /** A birthday, a presentation and a week off, listed under the holidays switch. */
-    @Test fun settingsPersonalDates() = snap("settings_personal_dates", tall = true) {
+    /**
+     * A presentation at 2 PM with two reminders, a week off, and a yearly birthday with one, listed under the
+     * holidays switch: each reminder line has its bell.
+     */
+    private val myDates = run {
         val today = forecast.current.time.toLocalDate()
-        Settings(
-            ModelStatus.Installed(529L shl 20),
-            AppSettings(
-                personalDates = listOf(
-                    PersonalDate(today.plusDays(1), name = "Board presentation"),
-                    PersonalDate(today.plusDays(12), today.plusDays(16), "Lisbon trip", dayOff = true),
-                    PersonalDate(today.minusDays(40), name = "Mum's birthday", yearly = true),
-                ),
+        listOf(
+            PersonalDate(
+                today.plusDays(1), name = "Board presentation", time = java.time.LocalTime.of(14, 0),
+                reminders = listOf(Reminder.MinutesBefore(60), Reminder.MinutesBefore(24 * 60)), id = "talk",
+            ),
+            PersonalDate(today.plusDays(12), today.plusDays(16), "Lisbon trip", dayOff = true, id = "lisbon"),
+            PersonalDate(
+                today.minusDays(40), name = "Mum's birthday", yearly = true,
+                reminders = listOf(Reminder.DaysBefore(0), Reminder.DaysBefore(3), Reminder.DaysBefore(7)), id = "mum",
             ),
         )
+    }
+
+    @Test fun settingsPersonalDates() = snap("settings_personal_dates", tall = true) {
+        Settings(ModelStatus.Installed(529L shl 20), AppSettings(personalDates = myDates))
+    }
+
+    /** "Your dates" on its own, as Settings shows it, readable at full size. */
+    @Composable
+    private fun DatesCard(access: ReminderAccess = ReminderAccess()) {
+        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+            PersonalDatesCard(myDates, shown = true, today = forecast.current.time.toLocalDate(), access = access)
+        }
+    }
+
+    @Test fun datesCard() = snap("dates_card") { DatesCard() }
+
+    /** The narrowest phone at 1.5x: the date lines wrap, the bell stays with its reminders. */
+    @Test fun datesCardLargeFont() = snap("dates_card_large_font", narrow = true, fontScale = 1.5f) { DatesCard() }
+
+    /** Exact alarms not allowed and a reminder an hour before something: the quiet line under the dates. */
+    @Test fun datesCardExactAlarmHint() = snap("dates_card_exact_alarm_hint") { DatesCard(ReminderAccess(exactAlarms = false)) }
+
+    /** Reminders set but notifications off for the app (dark). */
+    @Test fun datesCardNotificationsOff() = snap("dates_card_notifications_off", night = true) {
+        DatesCard(ReminderAccess(notificationsAllowed = false))
+    }
+
+    /** When the editors open in screenshots: the forecast's time, on the West Coast. */
+    private val editorNow get() = forecast.current.time.atZone(java.time.ZoneId.of("America/Los_Angeles"))
+
+    /** The date editor over a dimmed Settings tab, as it opens. */
+    @Composable
+    private fun DateEditorOver(
+        initial: PersonalDate?,
+        start: java.time.LocalDate = initial!!.start,
+        end: java.time.LocalDate = start,
+        exactAlarms: Boolean = true,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Settings(ModelStatus.NotInstalled, AppSettings(personalDates = myDates))
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)), contentAlignment = Alignment.Center) {
+                DateEditor(
+                    start, end, initial, forecast.current.time.toLocalDate(),
+                    onChangeDates = {}, onDismiss = {}, onSave = {},
+                    onRemove = if (initial != null) ({}) else null,
+                    exactAlarms = exactAlarms,
+                    now = editorNow,
+                    modifier = Modifier.padding(horizontal = 24.dp), focusLabel = false,
+                )
+            }
+        }
+    }
+
+    @Test fun dateEditorNew() = snap("date_editor_new") { DateEditorOver(null, start = forecast.current.time.toLocalDate().plusDays(9)) }
+
+    /** Editing the presentation: its time, the timed presets with two picked, and when the next two go off. */
+    @Test fun dateEditorTimed() = snap("date_editor_timed") { DateEditorOver(myDates[0]) }
+
+    @Test fun dateEditorTimedDarkLargeFont() = snap("date_editor_timed_dark_large_font", night = true, narrow = true, fontScale = 1.5f) {
+        DateEditorOver(myDates[0])
+    }
+
+    /** A yearly birthday with three reminders, one at a time of its own: full, so "Custom…" is disabled in place. */
+    @Test fun dateEditorAllDay() = snap("date_editor_all_day") {
+        DateEditorOver(
+            myDates[2].copy(reminders = listOf(Reminder.DaysBefore(0), Reminder.DaysBefore(7), Reminder.DaysBefore(3, java.time.LocalTime.of(18, 0)))),
+        )
+    }
+
+    /** The birthday with on the day and the day before: "Next reminder: …, then …". */
+    @Test fun dateEditorNextReminders() = snap("date_editor_next_reminders") {
+        DateEditorOver(myDates[2].copy(reminders = listOf(Reminder.DaysBefore(0), Reminder.DaysBefore(1))))
+    }
+
+    /** An hour before the presentation without exact alarms: the hint under the reminders. */
+    @Test fun dateEditorExactAlarmHint() = snap("date_editor_exact_alarm_hint") { DateEditorOver(myDates[0], exactAlarms = false) }
+
+    /** A custom reminder for an all-day date at a time of its own. */
+    @Test fun customReminderWithTime() = snap("custom_reminder_with_time") {
+        Box(Modifier.fillMaxSize()) {
+            Settings(ModelStatus.NotInstalled, AppSettings(personalDates = myDates))
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.padding(horizontal = 40.dp)) {
+                    CustomReminderPanel(timed = false, onDismiss = {}, onPick = {}, initialAt = java.time.LocalTime.of(18, 30))
+                }
+            }
+        }
+    }
+
+    /** The reminder notification's small icon, white on a dark disc as the status bar shows it, and tinted. */
+    @Test fun notificationIcon() = snap("notification_icon") {
+        androidx.compose.foundation.layout.Row(Modifier.padding(24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Box(Modifier.size(72.dp).clip(CircleShape).background(Color(0xFF1F2937)), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.ic_stat_reminder), contentDescription = null, Modifier.size(48.dp))
+            }
+            Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.ic_stat_reminder), contentDescription = null, Modifier.size(24.dp))
+            }
+        }
     }
 
     @Test fun comingUpCardLargeFont() = snap("coming_up_large_font", narrow = true, fontScale = 1.5f) {

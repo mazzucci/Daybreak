@@ -213,7 +213,40 @@ Settings becomes a tab with no back arrow. Its sections:
 
 There's no Clocks section until a clock setting exists.
 
-## 6. The name
+## 6. Your dates and reminders
+
+**Dates:** a day or a run of days with a label, day off and every year (as before), plus an optional time (wall-clock; for a run, the start time on the first day) and up to three reminders. Every date has a stable id (dates saved before ids get one when first read, made from their place in the list and what's stored, and it's written down). Tapping a date in Settings → Your dates, or one of yours (a date or a day off) in Coming up on Home (`clickable(onClickLabel = "Edit")`), opens the same editor prefilled; "Change" picks its days again. There's no "+" on Home. One `PersonalDateEditorHost` holds the editor and range-picker state for both.
+
+**Editor:** a dialog like the habit editor: the date as its title with "Change", the label (wraps to two lines; "Needed unless it's a day off" only once the field has lost focus), Day off, Every year, an "Add a time" row (the shared `TimePickerDialog`, with the 57sp digits; once set, "Starts at 2:00 PM" with a remove cross, and "On the first day" under it for a run of days only), then "Remind me": multi-select `FilterChip`s (checkboxes to TalkBack with "On"/"Off" state), at most three, the rest disabled once three are on; "Custom…" stays in place, disabled, so nothing reflows. The presets swap with a 150ms cross-fade (`AnimatedContent`) when a time is added or taken off.
+- All-day presets: "On the day", "1 day before", "1 week before". Timed: "When it starts", "15 minutes before", "1 hour before", "1 day before". The chips leave out 9 AM; a time of its own stays ("3 days before, 6 PM").
+- Under the chips, the next one or two reminders worked out as the alarm will: "Next reminder: Mon, Sep 28 at 2:00 PM, then Tue, Sep 29 at 1:00 PM" (with the year when it isn't this one), then "Up to 3 for a date." once full.
+- With a reminder under a day before (or any elapsed-time one) on a timed date and no exact alarms, the exact-alarm hint shows under the chips too.
+- "Custom…": a number and Minutes/Hours/Days (timed) or Days/Weeks (all day) up to 8 weeks; for an all-day date "before, at 9 AM", where "at 9 AM" (bodyLarge, primary) opens the time picker and makes it `DaysBefore(n, at)`.
+- Adding a time turns on the day into when it starts and keeps whole days; removing it turns anything under a day into on the day. A reminder at a time of its own keeps it either way.
+- A new date starts with the reminders last saved with a date of its kind (all-day or timed; two prefs), none the first time. Until they're touched, adding or taking off the time swaps in the other kind's last picks.
+- Buttons: "Remove" (error colour, only when editing) at the start; Cancel and Save at the end (they wrap under Remove at a large font on a narrow phone). Removing shows "Removed Mum's birthday" with "Undo" in the app's snackbar.
+
+**Labels** use the comma form: "On the day, 9 AM", "3 days before, 6:30 PM", "When it starts", "36 hours before".
+
+**List row:** the label (bodyLarge), "Tue, Sep 29 · 2:00 PM · every year · day off" (bodySmall), and the reminders on their own line after a bell (`Icons.Outlined.Notifications`, 16dp at the default font size, 4dp gap), nearest first with a shared tail: "1 hour and 1 day before", "On the day, 3 days and 1 week before" (one at a time of its own: "3 days before at 6 PM"). A decorative chevron at the end; the whole row is one TalkBack node with "Reminders: …" and "Edit" as its action. **Coming up** shows the time after the day ("Tue, Sep 29 · 2:00 PM").
+
+**Hints** (under the dates; the exact-alarm one in the editor too), one shape: a 16dp icon, a bodySmall line, and a `TextButton` under it with a 48dp target.
+- Reminders set but notifications off (or the channel blocked): warning icon, "Notifications are off for Daybreak, so reminders won't show.", "Turn on notifications" (the app's notification settings).
+- An elapsed-time reminder on a timed date and no exact alarms: clock icon, "Reminders may run a few minutes late.", "Allow exact timing" (Alarms & reminders).
+- Both re-checked whenever the app resumes.
+
+**Your dates' description:** "Birthdays, big days, time off — counted down on Home once they're within four months, with a reminder if you like. Days off count as a break. Kept on this phone, not backed up."
+
+**Scheduling:** one AlarmManager alarm for the soonest reminder of all dates: `setExactAndAllowWhileIdle` when `canScheduleExactAlarms()`, with an inexact `setAndAllowWhileIdle` backup for the same moment under another request code (revoking exact alarms cancels them without a broadcast); else just the inexact one. Worked out again on every change, alarm, restart (BOOT_COMPLETED or QUICKBOOT_POWERON), clock or zone change, app update, start of the app and exact-alarm permission change, always off the main thread (`goAsync` and one background executor) and one run at a time (a lock around the run). Times are resolved in the phone's zone each time: a skipped time moves on by the gap, a doubled one is the first; whole days keep the clock time, minutes and hours are elapsed. Past reminders are never shown in a burst:
+- when the alarm goes off or after a restart (whose broadcast only comes at unlock): those of the last two hours;
+- on anything else: the one the set alarm promised and any since, once its time has passed; one added after its time was never promised and is skipped;
+- whatever the trigger, the promised reminder still shows however late while its date is on (today, or a run of days under way), as standby buckets can hold an alarm back for hours;
+- after a change of zone, a reminder still to come in the old zone (after the last run) that has passed in the new one (flying east) shows once while its date is on.
+The next alarm and what's been dealt with are saved before anything is posted, and a notification that fails doesn't stop the rest. What went off is remembered for three days by date, time round and local time, so a flight west doesn't repeat it, and a doubled delivery (exact and backup) shows nothing twice.
+
+**Notifications:** channel "Reminders" (default importance; name and description in string resources), a monochrome bell, the label as title and "Tomorrow", "In 1 week · Saturday, Oct 10", "In 15 minutes · 2:00 PM", "Today at 2:00 PM", "Starting now" (up to 5 minutes after), "Started at 2:00 PM" (later than that), "Today", "Today – Wed, Oct 14" (a run's first day) or "Until Wed, Oct 14" as text, timestamped with when it was due. One id per date and time round from a stored counter (not a hash), so a later reminder replaces the earlier; a tap opens Home, also when the app is restored from saved state, and only once (the extra is taken off the intent). POST_NOTIFICATIONS is asked for when a date is first saved with a reminder.
+
+## 7. The name
 
 - The launcher label is "Daybreak". The app icon stays as it is for now.
 - No top bar shows the app name. The name appears only in the launcher, the Settings footer, and the first-run empty hero: "Daybreak / Your day, at a glance".

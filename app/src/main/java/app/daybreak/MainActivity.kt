@@ -1,6 +1,7 @@
 package app.daybreak
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +35,9 @@ import app.daybreak.domain.ClockFormat
 import android.text.format.DateFormat
 import app.daybreak.ui.WeatherTheme
 import app.daybreak.ui.WeatherViewModel
+import app.daybreak.data.PRIVATE_PREFS
+import app.daybreak.reminders.Reminders
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.Locale
 import java.io.File
 import app.daybreak.data.ImageDiskCache
@@ -64,11 +68,40 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Counts taps on a reminder while the app is already open: each one brings Home to the front. */
+    private val homeRequests = MutableStateFlow(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         syncClockFormat(recreateOnChange = false) // about to compose anyway
-        setContent { WeatherTheme { WeatherApp(vm, clocksVm, habitsVm, onThisDayVm) } }
+        // A fresh start opens on Home anyway, but one restored from saved state (the process had gone) would reopen
+        // the tab it was on: a reminder's tap still means Home.
+        if (savedInstanceState != null) takeOpenHome(intent)
+        setContent { WeatherTheme { WeatherApp(vm, clocksVm, habitsVm, onThisDayVm, homeRequests) } }
+    }
+
+    // An app that's already open is brought to Home by a reminder's tap.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeOpenHome(intent)
+    }
+
+    /**
+     * Goes to Home if [intent] is a reminder's, and takes the extra off it so rotating (which builds the activity
+     * again from the same intent) doesn't go there again.
+     */
+    private fun takeOpenHome(intent: Intent) {
+        if (!intent.getBooleanExtra(Reminders.EXTRA_OPEN_HOME, false)) return
+        intent.removeExtra(Reminders.EXTRA_OPEN_HOME)
+        setIntent(intent)
+        homeRequests.value++
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // A force stop clears the alarm, and exact timing may have been allowed or taken away meanwhile.
+        Reminders.reschedule(this)
     }
 
     override fun onResume() {
@@ -109,12 +142,10 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
             // Its own short timeout: holidays are a nice-to-have and shouldn't keep a page waiting.
             widget = GlanceWidgetPublisher(context.applicationContext, WidgetStore(SharedPrefsStore(context, WidgetStore.PREFS_FILE))),
             holidays = HolidayRepository(NagerHolidayApi(UrlConnectionHttpClient(timeoutMs = 5_000)), store),
+            onPersonalDatesChanged = { Reminders.reschedule(context) },
         )
     }
 }
-
-/** Preferences that must never leave the phone; excluded in res/xml/backup_rules.xml and data_extraction_rules.xml. */
-private const val PRIVATE_PREFS = "private"
 
 /** °F first in the few countries that use it, °C everywhere else. */
 private fun defaultUnit(): TempUnit =

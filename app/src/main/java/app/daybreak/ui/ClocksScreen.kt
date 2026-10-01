@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,10 +40,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
@@ -66,7 +63,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -392,27 +388,15 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
     }
 
     if (pickingTime) {
-        val state = rememberTimePickerState(time.hour, time.minute, is24Hour = ClockFormat.use24Hour)
-        AlertDialog(
-            onDismissRequest = { pickingTime = false },
-            confirmButton = {
-                TextButton({ minutes = state.hour * 60 + state.minute; pickingTime = false }) { Text("OK") }
-            },
-            dismissButton = {
-                Row {
-                    // "Now" goes back to the ticking time; only offered once a time has been picked.
-                    if (minutes != null) TextButton({ minutes = null; pickingTime = false }) { Text("Now") }
-                    TextButton({ pickingTime = false }) { Text("Cancel") }
-                }
-            },
-            // The app's display style is sized for the big temperature (104sp); the picker's digits need the standard one.
-            text = {
-                val digits = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 57.sp, lineHeight = 64.sp, letterSpacing = (-0.25).sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
-                )
-                MaterialTheme(typography = MaterialTheme.typography.copy(displayLarge = digits)) {
-                    TimePicker(state)
-                }
+        TimePickerDialog(
+            initial = time,
+            onDismiss = { pickingTime = false },
+            onPick = { minutes = it.hour * 60 + it.minute; pickingTime = false },
+            // "Now" goes back to the ticking time; only offered once a time has been picked.
+            extraAction = if (minutes != null) {
+                { TextButton({ minutes = null; pickingTime = false }) { Text("Now") } }
+            } else {
+                null
             },
         )
     }

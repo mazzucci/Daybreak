@@ -112,6 +112,9 @@ class WeatherViewModelTest {
     private var memeGate: CompletableDeferred<Unit>? = null
     private val memeWriter = MemeWriter({ _, _, _ -> memeCalls++; memeGate?.await(); memeReply })
 
+    /** How often the dates' reminders were asked to be worked out again. */
+    private var datesChanged = 0
+
     private fun TestScope.viewModel(
         settings: AppSettings = AppSettings(),
         modelInstalled: Boolean = false,
@@ -127,6 +130,7 @@ class WeatherViewModelTest {
                 override fun clear() { widgetCleared++ }
             },
             clock = { 42L },
+            onPersonalDatesChanged = { datesChanged++ },
         ).also { advanceUntilIdle() }
     }
 
@@ -424,6 +428,59 @@ class WeatherViewModelTest {
         vm.removePersonalDate(birthday)
         runCurrent()
         assertEquals(listOf(trip), vm.uiState.value.settings.personalDates)
+    }
+
+    @Test fun `editing a date replaces it, and every change reschedules the reminders`() = runTest(dispatcher) {
+        val today = LocalDate.now()
+        val talk = PersonalDate(today.plusDays(3), name = "Talk", id = "t")
+        val vm = viewModel(AppSettings(personalDates = listOf(talk)))
+        assertEquals(0, datesChanged)
+        val timed = talk.copy(time = java.time.LocalTime.of(14, 0), reminders = listOf(app.daybreak.domain.Reminder.MinutesBefore(15)))
+        vm.updatePersonalDate(talk, timed)
+        runCurrent()
+        assertEquals(listOf(timed), vm.uiState.value.settings.personalDates)
+        assertEquals(1, datesChanged)
+        vm.addPersonalDate(PersonalDate(today.plusDays(1), name = "Lunch"))
+        vm.removePersonalDate(timed)
+        runCurrent()
+        assertEquals(listOf("Lunch"), vm.uiState.value.settings.personalDates.map { it.name })
+        assertEquals(3, datesChanged)
+    }
+
+    @Test fun `an edit of a date that's gone meanwhile changes nothing`() = runTest(dispatcher) {
+        val today = LocalDate.now()
+        val talk = PersonalDate(today.plusDays(3), name = "Talk", id = "t")
+        val lunch = PersonalDate(today.plusDays(1), name = "Lunch", id = "l")
+        val vm = viewModel(AppSettings(personalDates = listOf(lunch)))
+        vm.updatePersonalDate(talk, talk.copy(name = "Big talk"))
+        runCurrent()
+        assertEquals(listOf(lunch), vm.uiState.value.settings.personalDates)
+        assertEquals(0, datesChanged)
+    }
+
+    @Test fun `an edit finds its date by id, so two alike are told apart`() = runTest(dispatcher) {
+        val today = LocalDate.now()
+        val a = PersonalDate(today.plusDays(3), dayOff = true, id = "a")
+        val b = a.copy(id = "b")
+        val vm = viewModel(AppSettings(personalDates = listOf(a, b)))
+        vm.updatePersonalDate(b, b.copy(name = "Dentist"))
+        runCurrent()
+        assertEquals(listOf("", "Dentist"), vm.uiState.value.settings.personalDates.map { it.name })
+    }
+
+    @Test fun `saving a date remembers its reminders for the next new date of its kind`() = runTest(dispatcher) {
+        val today = LocalDate.now()
+        val vm = viewModel()
+        val allDay = PersonalDate(today.plusDays(3), name = "Party", reminders = listOf(app.daybreak.domain.Reminder.DaysBefore(1)), id = "p")
+        vm.savePersonalDate(null, allDay)
+        val timed = PersonalDate(today.plusDays(4), name = "Talk", time = java.time.LocalTime.of(9, 0), reminders = listOf(app.daybreak.domain.Reminder.MinutesBefore(15)), id = "t")
+        vm.savePersonalDate(null, timed)
+        vm.savePersonalDate(timed, timed.copy(reminders = listOf(app.daybreak.domain.Reminder.MinutesBefore(60))))
+        runCurrent()
+        val s = vm.uiState.value.settings
+        assertEquals(listOf(app.daybreak.domain.Reminder.DaysBefore(1)), s.lastAllDayReminders)
+        assertEquals(listOf(app.daybreak.domain.Reminder.MinutesBefore(60)), s.lastTimedReminders)
+        assertEquals(listOf("Party", "Talk"), s.personalDates.map { it.name })
     }
 
     @Test fun `only Home's place gets a meme`() = runTest(dispatcher) {

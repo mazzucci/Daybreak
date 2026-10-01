@@ -19,11 +19,12 @@ A personal Android app for the start of your day: the weather for where you are 
 - "This week": plain advice about being outside, worked out from rules and the forecast (no model). A line about today ("Great day to be outside, best 1–5 PM", "Mixed day: dry until 2 PM, then showers", "Hot day: 34° by 3 PM, best before 11 AM"; in the evening it's about tomorrow, and it's worked out for the hour you look), up to two about the week ("Rainy spell from tomorrow until Monday", "Saturday is the best day this week", "First frost by Tuesday morning"), and a strip of the next 7 days with a bar per day rising from a shared baseline by its score, green for great or good days and blue-grey otherwise, a rain or snow glyph under wet days and "Best" under the best day (also marked in the 10-day list); tap a day for its details, or "How it works" for the rules. Each day scores 0–100 on its best 3 daylight hours in a row (rain, wind and gusts, and temperatures outside 12–26°C / 54–79°F cost points), and its rain words come from the same rules as the rest of the app. The today line also sits quietly under the weather glance on Home
 - Tap a tile (Feels like, Humidity, Wind, UV index, Sunrise/Sunset), the Rain pill or a day's rain card for a plain-language explanation of the term and of the value ("Colder than the air: the 19 mph wind carries heat away from your skin")
 - A home-screen widget (4×2 by default, resizable down to 2×1) with the first page's place, the temperature in both units, today's high, low and rain chance, and the summary line on the same sky colour as the app; smaller sizes keep the icon and temperature and drop the rest. It mirrors the app whenever you open it and refreshes the numbers and summary every couple of hours in the background. Location isn't read there: the widget keeps the place the app last showed. Its cache (with that location) is excluded from backup
-- "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the 10-day forecast. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; it sees your IP address and each place's country, and nothing else) and are cached for a month. Only nationwide holidays are shown, so countries whose holidays are mostly regional (the UK, for example) show fewer. Add your own dates there too (a birthday that comes round every year, a big presentation, a week off): the next few count down on the first page alongside the holidays, and a day off says what kind of break it makes ("Makes a 4-day weekend"). They stay on the phone and aren't backed up. Turn it all off in Settings → Coming up
+- "Coming up": the next public holiday and long weekend in each place's country (including when a day of leave makes a 4-day weekend), the next season, and that day's forecast when it's within the 10-day forecast. Holidays come from [Nager.Date](https://date.nager.at) (free, no key; it sees your IP address and each place's country, and nothing else) and are cached for a month. Only nationwide holidays are shown, so countries whose holidays are mostly regional (the UK, for example) show fewer. Add your own dates there too (a birthday that comes round every year, a big presentation, a week off): the next few count down on the first page alongside the holidays, and a day off says what kind of break it makes ("Makes a 4-day weekend"). A date can have a time ("Presentation · Thu, Oct 1 · 2:00 PM") and up to three reminders: on the day, a day or a week before for an all-day date; when it starts, 15 minutes, an hour or a day before for a timed one; or a custom number of minutes, hours, days or weeks (an all-day date's at a time of its own, 9 AM unless you change it). The editor says when the next ones go off ("Next reminder: Mon, Sep 28 at 2:00 PM, then Tue, Sep 29 at 1:00 PM"), and a new date starts with the reminders you last picked for that kind of date. A yearly date reminds you every year. Reminders are notifications ("Mom's birthday · Tomorrow", "Presentation · In 15 minutes · 2:00 PM", "Starting now") that open Home, at wall-clock times in whatever time zone the phone is in, so 9 AM stays 9 AM after a flight. Tap a date in Settings, or one of yours in Coming up on Home, to edit or remove it (with Undo). They stay on the phone and aren't backed up. Turn it all off in Settings → Coming up
 - A daily weather meme per place, made entirely on the phone (no network): a hand-written caption for the day's mood, or a fresh one from Gemma once it's set up. Turn it off in Settings
 - Optional on-device [Gemma](https://ai.google.dev/gemma) model for the meme's caption, run locally with [MediaPipe LLM Inference](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference). No data leaves the phone
 - Weather and place search from [Open-Meteo](https://open-meteo.com/) (free, no API key). The app fetches 10 days of hourly and daily data per place in one request, including feels-like, rain and snow amounts, hours of rain, wind with its direction, gusts, sun times and UV
 - Uses Android's built-in location service (no Google Play Services required)
+- Reminders use one AlarmManager alarm for the soonest one due, exact where Android allows it (Settings → Alarms & reminders; otherwise "Reminders may run a few minutes late" with "Allow exact timing" shows under your dates and in the editor), with an inexact backup in case exact alarms are taken away, and are set again after a restart, a clock or time-zone change and an app update. A late alarm, a late unlock after a restart, or a flight east past a reminder's time still delivers the reminder that was due, once; anything older is skipped rather than shown in a burst. Notifications are asked for when you first save a date with a reminder (Android 13 and up)
 - Kotlin + Jetpack Compose, min Android 8.0 (API 26)
 
 ## Screenshots
@@ -53,6 +54,10 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 | This week | This week (dark) | This week, evening | This week, 2x font |
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookMixed_week_outlook_mixed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookDark_week_outlook_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookEvening_week_outlook_evening.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weekOutlookHugeFont_week_outlook_huge_font.png" width="200"> |
+
+| Your dates | Edit a date | A birthday's reminders | A custom reminder |
+|:---:|:---:|:---:|:---:|
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_datesCard_dates_card.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dateEditorTimed_date_editor_timed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dateEditorNextReminders_date_editor_next_reminders.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_customReminderWithTime_custom_reminder_with_time.png" width="200"> |
 
 | Habits | Habits (dark) | Add a habit | Habits on Home |
 |:---:|:---:|:---:|:---:|
@@ -102,7 +107,8 @@ app/src/main/java/app/daybreak/
               OutdoorScorer (an hour's score for being outside); WeekOutlook ("This week": day scores, tiers, spells,
               the best day and the lines); ComingUp (holidays, long weekends, seasons);
               Habits (streaks, days since, allowances, points, levels, badges, the 12-week map);
-              OnThisDay (the grim filter, scoring, the day's picks, the subject and its Commons picture, text tidying)
+              OnThisDay (the grim filter, scoring, the day's picks, the subject and its Commons picture, text tidying);
+              Reminders (presets, when each goes off with daylight saving, the notification text)
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
               saved places, settings, clocks, habits and daily meme repositories (SharedPreferences), device location,
               Nager.Date holiday API + HolidayRepository (cached per country and year),
@@ -112,8 +118,12 @@ app/src/main/java/app/daybreak/
               Meme (mood, template captions, prompt, validator, MemeWriter)
   ui/         WeatherViewModel, ClocksViewModel, HabitsViewModel and OnThisDayViewModel (StateFlow), stateless screens (DayScreen: a day's details), WeatherApp (navigation, pickers),
               Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs),
-              MemeCard, WeekOutlookCard ("This week" and its 7-day strip), OnThisDayCard
+              MemeCard, WeekOutlookCard ("This week" and its 7-day strip), OnThisDayCard,
+              PersonalDates (Your dates, the date editor shared by Settings and Home, its reminders)
   widget/     WeatherWidget (Jetpack Glance), its receiver, WidgetRefreshWorker (WorkManager), WidgetPublisher
+  reminders/  ReminderScheduler (the one alarm, what's due, what's skipped; JVM-tested with fakes),
+              AlarmManager and notification glue, ReminderReceiver (alarm, boot, time and zone changes, updates;
+              runs off the main thread). The glue isn't unit-tested (no Robolectric): it's checked on a phone
 ```
 
 ## Build and test
@@ -126,7 +136,7 @@ Requires JDK 17 and the Android SDK (`ANDROID_HOME` or `local.properties` pointi
 
 [GitHub Actions](.github/workflows/ci.yml) runs the same command on every pull request and push to `main`, and uploads the test reports and screenshot diffs if a test or screenshot check fails.
 
-The unit tests cover JSON parsing (with real Open-Meteo and Wikipedia responses as fixtures), the "On this day" filter (with a regression table of real items), scoring, picks, pictures, per-day cache and picture loader, formatting, the rain rules and the day page's verdict, timing and the parts of the day, the "This week" outlook (spells, the best day, the today line in the evening and under polar night or day, with real and made-to-order forecasts), the template narrator, meme caption validation, habit streaks, points and badges, the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
+The unit tests cover JSON parsing (with real Open-Meteo and Wikipedia responses as fixtures), the "On this day" filter (with a regression table of real items), scoring, picks, pictures, per-day cache and picture loader, formatting, the rain rules and the day page's verdict, timing and the parts of the day, the "This week" outlook (spells, the best day, the today line in the evening and under polar night or day, with real and made-to-order forecasts), the template narrator, meme caption validation, habit streaks, points and badges, reminders (when they go off across daylight saving, leap years and time zones, through full cycles of alarms; what's shown or skipped after an alarm, a late or doubled one, a restart, a change or a flight; the notification and editor text; storage of old and new dates and their ids), the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
 
 ## License
 
