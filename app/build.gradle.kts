@@ -21,7 +21,11 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
-    buildFeatures { compose = true }
+    // BuildConfig.VERSION_NAME goes in the User-Agent that Wikimedia asks for.
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

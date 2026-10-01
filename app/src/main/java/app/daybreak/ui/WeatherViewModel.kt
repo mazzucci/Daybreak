@@ -518,6 +518,9 @@ class WeatherViewModel(
 
     fun setHabitsOnHome(enabled: Boolean) = settingsRepo.update { it.copy(habitsOnHome = enabled) }
 
+    /** The card itself is fetched by [OnThisDayViewModel], which Home asks while this is on. */
+    fun setOnThisDayEnabled(enabled: Boolean) = settingsRepo.update { it.copy(onThisDayEnabled = enabled) }
+
     fun setMemesEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(memesEnabled = enabled) }
         if (enabled) showMemesOnLoadedPages() else contents.update { map ->
