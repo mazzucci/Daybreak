@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.isSpecified
 import androidx.core.view.WindowCompat
@@ -75,8 +77,11 @@ internal fun dayOverlay(state: WeatherUiState, key: String?, date: LocalDate?): 
 fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm: HabitsViewModel? = null) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
-    val habits = habitsVm?.data?.collectAsStateWithLifecycle()?.value ?: app.daybreak.domain.HabitsData()
+    val habits = habitsVm?.summary?.collectAsStateWithLifecycle()?.value
+    val habitsData = habitsVm?.data?.collectAsStateWithLifecycle()?.value
     val celebration = habitsVm?.celebration?.collectAsStateWithLifecycle()?.value
+    val undoHint = habitsVm?.undoHint?.collectAsStateWithLifecycle()?.value ?: false
+    if (habitsVm != null) OnNewDay(habitsVm::refresh)
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
     // Set while Search is adding a clock rather than a page.
@@ -229,9 +234,11 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
                             onOpenSettings = { tab = Tab.Settings },
                             habits = habits,
                             celebration = celebration,
-                            onLogHabit = { habitsVm?.log(it) },
+                            onLogHabit = { habitsVm?.log(it, fromHome = true) },
                             onUndoHabit = { habitsVm?.undo(it) },
                             onCelebrationShown = { habitsVm?.celebrationShown(it) },
+                            habitsUndoHint = undoHint,
+                            onOpenHabits = { tab = Tab.Habits },
                         )
                         Tab.Weather -> WeatherPagerScreen(
                             state = state,
@@ -248,14 +255,14 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
                             },
                         )
                         Tab.Habits -> HabitsScreen(
-                            data = habits,
+                            summary = habits ?: app.daybreak.domain.summarize(app.daybreak.domain.HabitsData(), java.time.LocalDate.now()),
                             celebration = celebration,
                             onLog = { habitsVm?.log(it) },
                             onUndo = { habitsVm?.undo(it) },
                             onAdd = { habitsVm?.add(it) },
                             onUpdate = { id, draft -> habitsVm?.update(id, draft) },
                             onRemove = { habitsVm?.remove(it) },
-                            onMove = { from, to -> habitsVm?.move(from, to) },
+                            onMove = { id, by -> habitsVm?.move(id, by) },
                             onCelebrationShown = { habitsVm?.celebrationShown(it) },
                         )
                         Tab.Clocks -> ClocksScreen(
@@ -268,7 +275,11 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
                             onRemove = { clocksVm?.remove(it) },
                             onMove = { from, to -> clocksVm?.move(from, to) },
                         )
-                        Tab.Settings -> SettingsTab(state, vm, modelPicker::launch)
+                        Tab.Settings -> SettingsTab(
+                            state, vm, modelPicker::launch,
+                            habitsWeekStart = habitsData?.weekStart,
+                            onHabitsWeekStartChange = { habitsVm?.setWeekStart(it) },
+                        )
                     }
                 }
             }
@@ -276,11 +287,20 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
     }
 }
 
+/** Calls [onDay] when the date changes (past midnight), in its own scope so the minute ticks recompose nothing else. */
+@Composable
+private fun OnNewDay(onDay: () -> Unit) {
+    val day = rememberToday()
+    LaunchedEffect(day) { onDay() }
+}
+
 @Composable
 private fun SettingsTab(
     state: WeatherUiState,
     vm: WeatherViewModel,
     launchModelPicker: (Array<String>) -> Unit,
+    habitsWeekStart: java.time.DayOfWeek?,
+    onHabitsWeekStartChange: (java.time.DayOfWeek) -> Unit,
 ) {
     SettingsScreen(
             settings = state.settings,
@@ -290,6 +310,8 @@ private fun SettingsTab(
             onMemesEnabledChange = vm::setMemesEnabled,
             onSkyEnabledChange = vm::setSkyEnabled,
             onHabitsOnHomeChange = vm::setHabitsOnHome,
+            habitsWeekStart = habitsWeekStart,
+            onHabitsWeekStartChange = onHabitsWeekStartChange,
             onComingUpEnabledChange = vm::setComingUpEnabled,
             onAddPersonalDate = vm::addPersonalDate,
             onRemovePersonalDate = vm::removePersonalDate,
@@ -304,27 +326,61 @@ private fun SettingsTab(
 
 /**
  * The bar's label style: growing with the font size setting only up to 1.3x, and no bigger than lets the longest
- * label fit [itemWidth] on one line, so five labels fit even on the narrowest phones.
+ * label fit [itemWidth] on one line, so five labels fit even on the narrowest phones. The size and letter spacing
+ * shrink together, never below [MinLabelSize].
  */
 @Composable
 private fun cappedLabel(itemWidth: androidx.compose.ui.unit.Dp): androidx.compose.ui.text.TextStyle {
     val style = MaterialTheme.typography.labelMedium
     val density = androidx.compose.ui.platform.LocalDensity.current
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
-    val capped = if (density.fontScale <= 1.3f) 1f else 1.3f / density.fontScale
     val widest = Tab.entries.maxOf { measurer.measure(it.label, style, maxLines = 1, softWrap = false).size.width }
-    val fit = with(density) { itemWidth.toPx() } / widest
-    val f = minOf(capped, fit)
-    if (f >= 1f) return style
-    return style.copy(fontSize = style.fontSize * f, lineHeight = if (style.lineHeight.isSpecified) style.lineHeight * f else style.lineHeight)
+    return cappedLabelStyle(style, density.fontScale, with(density) { itemWidth.toPx() }, widest.toFloat())
+}
+
+/**
+ * The smallest the bar's labels get, however narrow the phone: 9sp as drawn at the default font size. It's a floor
+ * on the size on screen, so at the largest font settings (where 9sp is drawn twice as big) the labels can still
+ * shrink to fit.
+ */
+internal val MinLabelSize = 9.sp
+
+/**
+ * [style] scaled to fit: at most 1.3x the base size at large font settings, and small enough that the widest label
+ * ([widestPx] at [style]) fits [availablePx]. Letter spacing scales with it. Never drawn smaller than [MinLabelSize]
+ * (unless the base style already is), so never zero or negative, even with no room at all.
+ */
+internal fun cappedLabelStyle(
+    style: androidx.compose.ui.text.TextStyle,
+    fontScale: Float,
+    availablePx: Float,
+    widestPx: Float,
+): androidx.compose.ui.text.TextStyle {
+    val capped = if (fontScale <= 1.3f) 1f else 1.3f / fontScale
+    val fit = if (widestPx > 0f) availablePx.coerceAtLeast(0f) / widestPx else 1f
+    var f = minOf(capped, fit)
+    if (f >= 1f || !style.fontSize.isSpecified) return style
+    val base = style.fontSize.value * fontScale
+    val floor = minOf(MinLabelSize.value, base) / base
+    f = f.coerceAtLeast(floor)
+    return style.copy(
+        fontSize = style.fontSize * f,
+        lineHeight = if (style.lineHeight.isSpecified) style.lineHeight * f else style.lineHeight,
+        letterSpacing = if (style.letterSpacing.isSpecified) style.letterSpacing * f else style.letterSpacing,
+    )
 }
 
 /** Home · Weather · Habits · Clocks · Settings, labels always shown, flat on the card colour like the cards themselves. */
 @Composable
 fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
     BoxWithConstraints {
-        // The bar spaces its items 8dp apart and pads each label 4dp a side; 4dp more so rounding never clips one.
-        val itemWidth = (maxWidth - 8.dp * (Tab.entries.size - 1)) / Tab.entries.size - 12.dp
+        // The bar keeps clear of the side insets (landscape navigation buttons, cutouts), spaces its items 8dp apart
+        // and pads each label 4dp a side; 4dp more so rounding never clips one.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val direction = androidx.compose.ui.platform.LocalLayoutDirection.current
+        val insets = NavigationBarDefaults.windowInsets
+        val sides = with(density) { (insets.getLeft(density, direction) + insets.getRight(density, direction)).toDp() }
+        val itemWidth = (maxWidth - sides - 8.dp * (Tab.entries.size - 1)) / Tab.entries.size - 12.dp
         val label = cappedLabel(itemWidth)
         NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
             Tab.entries.forEach { t ->

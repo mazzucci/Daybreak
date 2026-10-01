@@ -64,10 +64,8 @@ import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.describeSky
 import app.daybreak.domain.moonPhase
 import app.daybreak.domain.weekendDays
-import app.daybreak.domain.HabitsData
-import app.daybreak.domain.summarize
+import app.daybreak.domain.HabitsSummary
 import java.time.LocalDateTime
-import java.time.temporal.WeekFields
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -102,12 +100,14 @@ fun HomeScreen(
     now: LocalDateTime? = null,
     /** The phone's zone, for tonight's sky; fixed in screenshot tests. */
     zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
-    habits: HabitsData = HabitsData(),
+    /** The habits worked out for today (by the ViewModel); null or empty for none. */
+    habits: HabitsSummary? = null,
     celebration: Celebration? = null,
     onLogHabit: (String) -> Unit = {},
     onUndoHabit: (String) -> Unit = {},
     onCelebrationShown: (Long) -> Unit = {},
-    weekFields: WeekFields = WeekFields.of(Locale.getDefault()),
+    habitsUndoHint: Boolean = false,
+    onOpenHabits: () -> Unit = {},
 ) {
     val now = now ?: rememberMinuteClock().atZone(zone).toLocalDateTime()
     val index = glancePageIndex(state.pages)
@@ -155,13 +155,14 @@ fun HomeScreen(
                 modifier = Modifier.padding(horizontal = PageMargin),
             )
             // Today's habits, between the weather and what's coming up; only once there's a habit.
-            val showHabits = state.settings.habitsOnHome && habits.habits.isNotEmpty()
-            if (showHabits) {
-                val day = now.toLocalDate()
-                val summary = remember(habits, day, weekFields) { summarize(habits, day, weekFields) }
+            val showHabits = state.settings.habitsOnHome && !habits?.stats.isNullOrEmpty()
+            if (showHabits && habits != null) {
                 CelebrationTimer(celebration, onCelebrationShown)
                 SectionHeading("Today's habits")
-                HabitsHomeCard(summary, celebration, onLogHabit, onUndoHabit, Modifier.padding(horizontal = PageMargin))
+                HabitsHomeCard(
+                    habits, celebration, onLogHabit, onUndoHabit, Modifier.padding(horizontal = PageMargin),
+                    undoHint = habitsUndoHint, onOpenHabits = onOpenHabits,
+                )
             }
             HomeCards(state, page, loaded, now, zone)
             // Only when every card is switched off (not while they're waiting for a forecast), or habits have none.

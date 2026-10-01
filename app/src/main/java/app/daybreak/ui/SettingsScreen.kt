@@ -93,6 +93,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.LaunchedEffect
+import java.time.DayOfWeek
 import java.util.Locale
 
 private val ScreenMargin = 16.dp
@@ -107,6 +108,9 @@ fun SettingsScreen(
     onMemesEnabledChange: (Boolean) -> Unit,
     onSkyEnabledChange: (Boolean) -> Unit = {},
     onHabitsOnHomeChange: (Boolean) -> Unit = {},
+    /** The habits' first day of the week; null hides the choice (no habits store). */
+    habitsWeekStart: DayOfWeek? = null,
+    onHabitsWeekStartChange: (DayOfWeek) -> Unit = {},
     onComingUpEnabledChange: (Boolean) -> Unit,
     onAddPersonalDate: (PersonalDate) -> Unit = {},
     onRemovePersonalDate: (PersonalDate) -> Unit = {},
@@ -171,6 +175,10 @@ fun SettingsScreen(
                         onCheckedChange = onHabitsOnHomeChange,
                         modifier = Modifier.semantics { contentDescription = "Habits on Home" },
                     )
+                }
+                if (habitsWeekStart != null) {
+                    Spacer(Modifier.height(16.dp))
+                    WeekStartChoice(habitsWeekStart, onHabitsWeekStartChange)
                 }
             }
 
@@ -730,3 +738,39 @@ private fun Step(number: Int, title: String, text: String, last: Boolean = false
 
 private fun formatSize(bytes: Long): String =
     String.format(Locale.US, "%.0f MB", bytes / (1024.0 * 1024.0))
+
+/**
+ * "Weeks start on", for weekly habits and the map's columns. It's set from the phone's region when the first habit
+ * is added and kept, so a change of language doesn't move past weeks; changing it here moves them on purpose.
+ */
+@Composable
+private fun WeekStartChoice(selected: DayOfWeek, onChange: (DayOfWeek) -> Unit) {
+    Text("Weeks start on", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(2.dp))
+    Text(
+        "For weekly habits and the 12-week maps. Changing it regroups past weeks.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    val days = listOf(DayOfWeek.MONDAY, DayOfWeek.SUNDAY, DayOfWeek.SATURDAY)
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        days.forEachIndexed { i, day ->
+            SegmentedButton(
+                selected = selected == day,
+                onClick = { onChange(day) },
+                shape = SegmentedButtonDefaults.itemShape(i, days.size),
+                icon = {},
+            ) {
+                // "Mon", which fits three across at any font size; TalkBack hears "Monday".
+                val full = day.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault())
+                Text(
+                    day.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.semantics { contentDescription = full },
+                )
+            }
+        }
+    }
+}

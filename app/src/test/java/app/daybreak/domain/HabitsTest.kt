@@ -215,7 +215,7 @@ class HabitsTest {
         assertEquals(setOf(Badge.FIRST_LOG, Badge.STREAK_7), badges(build(1, log = days(d(20), d(26), 1))))
         assertEquals(
             setOf(Badge.FIRST_LOG, Badge.STREAK_7, Badge.STREAK_30, Badge.LOGS_100),
-            badges(build(1, created = d(1, 8), log = days(d(1, 8), d(28), 4))),
+            badges(build(4, created = d(1, 8), log = days(d(1, 8), d(28), 4))),
         )
         assertEquals(setOf(Badge.FIRST_LOG, Badge.WEEKS_4), badges(build(1, HabitPeriod.WEEK, log = mapOf(d(1) to 1, d(8) to 1, d(15) to 1, d(22) to 1))))
         // A slip isn't a first step.
@@ -257,7 +257,10 @@ class HabitsTest {
 
     @Test fun `celebrates a milestone`() {
         val h = build(1, created = d(22), log = days(d(22), d(27), 1))
-        assertEquals("7 days! +61", cheer(h, h.copy(log = h.log + (monday to 1)), banked = 1000, badges = setOf(Badge.FIRST_LOG, Badge.STREAK_7)))
+        assertEquals("7-day streak! +61", cheer(h, h.copy(log = h.log + (monday to 1)), banked = 1000, badges = setOf(Badge.FIRST_LOG, Badge.STREAK_7)))
+        // Seven met weeks, the seventh this week: 1 for the log, 50 for the week, 50 for the milestone.
+        val w = build(1, HabitPeriod.WEEK, created = d(17, 8), log = (0..5).associate { d(17, 8).plusWeeks(it.toLong()) to 1 })
+        assertEquals("7-week streak! +101", cheer(w, w.copy(log = w.log + (monday to 1)), banked = 1000, badges = setOf(Badge.FIRST_LOG, Badge.WEEKS_4)))
     }
 
     @Test fun `celebrates a new level, then a new badge`() {
@@ -305,11 +308,13 @@ class HabitsTest {
         assertEquals(monday, heatMap(h, monday, uk).last()[0]!!.date)
     }
 
-    @Test fun `avoid heat map colours clean days and pales slips`() {
+    @Test fun `avoid heat map tints clean days and marks slips`() {
         val h = avoid(0, HabitPeriod.DAY, created = d(21), log = mapOf(d(25) to 1))
         val week = heatMap(h, monday, uk)[10] // 21st to 27th
-        assertEquals(0.4f, week[0]!!.strength)
-        assertEquals(0.05f, week[4]!!.strength)
+        assertEquals(HEAT_KEPT, week[0]!!.strength)
+        assertFalse(week[0]!!.slip)
+        assertEquals(0f, week[4]!!.strength)
+        assertTrue(week[4]!!.slip)
         assertEquals(0f, heatMap(h, monday, uk)[9][0]!!.strength) // before it was added
     }
 }

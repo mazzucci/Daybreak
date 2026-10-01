@@ -1,6 +1,12 @@
 package app.daybreak.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +36,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -46,8 +55,9 @@ import app.daybreak.domain.progressLine
 
 /**
  * "Today's habits" on Home: each build habit as a chip that logs one per tap (long-press takes it back), with its
- * ring filling as it goes, then each avoid habit's clean run ("4 days without takeout"). Nothing to log for an
- * avoid habit here: a slip is logged on the Habits tab, on purpose.
+ * ring filling as it goes, then each avoid habit's clean run ("4 days without takeout"), which opens the Habits
+ * tab. Nothing to log for an avoid habit here: a slip is logged on the Habits tab, on purpose. After the first log
+ * here ever, [undoHint] says how to take one back.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -57,6 +67,8 @@ fun HabitsHomeCard(
     onLog: (String) -> Unit,
     onUndo: (String) -> Unit,
     modifier: Modifier = Modifier,
+    undoHint: Boolean = false,
+    onOpenHabits: () -> Unit = {},
 ) {
     val build = summary.stats.filter { it.habit.kind == HabitKind.BUILD }
     val avoid = summary.stats.filter { it.habit.kind == HabitKind.AVOID }
@@ -64,18 +76,34 @@ fun HabitsHomeCard(
         "${build.first { it.habit.id == c.habitId }.habit.title}: ${c.message}"
     }
     Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.padding(16.dp)) {
+        // The avoid lines carry their own 6dp, as tap targets.
+        Column(Modifier.padding(top = if (build.isEmpty()) 10.dp else 16.dp, bottom = if (avoid.isEmpty()) 16.dp else 10.dp)) {
             if (build.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    build.forEach { HabitChip(it, { onLog(it.habit.id) }, { onUndo(it.habit.id) }) }
+                FlowRow(
+                    Modifier.padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    build.forEach { s -> key(s.habit.id) { HabitChip(s, { onLog(s.habit.id) }, { onUndo(s.habit.id) }) } }
                 }
-                CelebrationLine(cheer, Modifier.padding(start = 4.dp))
+                AnimatedVisibility(undoHint && cheer == null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    Text(
+                        "Hold to undo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 6.dp),
+                    )
+                }
+                CelebrationLine(cheer, Modifier.padding(horizontal = 20.dp))
             }
-            if (build.isNotEmpty() && avoid.isNotEmpty()) Spacer(Modifier.height(12.dp))
-            avoid.forEachIndexed { i, s ->
-                if (i > 0) Spacer(Modifier.height(6.dp))
+            if (build.isNotEmpty() && avoid.isNotEmpty()) Spacer(Modifier.height(6.dp))
+            avoid.forEach { s ->
                 val style = MaterialTheme.typography.bodyMedium
-                Row {
+                // Each opens the tab, where a slip is logged.
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClickLabel = "Open Habits", role = Role.Button, onClick = onOpenHabits)
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                ) {
                     // Centred on the first line, however the words wrap.
                     Box(Modifier.height(with(LocalDensity.current) { style.lineHeight.toDp() }), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(habitColor(s.habit.color)))
@@ -88,7 +116,10 @@ fun HabitsHomeCard(
     }
 }
 
-/** A build habit as a tap target: its ring, its name over "5/8 today" (or "1/3 this week"), on a tint of its colour. */
+/**
+ * A build habit as a tap target: its ring, its name over "5/8 today" (or "1/3 this week"), on a tint of its colour.
+ * TalkBack hears the new count after each tap.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HabitChip(s: HabitStats, onLog: () -> Unit, onUndo: () -> Unit) {
@@ -105,6 +136,7 @@ private fun HabitChip(s: HabitStats, onLog: () -> Unit, onUndo: () -> Unit) {
             .clearAndSetSemantics {
                 contentDescription = "${h.title}, ${progressLine(s)}"
                 role = Role.Button
+                liveRegion = LiveRegionMode.Polite
                 onClick("Add one") { onLog(); true }
                 if (s.count > 0) customActions = listOf(CustomAccessibilityAction("Take one back") { onUndo(); true })
             }

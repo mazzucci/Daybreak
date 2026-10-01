@@ -169,10 +169,11 @@ class ScreenshotTest {
     }
 
     @Composable
-    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings()) {
+    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings(), weekStart: java.time.DayOfWeek? = null) {
         SettingsScreen(
             today = forecast.current.time.toLocalDate(),
             settings = settings,
+            habitsWeekStart = weekStart,
             modelStatus = status,
             onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onActivityChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = null,
@@ -183,13 +184,13 @@ class ScreenshotTest {
     private fun Home(
         state: WeatherUiState,
         now: java.time.LocalDateTime = forecast.current.time,
-        habits: HabitsData = HabitsData(),
+        habits: HabitsData? = null,
         celebration: Celebration? = null,
     ) {
         HomeScreen(
             state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {},
             now = now, zone = java.time.ZoneId.of("America/Los_Angeles"),
-            habits = habits, celebration = celebration, weekFields = weekFields,
+            habits = habits?.let { summarize(it, now.toLocalDate()) }, celebration = celebration,
         )
     }
 
@@ -324,8 +325,6 @@ class ScreenshotTest {
 
     // --- Habits ---------------------------------------------------------------------------------
 
-    /** Sunday-first weeks, as on a US phone. */
-    private val weekFields = java.time.temporal.WeekFields.of(Locale.US)
     private val habitsToday = forecast.current.time.toLocalDate() // Monday, September 28
 
     /** [pattern] gives the count [i] days ago, from [days] days back to today. */
@@ -334,8 +333,8 @@ class ScreenshotTest {
 
     /**
      * Five habits: water half done today on a 12-day streak, exercise once this week, reading just done (a
-     * 7-day milestone), no takeout for 12 days, and coffee within its daily allowance. Points from a deleted
-     * habit put the level at 4.
+     * 7-day milestone), no takeout for 12 days, and coffee within its daily allowance, with Sunday-first weeks as
+     * on a US phone. With the points and a badge banked from a deleted habit, that's level 6.
      */
     private val habitsData = HabitsData(
         habits = listOf(
@@ -362,17 +361,18 @@ class ScreenshotTest {
         ),
         bankedPoints = 120,
         bankedBadges = setOf(Badge.WEEKS_4),
+        weekStart = java.time.DayOfWeek.SUNDAY,
     )
 
     @Composable
     private fun Habits(data: HabitsData, celebration: Celebration? = null, editing: Boolean = false) {
         HabitsScreen(
-            data, celebration, onLog = {}, onUndo = {}, onAdd = {}, onUpdate = { _, _ -> }, onRemove = {}, onMove = { _, _ -> },
-            onCelebrationShown = {}, today = habitsToday, weekFields = weekFields, initiallyEditing = editing,
+            summarize(data, habitsToday), celebration, onLog = {}, onUndo = {}, onAdd = {}, onUpdate = { _, _ -> }, onRemove = {},
+            onMove = { _, _ -> }, onCelebrationShown = {}, initiallyEditing = editing,
         )
     }
 
-    private val readCheer = Celebration("read", "7 days! +61", 1)
+    private val readCheer = Celebration("read", "7-day streak! +61", 1)
 
     @Test fun habitsEmpty() = snap("habits_empty") { Habits(HabitsData()) }
 
@@ -398,15 +398,16 @@ class ScreenshotTest {
     @Test fun habitEditorNew() = snap("habit_editor_new") { EditorOver(null) }
 
     @Test fun habitEditorEdit() = snap("habit_editor_edit_dark_large_font", night = true, narrow = true, fontScale = 1.5f) {
-        EditorOver(HabitDraft("No takeout", HabitColor.CORAL, HabitKind.AVOID, HabitPeriod.WEEK, 1))
+        EditorOver(HabitDraft("No takeout", HabitColor.CORAL, HabitKind.AVOID, HabitPeriod.WEEK, 0))
     }
 
-    /** Home's card on its own, in both themes, with a cheer after the goal was met. */
+    /** Home's card on its own, in both themes. */
     @Composable
     private fun HomeCards(night: Boolean) {
-        val summary = summarize(habitsData, habitsToday, weekFields)
+        val summary = summarize(habitsData, habitsToday)
         Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
-            HabitsHomeCard(summary, if (night) null else Celebration("read", "Done for today · +11", 1), onLog = {}, onUndo = {})
+            // Light: a cheer after the goal was met. Dark: the first log here, with the hint on how to take it back.
+            HabitsHomeCard(summary, if (night) null else Celebration("read", "Done for today · +11", 1), onLog = {}, onUndo = {}, undoHint = night)
         }
     }
 
@@ -661,9 +662,14 @@ class ScreenshotTest {
         Settings(ModelStatus.Installed(529L shl 20))
     }
 
-    /** The whole page with the model installed, down to the Gemma section. */
+    /** The whole page with the model installed, down to the Gemma section, with the habits' week start. */
     @Test fun settingsFull() = snap("settings_full", tall = true) {
-        Settings(ModelStatus.Installed(529L shl 20))
+        Settings(ModelStatus.Installed(529L shl 20), weekStart = java.time.DayOfWeek.SUNDAY)
+    }
+
+    /** "Weeks start on" on the narrowest phone at a large font: the three days stay on one line. */
+    @Test fun settingsHabitsLargeFont() = snap("settings_habits_large_font", narrow = true, fontScale = 1.5f) {
+        Settings(ModelStatus.NotInstalled, weekStart = java.time.DayOfWeek.MONDAY)
     }
 
     /** A clear window; a showery afternoon with two one-hour windows (amber bars, the marker under the pick); none at all. */

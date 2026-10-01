@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -68,6 +70,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -91,12 +94,16 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -109,28 +116,25 @@ import app.daybreak.domain.Badge
 import app.daybreak.domain.HABIT_COUNT_MAX
 import app.daybreak.domain.HABIT_PRESETS
 import app.daybreak.domain.HABIT_TITLE_MAX
-import app.daybreak.domain.Habit
 import app.daybreak.domain.HabitColor
 import app.daybreak.domain.HabitDraft
 import app.daybreak.domain.HabitKind
 import app.daybreak.domain.HabitPeriod
 import app.daybreak.domain.HabitStats
-import app.daybreak.domain.HabitsData
+import app.daybreak.domain.HeatCell
+import app.daybreak.domain.habitLines
+import app.daybreak.domain.heatSummary
 import app.daybreak.domain.HabitsSummary
 import app.daybreak.domain.Level
 import app.daybreak.domain.goalLabel
 import app.daybreak.domain.heatMap
 import app.daybreak.domain.isDailyAllowance
 import app.daybreak.domain.progressLine
-import app.daybreak.domain.sinceLine
-import app.daybreak.domain.streakLine
-import app.daybreak.domain.summarize
 import app.daybreak.domain.toDraft
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.WeekFields
-import java.util.Locale
 
 // --- Colours ------------------------------------------------------------------------------------------------------
 
@@ -160,34 +164,31 @@ fun rememberToday(): LocalDate = rememberMinuteClock().atZone(ZoneId.systemDefau
 // --- The tab ------------------------------------------------------------------------------------------------------
 
 /**
- * Habits: your level and points at the top, then each habit with this period's progress, a +1 (long-press or −
- * to undo), its streak or clean run, and the last 12 weeks. Edit reorders and deletes; tapping a habit edits it.
- * With none yet, a short explanation and three one-tap presets.
+ * Habits: your level and points at the top, then each habit with this period's progress, a +1 (or "Had one" for
+ * something to avoid; long-press or − to undo), its streak or clean run, and the last 12 weeks. Edit reorders and
+ * deletes; tapping a habit edits it. With none yet, a short explanation and three one-tap presets. [summary] is
+ * worked out once per change, in the ViewModel.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HabitsScreen(
-    data: HabitsData,
+    summary: HabitsSummary,
     celebration: Celebration?,
     onLog: (String) -> Unit,
     onUndo: (String) -> Unit,
     onAdd: (HabitDraft) -> Unit,
     onUpdate: (String, HabitDraft) -> Unit,
     onRemove: (String) -> Unit,
-    onMove: (from: Int, to: Int) -> Unit,
+    onMove: (id: String, by: Int) -> Unit,
     onCelebrationShown: (Long) -> Unit,
-    /** Fixed in screenshot tests; otherwise the phone's date, following midnight. */
-    today: LocalDate? = null,
-    weekFields: WeekFields = WeekFields.of(Locale.getDefault()),
     initiallyEditing: Boolean = false,
 ) {
-    val day = today ?: rememberToday()
-    val summary = remember(data, day, weekFields) { summarize(data, day, weekFields) }
+    val habits = summary.stats.map { it.habit }
     var editing by rememberSaveable { mutableStateOf(initiallyEditing) }
     // The habit open in the editor: "" for a new one, null when it's closed.
     var editorFor by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(data.habits.isEmpty()) { if (data.habits.isEmpty()) editing = false }
+    LaunchedEffect(habits.isEmpty()) { if (habits.isEmpty()) editing = false }
     CelebrationTimer(celebration, onCelebrationShown)
 
     Scaffold(
@@ -196,7 +197,7 @@ fun HabitsScreen(
             TopAppBar(
                 title = { Text("Habits") },
                 actions = {
-                    if (data.habits.isNotEmpty()) TextButton({ editing = !editing }) { Text(if (editing) "Done" else "Edit") }
+                    if (habits.isNotEmpty()) TextButton({ editing = !editing }) { Text(if (editing) "Done" else "Edit") }
                     IconButton({ editorFor = "" }) { Icon(Icons.Default.Add, contentDescription = "Add a habit") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -208,22 +209,27 @@ fun HabitsScreen(
                 .padding(horizontal = PageMargin),
         ) {
             Spacer(Modifier.height(8.dp))
-            if (data.habits.isEmpty()) {
+            if (habits.isEmpty()) {
                 EmptyHabits(onPreset = onAdd, onNew = { editorFor = "" })
             } else {
                 LevelCard(summary)
                 summary.stats.forEachIndexed { i, s ->
-                    Spacer(Modifier.height(12.dp))
-                    HabitCard(
-                        s, day, weekFields, editing,
-                        celebration = celebration?.takeIf { it.habitId == s.habit.id }?.message,
-                        onLog = { onLog(s.habit.id) },
-                        onUndo = { onUndo(s.habit.id) },
-                        onEdit = { editorFor = s.habit.id },
-                        onUp = if (i > 0) ({ onMove(i, i - 1) }) else null,
-                        onDown = if (i < summary.stats.lastIndex) ({ onMove(i, i + 1) }) else null,
-                        onRemove = { confirmDelete = s.habit.id },
-                    )
+                    val id = s.habit.id
+                    // State, animations and TalkBack focus follow the habit, not its place in the list.
+                    key(id) {
+                        Spacer(Modifier.height(12.dp))
+                        HabitCard(
+                            s, summary.today, summary.weekFields, editing,
+                            celebration = celebration?.takeIf { it.habitId == id }?.message,
+                            onLog = { onLog(id) },
+                            onUndo = { onUndo(id) },
+                            onEdit = { editorFor = id },
+                            // By id when tapped, so a move never acts on whatever has since taken this place.
+                            onUp = if (i > 0) ({ onMove(id, -1) }) else null,
+                            onDown = if (i < summary.stats.lastIndex) ({ onMove(id, +1) }) else null,
+                            onRemove = { confirmDelete = id },
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -231,7 +237,7 @@ fun HabitsScreen(
     }
 
     editorFor?.let { id ->
-        val habit = data.habits.firstOrNull { it.id == id }
+        val habit = habits.firstOrNull { it.id == id }
         HabitEditorDialog(
             initial = habit?.toDraft(),
             onDismiss = { editorFor = null },
@@ -242,14 +248,14 @@ fun HabitsScreen(
         )
     }
     confirmDelete?.let { id ->
-        val habit = data.habits.firstOrNull { it.id == id }
+        val habit = habits.firstOrNull { it.id == id }
         if (habit == null) {
             confirmDelete = null
         } else {
             AlertDialog(
                 onDismissRequest = { confirmDelete = null },
                 title = { Text("Delete “${habit.title}”?") },
-                text = { Text("Its log and streaks go with it. The points and badges it earned stay.") },
+                text = { Text("Its log and streaks go with it. What it earned on finished days and weeks stays.") },
                 confirmButton = {
                     TextButton(
                         { onRemove(id); confirmDelete = null },
@@ -272,13 +278,17 @@ fun CelebrationTimer(celebration: Celebration?, onShown: (Long) -> Unit) {
     }
 }
 
-/** "Level 4", the points and how many to the next level on an amber bar, and the badges earned. */
+/**
+ * "Level 4", the points and how many to the next level on an amber bar, and the badges earned: the first two, and
+ * "+3 more" to see the rest. TalkBack hears them all.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LevelCard(summary: HabitsSummary) {
     val level = summary.level
     val amber = MaterialTheme.weatherColors.sun
     val badges = Badge.entries.filter { it in summary.badges }
+    var allBadges by rememberSaveable { mutableStateOf(false) }
     val spoken = "Level ${level.number}, ${level.points} points, ${level.toGo} to go to level ${level.number + 1}." +
         if (badges.isEmpty()) "" else " Badges: ${badges.joinToString(", ") { it.title }}."
     Card(
@@ -304,9 +314,11 @@ private fun LevelCard(summary: HabitsSummary) {
             LevelBar(level, amber)
             if (badges.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
+                val shown = if (allBadges || badges.size <= 2) badges else badges.take(2)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    badges.forEach { BadgePill(it, amber) }
-                }
+                    shown.forEach { BadgePill(it.title, amber) }
+                    if (shown.size < badges.size) BadgePill("+${badges.size - shown.size} more", amber) { allBadges = true }
+                    }
             }
         }
     }
@@ -326,20 +338,20 @@ private fun LevelBar(level: Level, color: Color) {
 }
 
 @Composable
-private fun BadgePill(badge: Badge, amber: Color) {
-    Row(
-        Modifier.clip(CircleShape).background(amber.copy(alpha = 0.14f)).padding(start = 6.dp, end = 10.dp, top = 3.dp, bottom = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Default.Star, contentDescription = null, Modifier.size(14.dp), tint = amber)
-        Spacer(Modifier.width(4.dp))
-        Text(badge.title, style = MaterialTheme.typography.labelMedium)
-    }
+private fun BadgePill(text: String, amber: Color, onClick: (() -> Unit)? = null) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.clip(CircleShape).background(amber.copy(alpha = 0.14f))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp, vertical = 3.dp),
+    )
 }
 
 /**
  * One habit: its ring (or clean-days disc) and lines on top, the 12-week map and the log buttons under them. The
- * words and the map are one node for TalkBack; tapping them edits the habit.
+ * top of the card is one TalkBack node (the title, the goal, the lines, the map in words) and tapping it edits the
+ * habit; the first line, where this period stands, is a live region of its own, so a log is heard as it lands.
  */
 @Composable
 private fun HabitCard(
@@ -361,74 +373,116 @@ private fun HabitCard(
     val cells = remember(h, today, weekFields) { heatMap(h, today, weekFields) }
     // A daily allowance is about today's count; "days since" only means something when none (or few a week) are allowed.
     val counted = build || h.isDailyAllowance
-    val first = if (counted) progressLine(s) else sinceLine(s)
-    val second = if (counted) streakLine(s) else progressLine(s)
-    val third = if (counted) null else streakLine(s)
-    val spoken = listOfNotNull(h.title, goalLabel(h.kind, h.period, h.target), first, second, third, heatSummary(h, cells), celebration)
-        .joinToString(". ")
+    val lines = habitLines(s)
+    val spoken = (listOf(h.title, goalLabel(h.kind, h.period, h.target)) + lines.drop(1) + heatSummary(h, cells)).joinToString(". ")
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(
-            Modifier.fillMaxWidth().clickable(onClickLabel = "Edit", onClick = onEdit).clearAndSetSemantics {
-                contentDescription = spoken
-                onClick("Edit") { onEdit(); true }
-                if (editing) {
-                    customActions = listOfNotNull(
-                        onUp?.let { f -> CustomAccessibilityAction("Move up") { f(); true } },
-                        onDown?.let { f -> CustomAccessibilityAction("Move down") { f(); true } },
-                        CustomAccessibilityAction("Delete") { onRemove(); true },
-                    )
-                }
-            }.padding(start = 16.dp, top = 16.dp, end = 16.dp),
-        ) {
-            Row {
-                if (counted) {
-                    // An allowance's ring fills as it's used, without a check: reaching it isn't a goal.
-                    ProgressRing(s.count, h.target, color, build && s.onTrack, 48.dp)
-                } else {
-                    CleanDaysDisc(s.cleanDays, color)
+        Box(Modifier.fillMaxWidth()) {
+            // Behind the words, so the live line on top stays its own node; taps pass through the words to it.
+            Spacer(
+                Modifier.matchParentSize().clickable(onClickLabel = "Edit", onClick = onEdit).clearAndSetSemantics {
+                    contentDescription = spoken
+                    onClick("Edit") { onEdit(); true }
+                    if (editing) {
+                        customActions = listOfNotNull(
+                            onUp?.let { f -> CustomAccessibilityAction("Move up") { f(); true } },
+                            onDown?.let { f -> CustomAccessibilityAction("Move down") { f(); true } },
+                            CustomAccessibilityAction("Delete") { onRemove(); true },
+                        )
+                    }
+                },
+            )
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 12.dp)) {
+                Box(Modifier.clearAndSetSemantics {}) {
+                    if (counted) {
+                        // An allowance's ring drains as it's used, without a check: reaching it isn't a goal.
+                        ProgressRing(s.count, h.target, color, build && s.onTrack, 48.dp, drain = !build)
+                    } else {
+                        CleanDaysDisc(s.cleanDays, color)
+                    }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(h.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        h.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clearAndSetSemantics {},
+                    )
                     // Met goals in the success green; an avoid habit's words stay neutral whatever happened.
                     Text(
-                        first,
-                        style = MaterialTheme.typography.bodySmall,
+                        lines.first(),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = if (build && s.onTrack) MaterialTheme.weatherColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
-                    Text(second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (third != null) Text(third, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    lines.drop(1).forEach {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clearAndSetSemantics {},
+                        )
+                    }
                     CelebrationLine(celebration)
                 }
             }
-            Spacer(Modifier.height(12.dp))
         }
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            HeatMap(cells, color, Modifier.padding(bottom = 4.dp))
-            Spacer(Modifier.weight(1f))
-            if (editing) {
-                IconButton({ onUp?.invoke() }, enabled = onUp != null) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${h.title} up")
+        // The buttons sit beside the map, or under it when there's no room (large fonts on a narrow phone).
+        val pill = with(LocalDensity.current) {
+            rememberTextMeasurer().measure("Had one", MaterialTheme.typography.labelLarge, maxLines = 1).size.width.toDp()
+        } + 32.dp
+        val buttonsWidth = when {
+            editing -> 48.dp * 3
+            build -> 48.dp + 48.dp
+            else -> 48.dp + pill
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, bottom = 12.dp)) {
+            val beside = maxWidth >= HeatMapWidth + 8.dp + buttonsWidth
+            val map = @Composable { HeatMap(cells, color, Modifier.padding(bottom = 4.dp).clearAndSetSemantics {}) }
+            val buttons = @Composable {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (editing) {
+                        IconButton({ onUp?.invoke() }, enabled = onUp != null) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${h.title} up")
+                        }
+                        IconButton({ onDown?.invoke() }, enabled = onDown != null) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${h.title} down")
+                        }
+                        IconButton(onRemove) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete ${h.title}", tint = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        if (s.count > 0) UndoButton(h.title, onUndo)
+                        Spacer(Modifier.width(8.dp))
+                        if (build) {
+                            LogButton("Add one to ${h.title}, ${progressLine(s)}", color, onLog, onUndo.takeIf { s.count > 0 })
+                        } else {
+                            HadOneButton(h.title, color, onLog, onUndo.takeIf { s.count > 0 })
+                        }
+                    }
                 }
-                IconButton({ onDown?.invoke() }, enabled = onDown != null) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${h.title} down")
-                }
-                IconButton(onRemove) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete ${h.title}", tint = MaterialTheme.colorScheme.error)
+            }
+            if (beside) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    map()
+                    Box(Modifier.weight(1f)) { buttons() }
                 }
             } else {
-                if (s.count > 0) UndoButton(h.title, onUndo)
-                Spacer(Modifier.width(8.dp))
-                LogButton(h.title, color, onLog, onUndo.takeIf { s.count > 0 })
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    map()
+                    buttons()
+                }
             }
         }
     }
 }
 
-/** The celebration, in place under a habit's lines: grows in, then fades. */
+/** The celebration, in place under a habit's lines: grows in, then fades. TalkBack hears it when it appears. */
 @Composable
 fun CelebrationLine(message: String?, modifier: Modifier = Modifier) {
     // Keep the last message while it fades out.
@@ -436,7 +490,7 @@ fun CelebrationLine(message: String?, modifier: Modifier = Modifier) {
     if (message != null) last = message
     AnimatedVisibility(message != null, modifier, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
         val style = MaterialTheme.typography.labelLarge
-        Row(Modifier.padding(top = 4.dp)) {
+        Row(Modifier.padding(top = 4.dp).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
             // Centred on the first line, however the words wrap.
             Box(Modifier.height(with(LocalDensity.current) { style.lineHeight.toDp() }), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Star, contentDescription = null, Modifier.size(14.dp), tint = MaterialTheme.weatherColors.sun)
@@ -447,23 +501,26 @@ fun CelebrationLine(message: String?, modifier: Modifier = Modifier) {
     }
 }
 
-/** "Goal met on 40 of the last 84 days", "9 logged in the last 12 weeks", "2 in the last 12 weeks". */
-private fun heatSummary(h: Habit, cells: List<List<app.daybreak.domain.HeatCell?>>): String {
-    val days = cells.flatten().filterNotNull()
-    return when {
-        h.kind == HabitKind.AVOID -> "${days.sumOf { it.count }} in the last 12 weeks"
-        h.period == HabitPeriod.DAY -> "Goal met on ${days.count { it.count >= h.target }} of the last ${days.size} days"
-        else -> "${days.sumOf { it.count }} logged in the last 12 weeks"
-    }
-}
-
 /**
  * Progress to a goal as a ring in the habit's colour, with "5/8" inside; once met it fills and a check pops in.
- * The numbers inside keep their size at large fonts (the same words are in the lines beside it).
+ * With [drain] (an allowance) the ring is what's left instead: full with none used, empty at the allowance and
+ * past it, where "3/2" inside says why. The numbers inside keep their size at large fonts (the same words are in
+ * the lines beside it).
  */
 @Composable
-fun ProgressRing(count: Int, target: Int, color: Color, met: Boolean, size: Dp, modifier: Modifier = Modifier, showCount: Boolean = true) {
-    val fraction by animateFloatAsState((count.toFloat() / target.coerceAtLeast(1)).coerceAtMost(1f), label = "ring")
+fun ProgressRing(
+    count: Int,
+    target: Int,
+    color: Color,
+    met: Boolean,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    showCount: Boolean = true,
+    drain: Boolean = false,
+) {
+    val goal = target.coerceAtLeast(1)
+    val shown = if (drain) (target - count).coerceAtLeast(0).toFloat() / goal else (count.toFloat() / goal).coerceAtMost(1f)
+    val fraction by animateFloatAsState(shown, label = "ring")
     val check by animateFloatAsState(if (met) 1f else 0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "check")
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
@@ -471,7 +528,7 @@ fun ProgressRing(count: Int, target: Int, color: Color, met: Boolean, size: Dp, 
             val inset = w / 2
             val arcSize = Size(this.size.width - w, this.size.height - w)
             drawArc(color.copy(alpha = 0.18f), 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(w))
-            drawArc(color, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(w, cap = StrokeCap.Round))
+            if (fraction > 0f) drawArc(color, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(w, cap = StrokeCap.Round))
             if (check > 0f) drawCircle(color, (this.size.minDimension / 2 - w * 1.5f) * check.coerceAtMost(1f))
         }
         if (check > 0.01f) {
@@ -509,10 +566,10 @@ private fun CleanDaysDisc(days: Int, color: Color) {
     }
 }
 
-/** The +1: a disc in the habit's colour. Long-press takes the last one back. */
+/** The +1: a disc in the habit's colour. Long-press takes the last one back. [spoken] includes the count. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LogButton(title: String, color: Color, onLog: () -> Unit, onUndo: (() -> Unit)?, size: Dp = 48.dp) {
+fun LogButton(spoken: String, color: Color, onLog: () -> Unit, onUndo: (() -> Unit)?, size: Dp = 48.dp) {
     val haptics = LocalHapticFeedback.current
     Box(
         Modifier.size(size).clip(CircleShape).background(color)
@@ -523,7 +580,12 @@ fun LogButton(title: String, color: Color, onLog: () -> Unit, onUndo: (() -> Uni
                 onLongClick = onUndo?.let { f -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); f() } },
                 onClick = onLog,
             )
-            .clearAndSetSemantics { contentDescription = "Add one to $title" },
+            .clearAndSetSemantics {
+                contentDescription = spoken
+                role = Role.Button
+                onClick("Log one") { onLog(); true }
+                if (onUndo != null) customActions = listOf(CustomAccessibilityAction("Undo") { onUndo(); true })
+            },
         contentAlignment = Alignment.Center,
     ) {
         val density = LocalDensity.current
@@ -535,37 +597,77 @@ fun LogButton(title: String, color: Color, onLog: () -> Unit, onUndo: (() -> Uni
     }
 }
 
+/**
+ * An avoid habit's log: a quiet tonal pill, "Had one", rather than a +1 to aim for. No cheer, no success buzz;
+ * long-press takes it back, like the +1.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HadOneButton(title: String, color: Color, onLog: () -> Unit, onUndo: (() -> Unit)?) {
+    val haptics = LocalHapticFeedback.current
+    Box(
+        Modifier.heightIn(min = 40.dp).clip(CircleShape).background(color.copy(alpha = 0.12f))
+            .combinedClickable(
+                onLongClick = onUndo?.let { f -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); f() } },
+                onClick = onLog,
+            )
+            .clearAndSetSemantics {
+                contentDescription = "Log one for $title"
+                role = Role.Button
+                onClick("Log one") { onLog(); true }
+                if (onUndo != null) customActions = listOf(CustomAccessibilityAction("Undo") { onUndo(); true })
+            }
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Had one", style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1, softWrap = false)
+    }
+}
+
 @Composable
 private fun UndoButton(title: String, onUndo: () -> Unit) {
     Box(
         Modifier.size(40.dp).clip(CircleShape)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             .clickable(role = Role.Button, onClick = onUndo)
-            .clearAndSetSemantics { contentDescription = "Take one back from $title" },
+            .clearAndSetSemantics {
+                contentDescription = "Take one back from $title"
+                role = Role.Button
+                onClick { onUndo(); true }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.size(14.dp, 2.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant))
     }
 }
 
+private val HeatCellSize = 9.dp
+private val HeatGap = 2.dp
+private val HeatMapWidth = HeatCellSize * 12 + HeatGap * 11
+
 /**
- * The last 12 weeks like GitHub's contribution map: a column per week, oldest on the left, each from the
- * locale's first weekday; today is the last filled square.
+ * The last 12 weeks like GitHub's contribution map: a column per week, oldest on the left, each from the stored
+ * first day of the week; today is the last filled square. An avoid habit's slip is an open square in its colour.
  */
 @Composable
-private fun HeatMap(cells: List<List<app.daybreak.domain.HeatCell?>>, color: Color, modifier: Modifier = Modifier) {
+private fun HeatMap(cells: List<List<HeatCell?>>, color: Color, modifier: Modifier = Modifier) {
     val empty = MaterialTheme.colorScheme.surfaceContainerHighest
-    val cell = 9.dp
-    val gap = 2.dp
+    val cell = HeatCellSize
+    val gap = HeatGap
     Canvas(modifier.size(cell * cells.size + gap * (cells.size - 1), cell * 7 + gap * 6)) {
         val c = cell.toPx()
         val g = gap.toPx()
         val r = CornerRadius(2.dp.toPx())
+        val line = 1.5.dp.toPx()
         cells.forEachIndexed { w, week ->
             week.forEachIndexed { d, day ->
                 if (day == null) return@forEachIndexed
+                val at = Offset(w * (c + g), d * (c + g))
                 val fill = if (day.strength <= 0f) empty else lerp(empty, color, 0.3f + 0.7f * day.strength)
-                drawRoundRect(fill, Offset(w * (c + g), d * (c + g)), Size(c, c), r)
+                drawRoundRect(fill, at, Size(c, c), r)
+                if (day.slip) {
+                    drawRoundRect(color, at + Offset(line / 2, line / 2), Size(c - line, c - line), r, style = Stroke(line))
+                }
             }
         }
     }
@@ -580,16 +682,26 @@ private fun EmptyHabits(onPreset: (HabitDraft) -> Unit, onNew: () -> Unit) {
             Text("Track a habit", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Something to do more of, like drinking water, or less of, like ordering takeout. Tap +1 when it " +
-                    "happens; streaks, points and a 12-week map follow. Kept on this phone, not backed up.",
+                "Something to do more of, like drinking water, or less of, like ordering takeout. Tap +1 when you " +
+                    "do it, or Had one when you slip; streaks, points and a 12-week map follow. Kept on this phone, " +
+                    "not backed up.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(16.dp))
             Text("Start with one", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
+            // Each adds once: a quick second tap (before the list replaces this) doesn't add it again.
+            var added by rememberSaveable { mutableStateOf(listOf<String>()) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                HABIT_PRESETS.forEach { PresetRow(it) { onPreset(it) } }
+                HABIT_PRESETS.forEach { preset ->
+                    PresetRow(preset, enabled = preset.title !in added) {
+                        if (preset.title !in added) {
+                            added = added + preset.title
+                            onPreset(preset)
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onNew) {
@@ -603,16 +715,16 @@ private fun EmptyHabits(onPreset: (HabitDraft) -> Unit, onNew: () -> Unit) {
 
 /** A preset as one tap: its colour, name and goal, and a +. */
 @Composable
-private fun PresetRow(draft: HabitDraft, onClick: () -> Unit) {
+private fun PresetRow(draft: HabitDraft, enabled: Boolean, onClick: () -> Unit) {
     val color = habitColor(draft.color)
     val goal = goalLabel(draft.kind, draft.period, draft.target)
     Row(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(color.copy(alpha = 0.10f))
-            .clickable(role = Role.Button, onClickLabel = "Add", onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Add", onClick = onClick)
             .clearAndSetSemantics {
                 contentDescription = "Add ${draft.title}, ${goal.lowercase()}"
                 role = Role.Button
-                onClick { onClick(); true }
+                if (enabled) onClick { onClick(); true } else disabled()
             }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -701,7 +813,13 @@ fun HabitEditor(initial: HabitDraft?, onDismiss: () -> Unit, onSave: (HabitDraft
             )
             Spacer(Modifier.height(16.dp))
             Text(if (kind == HabitKind.BUILD) "Goal" else "Allowance", style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(HabitPeriod.DAY to "Daily", HabitPeriod.WEEK to "Weekly").forEachIndexed { i, (p, label) ->
+                    SegmentedButton(selected = period == p, onClick = { period = p }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             // Wraps at large fonts, each part kept whole and centred on the stepper's height.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.height(40.dp), contentAlignment = Alignment.CenterStart) {
@@ -712,11 +830,9 @@ fun HabitEditor(initial: HabitDraft?, onDismiss: () -> Unit, onSave: (HabitDraft
                     Text(if (period == HabitPeriod.DAY) "a day" else "a week", style = MaterialTheme.typography.bodyLarge)
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                listOf(HabitPeriod.DAY to "Daily", HabitPeriod.WEEK to "Weekly").forEachIndexed { i, (p, label) ->
-                    SegmentedButton(selected = period == p, onClick = { period = p }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
-                }
+            if (kind == HabitKind.AVOID && target == 0) {
+                Spacer(Modifier.height(4.dp))
+                Text("0 means none at all.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(16.dp))
             Text("Colour", style = MaterialTheme.typography.labelLarge)
