@@ -19,7 +19,6 @@ import app.daybreak.domain.AppSettings
 import app.daybreak.domain.TempUnit
 import app.daybreak.narration.GemmaModelStore
 import app.daybreak.narration.GemmaNarrator
-import app.daybreak.narration.ModelStatus
 import app.daybreak.narration.MemeWriter
 import app.daybreak.data.HolidayRepository
 import app.daybreak.data.MemeRepository
@@ -39,18 +38,7 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
     private val clocksVm: ClocksViewModel by viewModels {
-        viewModelFactory {
-            initializer {
-                val modelStore = GemmaModelStore.get(applicationContext)
-                ClocksViewModel(
-                    ClocksRepository(SharedPrefsStore(applicationContext)),
-                    gemma = GemmaNarrator.shared(applicationContext, modelStore::installedFile),
-                    // The Gemma switch is checked where the box is shown; here, only that there's a model.
-                    gemmaReady = { modelStore.status.value is ModelStatus.Installed },
-                    places = OpenMeteoApi(UrlConnectionHttpClient()),
-                )
-            }
-        }
+        viewModelFactory { initializer { ClocksViewModel(ClocksRepository(SharedPrefsStore(applicationContext))) } }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,7 +72,7 @@ private fun weatherViewModelFactory(context: Context): ViewModelProvider.Factory
         val store = SharedPrefsStore(context)
         val http = UrlConnectionHttpClient()
         val modelStore = GemmaModelStore.get(context)
-        val gemma = GemmaNarrator.shared(context, modelStore::installedFile) // one engine for everything Gemma does
+        val gemma = GemmaNarrator(context, modelStore::installedFile) // one engine for the summary and the meme
         WeatherViewModel(
             api = OpenMeteoApi(http),
             places = SavedPlacesRepository(store),
