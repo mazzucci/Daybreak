@@ -400,7 +400,12 @@ private fun Converter(clocks: List<Clock>, now: Instant, here: ZoneId) {
                     TextButton({ pickingTime = false }) { Text("Cancel") }
                 }
             },
-            text = { TimePicker(state) },
+            // The app's display style is sized for the big temperature (104sp); the picker's digits need the standard one.
+            text = {
+                MaterialTheme(typography = MaterialTheme.typography.copy(displayLarge = androidx.compose.material3.Typography().displayLarge)) {
+                    TimePicker(state)
+                }
+            },
         )
     }
 }

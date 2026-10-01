@@ -244,7 +244,8 @@ private fun formatRange(start: java.time.LocalDate, end: java.time.LocalDate, sp
     val month = DateTimeFormatter.ofPattern(if (spoken) "MMMM d" else "MMM d", Locale.US)
     val to = if (spoken) " to " else if (start.month == end.month) "–" else " – "
     val last = if (start.month == end.month) end.dayOfMonth.toString() else end.format(month)
-    return "${start.format(month)}$to$last"
+    // Non-breaking space inside each date, so "Nov" never ends a line on its own.
+    return "${start.format(month).replace(' ', '\u00A0')}$to${last.replace(' ', '\u00A0')}"
 }
 
 private val GlyphSize = 36.dp

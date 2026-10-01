@@ -39,6 +39,11 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.ScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.List
@@ -271,8 +276,10 @@ fun WeatherPage(
             )
         },
     ) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Hero(gradient) {
+        val scroll = rememberScrollState()
+        var heroBottom by remember { mutableStateOf(Int.MAX_VALUE) }
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+            Hero(gradient, Modifier.onGloballyPositioned { heroBottom = it.size.height }) {
                 PlaceHeader(page)
                 when (content) {
                     is PageContent.Loaded -> HeroForecast(content.forecast, content.summary, unit, night)
@@ -307,7 +314,33 @@ fun WeatherPage(
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         }
+        StatusBarScrim(scroll, heroBottom, gradient.first(), extra = TopBarHeight)
     }
+    }
+}
+
+/**
+ * Once the sky has scrolled up under the status bar (and, on Weather, the floating action row: [extra]), a strip
+ * in the sky's top colour fades in behind them, so the clock, the icons and the white buttons never sit on top of
+ * the cards. Put it last in the page's Box, with the scroll and how far down the hero ends.
+ */
+@Composable
+internal fun BoxScope.StatusBarScrim(scroll: ScrollState, heroBottomPx: Int, color: Color, extra: Dp = 0.dp) {
+    val density = LocalDensity.current
+    val barPx = WindowInsets.statusBars.getTop(density) + with(density) { extra.toPx() }
+    val fade = with(density) { 24.dp.toPx() }
+    val alpha = ((scroll.value - (heroBottomPx - barPx)) / fade).coerceIn(0f, 1f)
+    if (alpha > 0f) {
+        Box(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars)
+                .graphicsLayer { this.alpha = alpha }.background(color),
+        )
+        if (extra > 0.dp) {
+            Box(
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().height(extra)
+                    .graphicsLayer { this.alpha = alpha }.background(color),
+            )
+        }
     }
 }
 
@@ -318,12 +351,13 @@ fun WeatherPage(
 @Composable
 internal fun Hero(
     colors: List<Color>,
+    modifier: Modifier = Modifier,
     top: Dp = TopBarHeight,
     alignment: Alignment.Horizontal = Alignment.CenterHorizontally,
     content: @Composable () -> Unit,
 ) {
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(bottomStart = HeroCorner, bottomEnd = HeroCorner))
             .background(Brush.verticalGradient(colors))

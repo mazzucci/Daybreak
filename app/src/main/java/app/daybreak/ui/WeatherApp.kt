@@ -265,6 +265,14 @@ private fun SettingsTab(
         )
 }
 
+/** The bar's label style, growing with the font size setting only up to 1.3x, so four labels always fit. */
+@Composable
+private fun cappedLabel(): androidx.compose.ui.text.TextStyle {
+    val style = MaterialTheme.typography.labelMedium
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    return if (scale <= 1.3f) style else style.copy(fontSize = style.fontSize * (1.3f / scale), lineHeight = style.lineHeight * (1.3f / scale))
+}
+
 /** Home · Weather · Clocks · Settings, labels always shown, flat on the card colour like the cards themselves. */
 @Composable
 fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
@@ -274,7 +282,8 @@ fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
             NavigationBarItem(
                 selected = on,
                 onClick = { onSelect(t) },
-                label = { Text(t.label) },
+                // One line always; at the largest font sizes the labels stop growing at 1.3x rather than breaking.
+                label = { Text(t.label, maxLines = 1, softWrap = false, style = cappedLabel()) },
                 icon = {
                     when (t) {
                         Tab.Home -> Icon(if (on) Icons.Filled.Home else Icons.Outlined.Home, contentDescription = null)
