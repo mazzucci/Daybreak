@@ -34,16 +34,12 @@ class GemmaNarrator(
     private val modelFile: () -> File?,
     private val timeoutMs: Long = 30_000,
     private val idleReleaseMs: Long = 5 * 60_000,
-) : WeatherNarrator, TextGenerator, AutoCloseable {
+) : TextGenerator, AutoCloseable {
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var idleJob: Job? = null
     private var engine: LlmInference? = null
     private var engineKey: String? = null
-
-    override suspend fun narrate(input: NarrationInput): String =
-        // Low temperature: we want a faithful restatement, not creativity.
-        generate(GemmaPrompt.build(input), temperature = 0.2f, seed = 1)
 
     override suspend fun generate(prompt: String, temperature: Float, seed: Int): String = mutex.withLock {
         idleJob?.cancel()
@@ -57,7 +53,7 @@ class GemmaNarrator(
         }
     }
 
-    /** Frees the engine now (it's loaded again on the next narration). */
+    /** Frees the engine now (it's loaded again on the next generation). */
     fun releaseEngine() {
         scope.launch { mutex.withLock { release() } }
     }
@@ -74,7 +70,7 @@ class GemmaNarrator(
             val session = LlmInferenceSession.createFromOptions(engineFor(modelFile()), sessionOptions(temperature, seed))
             try {
                 session.addQueryChunk(prompt)
-                // A timeout is an ordinary failure (fall back to the template), not a cancellation of the caller.
+                // A timeout is an ordinary failure (the hand-written meme stays), not a cancellation of the caller.
                 withTimeoutOrNull(timeoutMs) { session.awaitResponse() }
                     ?: throw IOException("Gemma took longer than ${timeoutMs / 1000}s")
             } finally {
@@ -136,7 +132,7 @@ class GemmaNarrator(
     }
 
     private companion object {
-        /** Prompt + response budget; our prompt is ~400 tokens and we ask for ~60 back. */
+        /** Prompt + response budget: the meme prompt and its two-line caption fit with plenty to spare. */
         const val MAX_TOKENS = 1024
     }
 }

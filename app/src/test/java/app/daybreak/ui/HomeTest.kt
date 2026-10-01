@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class HomeTest {
-    private val loaded = PageContent.Loaded(TestData.forecast(), app.daybreak.narration.Narration("", app.daybreak.narration.NarrationSource.TEMPLATE))
+    private val loaded = PageContent.Loaded(TestData.forecast(), "")
 
     @Test fun `greetings follow the time of day`() {
         assertEquals(listOf("Good night", "Good morning", "Good morning", "Good afternoon", "Good evening", "Good night"), listOf(4, 5, 11, 12, 18, 22).map(::greeting))

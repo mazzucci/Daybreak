@@ -29,7 +29,7 @@ data class Countdown(
 
 /**
  * A date of the user's own: a birthday, a big presentation, leave. One day or a run of them ([end] inclusive), with
- * their [name] for it. A [dayOff] is skipped by the commute check and counted down with the break it makes; a
+ * their [name] for it. A [dayOff] is counted down with the break it makes; a
  * [yearly] one comes round every year on the same dates.
  */
 data class PersonalDate(
@@ -71,8 +71,8 @@ data class PersonalDate(
 const val PERSONAL_DATE_NAME_MAX = 40
 
 /**
- * Every day off in [dates] from yesterday on (a night shift's trip home can be this morning), with a yearly one's
- * next two times round, for the commute check to skip.
+ * Every day off in [dates] from yesterday on (so a break that began yesterday still counts towards the one it
+ * joins), with a yearly one's next two times round.
  */
 fun dayOffDates(dates: List<PersonalDate>, today: LocalDate): Set<LocalDate> {
     val from = today.minusDays(1)
@@ -245,3 +245,20 @@ private val COUNTRY_ALIASES = mapOf(
     "eswatini" to "SZ",
     "cape verde" to "CV",
 )
+
+private val SAT_SUN = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
+private val FRI_SAT = setOf(DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
+
+/** Countries whose weekend isn't Saturday and Sunday (ISO codes). */
+private val WEEKENDS: Map<String, Set<DayOfWeek>> =
+    listOf("BH", "BD", "DZ", "EG", "IL", "IQ", "JO", "KW", "LY", "MV", "OM", "QA", "SA", "SD", "SY", "YE").associateWith { FRI_SAT } +
+        mapOf(
+            "AF" to setOf(DayOfWeek.FRIDAY),
+            "IR" to setOf(DayOfWeek.FRIDAY),
+            "SO" to setOf(DayOfWeek.THURSDAY, DayOfWeek.FRIDAY),
+            "BN" to setOf(DayOfWeek.FRIDAY, DayOfWeek.SUNDAY),
+            "NP" to setOf(DayOfWeek.SATURDAY),
+        )
+
+/** The usual weekend days in a country; Saturday and Sunday when unknown. */
+fun weekendDays(countryCode: String?): Set<DayOfWeek> = countryCode?.uppercase()?.let { WEEKENDS[it] } ?: SAT_SUN

@@ -14,7 +14,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import app.daybreak.data.OpenMeteoApi
-import app.daybreak.data.SettingsRepository
 import app.daybreak.data.SharedPrefsStore
 import app.daybreak.data.UrlConnectionHttpClient
 import app.daybreak.data.WidgetStore
@@ -24,9 +23,8 @@ import app.daybreak.narration.TemplateNarrator
 import java.util.concurrent.TimeUnit
 
 /**
- * Refreshes the widget's numbers every couple of hours while a widget exists: one forecast request for the saved
- * place, and the template summary (Gemma only ever runs in the app). Location isn't touched in the background;
- * the place is the one the app last showed.
+ * Refreshes the widget's numbers and summary every couple of hours while a widget exists: one forecast request for
+ * the saved place. Location isn't touched in the background; the place is the one the app last showed.
  */
 class WidgetRefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -46,14 +44,13 @@ class WidgetRefreshWorker(context: Context, params: WorkerParameters) : Coroutin
         } catch (e: Exception) {
             return if (runAttemptCount < 2) Result.retry() else Result.success()
         }
-        val settings = SettingsRepository(SharedPrefsStore(applicationContext)).settings.value
-        val template = TemplateNarrator().describe(NarrationInput(old.placeName, forecast, old.unit, settings.tone))
-        // The app may have published while this was fetching (another place, Gemma's line): theirs wins.
+        val summary = TemplateNarrator().describe(NarrationInput(old.placeName, forecast, old.unit))
+        // The app may have published while this was fetching (another place, a newer forecast): theirs wins.
         store.update { current ->
             if (current == null || current.writtenAtMillis != old.writtenAtMillis || current.latitude != old.latitude ||
                 current.longitude != old.longitude
             ) null
-            else refreshedSnapshot(current, forecast, template, System.currentTimeMillis())
+            else refreshedSnapshot(current, forecast, summary, System.currentTimeMillis())
         }
         WeatherWidget().updateAll(applicationContext)
         return Result.success()

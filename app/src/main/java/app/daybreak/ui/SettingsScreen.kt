@@ -2,13 +2,8 @@
 
 package app.daybreak.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -28,13 +23,10 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -74,27 +66,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import app.daybreak.narration.TemplateNarrator
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
-import app.daybreak.domain.Tone
-import app.daybreak.domain.ABOUT_ME_MAX_CHARS
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.rememberUpdatedState
 import app.daybreak.domain.Activity
-import app.daybreak.domain.CommuteEnd
-import app.daybreak.domain.CommuteSettings
-import app.daybreak.domain.Place
-import app.daybreak.domain.with
-import app.daybreak.domain.formatHour
-import androidx.compose.ui.text.style.TextAlign
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.TempUnit
 import app.daybreak.narration.GemmaModelSource
@@ -133,13 +111,7 @@ fun SettingsScreen(
     onRemovePersonalDate: (PersonalDate) -> Unit = {},
     /** For your dates (listed while they're ahead); fixed in screenshot tests. */
     today: LocalDate = LocalDate.now(),
-    onToneChange: (Tone) -> Unit,
-    onAboutMeChange: (String) -> Unit,
     onActivityChange: (Activity?) -> Unit,
-    onCommuteChange: (CommuteSettings) -> Unit,
-    commuteLocating: CommuteLocating? = null,
-    onCommutePlaceHere: (CommuteEnd) -> Unit = {},
-    onCommutePlaceSearch: (CommuteEnd) -> Unit = {},
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -215,7 +187,8 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(12.dp))
-                // One choice out of four, presented exactly like the voice picker: a radio group with a check on the pick.
+                // One choice out of four: a radio group to TalkBack, with a check that makes the pick readable
+                // without relying on the fill colour alone.
                 @OptIn(ExperimentalLayoutApi::class)
                 FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (Activity.entries + null).forEach { activity ->
@@ -234,12 +207,6 @@ fun SettingsScreen(
                     }
                 }
             }
-
-            Spacer(Modifier.height(12.dp))
-            CommuteSettingsCard(settings.commute, commuteLocating, onCommuteChange, onCommutePlaceHere, onCommutePlaceSearch)
-
-            SectionTitle("Summary style")
-            SummaryStyleCard(settings, gemmaOn = settings.gemmaEnabled && modelStatus is ModelStatus.Installed, onToneChange, onAboutMeChange)
 
             SectionTitle("Fun")
             SettingsCard {
@@ -284,19 +251,16 @@ fun SettingsScreen(
                 }
             }
 
-            SectionTitle("AI summary")
+            SectionTitle("Gemma")
             SettingsCard {
                 val modelInstalled = modelStatus is ModelStatus.Installed
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Describe the weather with Gemma", style = MaterialTheme.typography.titleMedium)
+                        Text("Use Gemma for the meme", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            if (modelInstalled) {
-                                "Runs entirely on this phone; the standard summary stays if Gemma's text doesn't match the forecast."
-                            } else {
-                                "Download or import the model below to turn this on."
-                            },
+                            "Writes a fresh meme caption each day, entirely on this phone. Without it, a hand-written one is used." +
+                                if (modelInstalled) "" else " Download or import the model below to turn this on.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -307,7 +271,7 @@ fun SettingsScreen(
                         checked = settings.gemmaEnabled && modelInstalled,
                         onCheckedChange = onGemmaEnabledChange,
                         enabled = modelInstalled,
-                        modifier = Modifier.semantics { contentDescription = "Describe the weather with Gemma" },
+                        modifier = Modifier.semantics { contentDescription = "Use Gemma for the meme" },
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -324,125 +288,6 @@ fun SettingsScreen(
             Spacer(Modifier.height(32.dp))
         }
     }
-}
-
-/** Voice chips and the optional "About me" note, which is saved explicitly so each keystroke doesn't re-narrate. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun SummaryStyleCard(
-    settings: AppSettings,
-    gemmaOn: Boolean,
-    onToneChange: (Tone) -> Unit,
-    onAboutMeChange: (String) -> Unit,
-) {
-    SettingsCard {
-        Text("Voice", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(2.dp))
-        Text(
-            if (gemmaOn) {
-                "Gemma writes the whole summary in this voice."
-            } else {
-                "Adds a greeting or sign-off to the summary. With Gemma on, the whole line is written in this voice."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(12.dp))
-        // One choice out of five: a radio group to TalkBack, not five independent checkboxes.
-        FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Tone.entries.forEach { tone ->
-                val selected = settings.tone == tone
-                FilterChip(
-                    selected = selected,
-                    onClick = { onToneChange(tone) },
-                    modifier = Modifier.semantics { role = Role.RadioButton },
-                    label = { Text(tone.label) },
-                    // The check makes the choice readable without relying on the fill colour alone.
-                    leadingIcon = if (selected) {
-                        { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        VoicePreview(settings.tone)
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(16.dp))
-        var draft by rememberSaveable(settings.aboutMe) { mutableStateOf(settings.aboutMe) }
-        val focusManager = LocalFocusManager.current
-        val save = {
-            onAboutMeChange(draft)
-            focusManager.clearFocus() // also hides the keyboard, so saving visibly finishes the edit
-        }
-        // Leaving Settings with an unsaved note keeps it rather than silently dropping it.
-        val latestDraft by rememberUpdatedState(draft)
-        val latestSaved by rememberUpdatedState(settings.aboutMe)
-        val latestOnChange by rememberUpdatedState(onAboutMeChange)
-        DisposableEffect(Unit) {
-            onDispose { if (latestDraft.trim() != latestSaved) latestOnChange(latestDraft) }
-        }
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it.take(ABOUT_ME_MAX_CHARS + 1).let(::capAboutMeDraft) },
-            label = { Text("About me (optional)") },
-            placeholder = { Text("e.g. I cycle to work and hate the cold") },
-            supportingText = {
-                Row {
-                    Text(
-                        if (gemmaOn) "Stays on this phone. Gemma uses it to pick what to mention." else "Stays on this phone. Gemma will use it to pick what to mention.",
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "${draft.length}/$ABOUT_ME_MAX_CHARS",
-                        modifier = Modifier.semantics { contentDescription = "${draft.length} of $ABOUT_ME_MAX_CHARS characters" },
-                    )
-                }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { save() }),
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 3,
-        )
-        if (draft.trim() != settings.aboutMe) {
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = save, modifier = Modifier.align(Alignment.End)) { Text("Save") }
-        }
-    }
-}
-
-/**
- * What the chosen voice sounds like, before leaving Settings to find out. A fixed sample with no numbers, so it
- * can't be mistaken for today's forecast; it is announced when the selection changes.
- */
-@Composable
-private fun VoicePreview(tone: Tone) {
-    val narrator = remember { TemplateNarrator() }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-    ) {
-        Text(
-            "Example",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(narrator.preview(tone), style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-/** Caps the draft like the saved note, but keeps leading and trailing spaces so typing isn't disrupted. */
-private fun capAboutMeDraft(text: String): String {
-    val capped = text.take(ABOUT_ME_MAX_CHARS)
-    return if (capped.isNotEmpty() && capped.last().isHighSurrogate()) capped.dropLast(1) else capped
 }
 
 /**
@@ -468,7 +313,7 @@ private fun PersonalDatesCard(
         Spacer(Modifier.height(2.dp))
         Text(
             "Birthdays, big days, time off: counted down on Home alongside the holidays (once within four " +
-                "months). Days off count as a break, and the commute check skips them. Kept on this phone, not backed up." +
+                "months). Days off count as a break. Kept on this phone, not backed up." +
                 if (shown) "" else " Shown once Holidays and countdowns is on.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -568,7 +413,7 @@ private fun PersonalDatesCard(
                         modifier = Modifier.focusRequester(focus),
                     )
                     Spacer(Modifier.height(8.dp))
-                    SwitchRow("Day off", "Counts as a break, and the commute check skips it", dayOff) { dayOff = it }
+                    SwitchRow("Day off", "Counts as a break", dayOff) { dayOff = it }
                     SwitchRow(
                         "Every year",
                         if (past && nextTime != null) "Next: ${formatPersonalDates(nextTime, today.year)}" else "Like a birthday",
@@ -610,155 +455,6 @@ private fun formatPersonalDates(d: PersonalDate, thisYear: Int): String {
 }
 
 private const val DAY_MILLIS = 86_400_000L
-
-/** The office-or-home check: a switch, then home and the office, then the two weekday travel times. */
-@Composable
-private fun CommuteSettingsCard(
-    commute: CommuteSettings,
-    locating: CommuteLocating?,
-    onChange: (CommuteSettings) -> Unit,
-    onPlaceHere: (CommuteEnd) -> Unit,
-    onPlaceSearch: (CommuteEnd) -> Unit,
-) {
-    SettingsCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Office or home?", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    when {
-                        commute.home == null ->
-                            "Adds a card to Home about your weekday trips, judged with the activity above (walking if it's off)."
-                        commute.office == null ->
-                            "Checks your weekday trips at home, using the activity above (walking if it's off). Add the office if it's in a different town."
-                        else -> "Checks your weekday trips at home and at the office, using the activity above (walking if it's off)."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Switch(
-                checked = commute.enabled,
-                onCheckedChange = { onChange(commute.copy(enabled = it)) },
-                modifier = Modifier.semantics { contentDescription = "Office or home check" },
-            )
-        }
-        if (commute.enabled) {
-            Spacer(Modifier.height(12.dp))
-            CommuteEnd.entries.forEach { end ->
-                CommutePlaceRow(
-                    end = end,
-                    place = if (end == CommuteEnd.HOME) commute.home else commute.office,
-                    locating = locating?.takeIf { it.end == end },
-                    // The office needs a home to be measured against.
-                    enabled = end == CommuteEnd.HOME || commute.home != null,
-                    onHere = { onPlaceHere(end) },
-                    onSearch = { onPlaceSearch(end) },
-                    onRemove = { onChange(commute.with(end, null)) },
-                )
-            }
-            // A footnote to the pair, set apart so it doesn't read as the office's third line.
-            Text(
-                "Both stay on this phone and aren't backed up.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
-            )
-            HourStepper("Leave for work", commute.leaveHour) { onChange(commute.copy(leaveHour = it)) }
-            HourStepper("Head home", commute.returnHour) { onChange(commute.copy(returnHour = it)) }
-        }
-    }
-}
-
-/**
- * "Home · Brooklyn   [Change ▾]": the place, or what's used without it, and a menu to set it where you are now or
- * by searching (and to remove it). A failed lookup adds its reason under the place rather than hiding it. The
- * status is a live region, so TalkBack hears the location land.
- */
-@Composable
-private fun CommutePlaceRow(
-    end: CommuteEnd,
-    place: Place?,
-    locating: CommuteLocating?,
-    enabled: Boolean,
-    onHere: () -> Unit,
-    onSearch: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    var menu by remember { mutableStateOf(false) }
-    val error = locating?.error
-    val status = when {
-        locating != null && error == null -> "Finding where you are…"
-        place != null -> listOfNotNull(place.name, place.region).joinToString(", ")
-        end == CommuteEnd.HOME -> "Not set · using Home's place for now"
-        enabled -> "Not set · trips are checked at home only"
-        else -> "Set your home first"
-    }
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
-            Text(end.label, style = MaterialTheme.typography.bodyLarge)
-            Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (error != null) Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-        Spacer(Modifier.width(8.dp))
-        Box {
-            TextButton(
-                onClick = { menu = true },
-                enabled = enabled && (locating == null || error != null),
-                modifier = Modifier.semantics { contentDescription = "${if (place == null) "Set" else "Change"} ${end.label.lowercase()}" },
-            ) {
-                // The arrow says it opens a menu rather than acting straight away.
-                Text(if (place == null) "Set" else "Change")
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, Modifier.size(18.dp))
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Use where I am now") }, onClick = { menu = false; onHere() })
-                DropdownMenuItem(text = { Text("Search for a place") }, onClick = { menu = false; onSearch() })
-                if (place != null) DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; onRemove() })
-            }
-        }
-    }
-}
-
-/**
- * "Leave for work   − 8 AM +": an hour picker that wraps around midnight. A stepper rather than a time picker
- * because the check only knows whole hours and the usual edit is a nudge of one; the value is a live region so
- * TalkBack reads the new hour after each press.
- */
-@Composable
-private fun HourStepper(label: String, hour: Int, onChange: (Int) -> Unit) {
-    val text = formatHour(java.time.LocalDate.of(2000, 1, 1).atTime(hour, 0), Locale.US)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        StepButton("$label, an hour earlier", plus = false) { onChange((hour + 23) % 24) }
-        Text(
-            text,
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.widthIn(min = 64.dp).semantics {
-                contentDescription = "$label, $text"
-                liveRegion = LiveRegionMode.Polite
-            },
-        )
-        StepButton("$label, an hour later", plus = true) { onChange((hour + 1) % 24) }
-    }
-}
-
-/** A drawn − or +, since the core icon set has no minus; the label goes on the button, where TalkBack reads it. */
-@Composable
-private fun StepButton(description: String, plus: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = description }) {
-        val color = LocalContentColor.current
-        Canvas(Modifier.size(16.dp)) {
-            val w = 2.dp.toPx()
-            drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), w, StrokeCap.Round)
-            if (plus) drawLine(color, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), w, StrokeCap.Round)
-        }
-    }
-}
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -817,7 +513,7 @@ private fun InstalledState(status: ModelStatus.Installed, onRemoveModel: () -> U
         Column {
             Text("Installed", style = MaterialTheme.typography.titleMedium)
             Text(
-                "${formatSize(status.sizeBytes)} in app storage; summaries never leave the phone.",
+                "${formatSize(status.sizeBytes)} in app storage; it runs entirely on this phone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

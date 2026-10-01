@@ -156,10 +156,6 @@ private fun FullLayout(s: WidgetSnapshot, icon: ImageProvider?, root: GlanceModi
         Spacer(GlanceModifier.defaultWeight())
         Spacer(GlanceModifier.height(8.dp))
         Text(s.summary, style = Type.summary, maxLines = 3)
-        if (s.summaryByGemma) {
-            Spacer(GlanceModifier.height(2.dp))
-            Text(GEMMA_LABEL, style = Type.caption, maxLines = 1)
-        }
     }
 }
 
@@ -249,8 +245,6 @@ private fun details(s: WidgetSnapshot) =
 private fun shortDetails(s: WidgetSnapshot) =
     "↑${formatDegrees(s.highC, s.unit)} ↓${formatDegrees(s.lowC, s.unit)} · Rain ${s.precipChance}%"
 
-private const val GEMMA_LABEL = "✦ Gemma"
-
 /** One description for the whole widget, so a screen reader reads it as a single item rather than five fragments. */
 private fun GlanceModifier.describe(s: WidgetSnapshot): GlanceModifier = semantics {
     contentDescription = buildString {
@@ -259,7 +253,6 @@ private fun GlanceModifier.describe(s: WidgetSnapshot): GlanceModifier = semanti
         append(describeWeatherCode(s.code)).append(". ")
         append("High ${formatDegrees(s.highC, s.unit)}, low ${formatDegrees(s.lowC, s.unit)}, ${s.precipChance}% chance of rain. ")
         append(s.summary)
-        if (s.summaryByGemma) append(" Summary written by Gemma.")
     }
 }
 
@@ -289,7 +282,6 @@ private object Type {
     val place = TextStyle(color = white, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     val details = TextStyle(color = soft, fontSize = 13.sp)
     val summary = TextStyle(color = white, fontSize = 14.sp)
-    val caption = TextStyle(color = soft, fontSize = 11.sp)
     fun temperature(sp: Int) = TextStyle(color = white, fontSize = sp.sp)
     fun temperatureOther(sp: Int) = TextStyle(color = soft, fontSize = sp.sp)
 }

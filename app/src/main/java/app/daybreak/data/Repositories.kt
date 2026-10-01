@@ -3,12 +3,10 @@ package app.daybreak.data
 import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.Clock
-import app.daybreak.domain.CommuteSettings
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.Place
 import app.daybreak.domain.countryCodeOf
 import app.daybreak.domain.TempUnit
-import app.daybreak.domain.Tone
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,15 +87,20 @@ private fun JSONObject.toPlace() = Place(
 )
 
 /**
- * App settings. The "About me" note, the commute's home and office and the user's own dates live in [privateStore],
- * a separate file that's excluded from Android backup and device transfer (see res/xml/backup_rules.xml), so they
- * really stay on this phone.
+ * App settings. The user's own dates live in [privateStore], a separate file that's excluded from Android backup and
+ * device transfer (see res/xml/backup_rules.xml), so they really stay on this phone.
  */
 class SettingsRepository(
     private val store: KeyValueStore,
     defaults: AppSettings = AppSettings(),
     private val privateStore: KeyValueStore = store,
 ) {
+    init {
+        // Settings of features that are gone (the summary's voice, "About me", the commute check): clear them once.
+        REMOVED_KEYS.forEach { if (store.getString(it) != null) store.remove(it) }
+        REMOVED_PRIVATE_KEYS.forEach { if (privateStore.getString(it) != null) privateStore.remove(it) }
+    }
+
     private val _settings = MutableStateFlow(load(defaults))
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
@@ -110,13 +113,7 @@ class SettingsRepository(
         store.putString(KEY_MEMES, s.memesEnabled.toString())
         store.putString(KEY_COMING_UP, s.comingUpEnabled.toString())
         store.putString(KEY_SKY, s.skyEnabled.toString())
-        store.putString(KEY_TONE, s.tone.name)
-        privateStore.putString(KEY_ABOUT_ME, s.aboutMe)
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
-        // "on-8-17" / "off-8-17": the times survive switching the check off.
-        store.putString(KEY_COMMUTE, "${if (s.commute.enabled) "on" else "off"}-${s.commute.leaveHour}-${s.commute.returnHour}")
-        putPlace(KEY_HOME, s.commute.home)
-        putPlace(KEY_OFFICE, s.commute.office)
         if (s.personalDates.isEmpty()) {
             privateStore.remove(KEY_DATES)
         } else {
@@ -151,18 +148,6 @@ class SettingsRepository(
         }.sortedBy { it.start }
     }
 
-    private fun putPlace(key: String, place: Place?) {
-        if (place == null) privateStore.remove(key) else privateStore.putString(key, place.toJson().toString())
-    }
-
-    private fun getPlace(key: String, id: String): Place? = privateStore.getString(key)?.let {
-        try {
-            JSONObject(it).toPlace().copy(id = id)
-        } catch (e: JSONException) {
-            null
-        }
-    }
-
     private fun load(defaults: AppSettings) = AppSettings(
         primaryUnit = store.getString(KEY_UNIT)?.let { runCatching { TempUnit.valueOf(it) }.getOrNull() }
             ?: defaults.primaryUnit,
@@ -171,19 +156,6 @@ class SettingsRepository(
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
         comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         skyEnabled = store.getString(KEY_SKY)?.toBooleanStrictOrNull() ?: defaults.skyEnabled,
-        tone = store.getString(KEY_TONE)?.let { runCatching { Tone.valueOf(it) }.getOrNull() } ?: defaults.tone,
-        aboutMe = privateStore.getString(KEY_ABOUT_ME) ?: defaults.aboutMe,
-        commute = store.getString(KEY_COMMUTE)?.split("-")?.let { parts ->
-            val hours = parts.drop(1).mapNotNull { it.toIntOrNull() }
-            if (parts.size == 3 && parts[0] in setOf("on", "off") && hours.size == 2 && hours.all { it in 0..23 }) {
-                CommuteSettings(hours[0], hours[1], enabled = parts[0] == "on")
-            } else null
-        }.let { c ->
-            (c ?: defaults.commute).copy(
-                home = getPlace(KEY_HOME, Place.COMMUTE_HOME_ID) ?: defaults.commute.home,
-                office = getPlace(KEY_OFFICE, Place.COMMUTE_OFFICE_ID) ?: defaults.commute.office,
-            )
-        },
         personalDates = loadPersonalDates() ?: defaults.personalDates,
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
             null -> defaults.activity
@@ -199,14 +171,11 @@ class SettingsRepository(
         const val KEY_MEMES = "memes_enabled"
         const val KEY_COMING_UP = "coming_up_enabled"
         const val KEY_SKY = "sky_enabled"
-        const val KEY_TONE = "tone"
-        const val KEY_ABOUT_ME = "about_me"
         const val KEY_ACTIVITY = "activity"
-        const val KEY_COMMUTE = "commute"
-        const val KEY_HOME = "commute_home"
-        const val KEY_OFFICE = "commute_office"
         const val KEY_DATES = "personal_dates"
         const val ACTIVITY_OFF = "OFF"
+        val REMOVED_KEYS = listOf("tone", "commute")
+        val REMOVED_PRIVATE_KEYS = listOf("about_me", "commute_home", "commute_office")
     }
 }
 

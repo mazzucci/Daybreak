@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12+: the private note (private.xml) and the widget's cache with the device location (widget.xml) is excluded from cloud backup and device-to-device transfer. -->
+<!-- Android 12+: your own dates (private.xml) and the widget's cache with the device location (widget.xml) are excluded from cloud backup and device-to-device transfer. -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="sharedpref" path="." />

@@ -108,18 +108,8 @@ import app.daybreak.domain.TempUnit
 import app.daybreak.domain.formatDegrees
 import app.daybreak.domain.Activity
 import app.daybreak.domain.ActivityScorer
-import app.daybreak.domain.CommuteSettings
-import app.daybreak.domain.PersonalDate
-import app.daybreak.domain.dayOffDates
-import app.daybreak.domain.upcomingPersonalDates
-import app.daybreak.domain.Countdown
 import androidx.compose.material3.minimumInteractiveComponentSize
-import java.time.DayOfWeek
-import app.daybreak.domain.countryCodeOf
-import app.daybreak.domain.weekendDays
-import app.daybreak.domain.commuteAdvice
 import app.daybreak.domain.DaySummary
-import app.daybreak.narration.Meme
 import app.daybreak.domain.Daylight
 import app.daybreak.domain.describeUv
 import app.daybreak.domain.describeWeatherCode
@@ -132,8 +122,6 @@ import kotlin.math.roundToInt
 import app.daybreak.domain.formatTemp
 import app.daybreak.domain.formatWind
 import app.daybreak.domain.other
-import app.daybreak.narration.Narration
-import app.daybreak.narration.NarrationSource
 
 /** Height of the transparent action row that floats over each page's hero (below the status bar). */
 private val TopBarHeight = 56.dp
@@ -394,7 +382,7 @@ private fun PlaceHeader(page: PageUi) {
 /** Summary, big temperature, condition and today's range, all on the gradient. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HeroForecast(forecast: Forecast, summary: Narration, unit: TempUnit, night: Boolean) {
+private fun HeroForecast(forecast: Forecast, summary: String, unit: TempUnit, night: Boolean) {
     val cur = forecast.current
     Spacer(Modifier.height(20.dp))
     SummaryBlock(summary)
@@ -469,7 +457,7 @@ private fun InfoGlyph(tint: Color, style: TextStyle) {
 }
 
 @Composable
-internal fun SummaryBlock(summary: Narration) {
+internal fun SummaryBlock(summary: String) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -477,15 +465,7 @@ internal fun SummaryBlock(summary: Narration) {
             .background(Color.Black.copy(alpha = 0.18f))
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text(summary.text, style = MaterialTheme.typography.bodyLarge)
-        if (summary.source == NarrationSource.GEMMA) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "✦ Written by Gemma on this device",
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFFFFD08A),
-            )
-        }
+        Text(summary, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

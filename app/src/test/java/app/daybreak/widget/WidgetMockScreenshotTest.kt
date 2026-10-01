@@ -27,12 +27,17 @@ import androidx.compose.ui.unit.sp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.daybreak.TestData
+import app.daybreak.domain.Forecast
+import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.WidgetSnapshot
 import app.daybreak.domain.formatDegrees
 import app.daybreak.domain.formatTemp
 import app.daybreak.domain.other
 import app.daybreak.domain.widgetSnapshotOf
+import app.daybreak.narration.NarrationInput
+import app.daybreak.narration.TemplateNarrator
+import java.util.Locale
 import app.daybreak.ui.WeatherIcon
 import app.daybreak.ui.heroGradient
 import app.daybreak.ui.monoPalette
@@ -50,15 +55,11 @@ class WidgetMockScreenshotTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, showSystemUi = false)
 
-    private val day = widgetSnapshotOf(
-        TestData.sanFrancisco, TestData.forecast(), TempUnit.F,
-        "A mild, partly cloudy afternoon at 71°, but grab an umbrella: rain moves in around 6 PM.",
-        summaryByGemma = true, nowMillis = 0,
-    )
-    private val night = widgetSnapshotOf(
-        TestData.london, TestData.rainyNight(), TempUnit.C,
-        "Steady rain through the night. Cold and blustery, so wrap up if you're heading out.",
-        summaryByGemma = false, nowMillis = 0,
+    private val day = snapshot(TestData.sanFrancisco, TestData.forecast(), TempUnit.F)
+    private val night = snapshot(TestData.london, TestData.rainyNight(), TempUnit.C)
+
+    private fun snapshot(place: Place, forecast: Forecast, unit: TempUnit) = widgetSnapshotOf(
+        place, forecast, unit, TemplateNarrator(Locale.US).describe(NarrationInput(place.name, forecast, unit)), nowMillis = 0,
     )
 
     /** Realistic launcher sizes (a Pixel's 4×2 is about 300 × 180 dp) and the grid minimums the breakpoints are keyed to. */
@@ -128,10 +129,6 @@ private fun FullMock(s: WidgetSnapshot, modifier: Modifier) {
         Spacer(Modifier.weight(1f))
         Spacer(Modifier.height(8.dp))
         Text(s.summary, style = MockType.summary, maxLines = 3, overflow = TextOverflow.Clip)
-        if (s.summaryByGemma) {
-            Spacer(Modifier.height(2.dp))
-            Text("✦ Gemma", style = MockType.caption, maxLines = 1)
-        }
     }
 }
 
@@ -188,7 +185,6 @@ private object MockType {
     val place = TextStyle(color = white, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     val details = TextStyle(color = soft, fontSize = 13.sp)
     val summary = TextStyle(color = white, fontSize = 14.sp)
-    val caption = TextStyle(color = soft, fontSize = 11.sp)
     fun temperature(sp: Int) = TextStyle(color = white, fontSize = sp.sp)
     fun temperatureOther(sp: Int) = TextStyle(color = soft, fontSize = sp.sp)
 }

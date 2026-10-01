@@ -11,10 +11,6 @@ import app.daybreak.domain.AppSettings
 import app.daybreak.domain.WidgetSnapshot
 import app.daybreak.domain.widgetSnapshotOf
 import app.daybreak.widget.WidgetPublisher
-import app.daybreak.domain.CommuteEnd
-import app.daybreak.domain.CommuteSettings
-import app.daybreak.domain.weekendDays
-import app.daybreak.domain.with
 import app.daybreak.domain.Countdown
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.dayOffDates
@@ -22,9 +18,7 @@ import app.daybreak.domain.comingUp
 import app.daybreak.domain.countryCodeOf
 import app.daybreak.domain.Forecast
 import app.daybreak.domain.Place
-import app.daybreak.domain.capAboutMe
 import app.daybreak.domain.TempUnit
-import app.daybreak.domain.Tone
 import app.daybreak.data.HolidayRepository
 import app.daybreak.data.MemeRepository
 import app.daybreak.data.SavedMeme
@@ -33,11 +27,9 @@ import app.daybreak.narration.Meme
 import app.daybreak.narration.MemeWriter
 import app.daybreak.narration.memeMoodOf
 import app.daybreak.narration.ModelStatus
-import app.daybreak.narration.Narration
 import app.daybreak.narration.NarrationInput
 import app.daybreak.narration.NarrationSource
 import app.daybreak.narration.TemplateNarrator
-import app.daybreak.narration.ValidatingNarrator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -50,7 +42,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
@@ -69,11 +60,12 @@ sealed interface PageContent {
     /** [meme] is null while memes are off (or until the first one is written). */
     data class Loaded(
         val forecast: Forecast,
-        val summary: Narration,
+        /** The template summary line. */
+        val summary: String,
         val meme: Meme? = null,
         /** Upcoming holidays, long weekends and the next season; empty while off or loading. */
         val comingUp: List<Countdown> = emptyList(),
-        /** Public holiday dates for the place's country (this year and next), for the commute check. */
+        /** Public holiday dates for the place's country (this year and next), for the breaks your days off make. */
         val holidays: Set<LocalDate> = emptySet(),
     ) : PageContent
 }
@@ -91,33 +83,12 @@ data class SearchUi(
     val error: String? = null,
 )
 
-/**
- * The commute's own forecasts, once home is set: [home]'s and, if there is one, [office]'s ([officeForecast] is
- * null when it couldn't be fetched), with the public holidays and weekend of home's country.
- */
-data class CommuteForecasts(
-    val home: Place,
-    val homeForecast: Forecast,
-    val office: Place? = null,
-    val officeForecast: Forecast? = null,
-    val holidays: Set<LocalDate> = emptySet(),
-    val weekend: Set<DayOfWeek> = weekendDays(null),
-)
-
-/** "Use where I am now" for a commute end: finding the location, or why it couldn't ([error]). */
-data class CommuteLocating(val end: CommuteEnd, val error: String? = null)
-
 data class WeatherUiState(
     val pages: List<PageUi> = emptyList(),
     val savedPlaces: List<Place> = emptyList(),
     val settings: AppSettings = AppSettings(),
     val search: SearchUi = SearchUi(),
     val modelStatus: ModelStatus = ModelStatus.NotInstalled,
-    /** Null until home is set and its forecast has loaded, or while the check is off. */
-    val commute: CommuteForecasts? = null,
-    /** Home's forecast couldn't be loaded (and there's none from before): the card falls back to the first page. */
-    val commuteUnavailable: Boolean = false,
-    val commuteLocating: CommuteLocating? = null,
 )
 
 class WeatherViewModel(
@@ -126,9 +97,8 @@ class WeatherViewModel(
     private val settingsRepo: SettingsRepository,
     private val location: LocationProvider,
     private val model: LocalModelManager,
-    /** Null when there's no LLM available at all (e.g. in tests or previews). */
-    private val llm: ValidatingNarrator?,
     private val template: TemplateNarrator = TemplateNarrator(),
+    /** Writes the daily meme; without a generator (e.g. in tests or previews) only the hand-written ones. */
     private val memeWriter: MemeWriter = MemeWriter(),
     private val memes: MemeRepository? = null,
     private val holidays: HolidayRepository? = null,
@@ -143,35 +113,29 @@ class WeatherViewModel(
     private val fetching = MutableStateFlow<Set<String>>(emptySet())
     private val currentPlace = MutableStateFlow<Place?>(null)
     private val search = MutableStateFlow(SearchUi())
-    private val commute = MutableStateFlow<CommuteForecasts?>(null)
-    private val commuteUnavailable = MutableStateFlow(false)
-    private val commuteLocating = MutableStateFlow<CommuteLocating?>(null)
     private val jobs = mutableMapOf<String, Job>()
     private var searchJob: Job? = null
-    private var commuteJob: Job? = null
-    private var locateJob: Job? = null
 
     val uiState: StateFlow<WeatherUiState> = combine(
         combine(places.places, settingsRepo.settings, ::Pair),
         combine(contents, fetching, ::Pair),
-        combine(currentPlace, combine(commute, commuteUnavailable, ::Pair), commuteLocating, ::Triple),
+        currentPlace,
         search,
         model.status,
-    ) { (saved, settings), (contents, fetching), (current, commuteState, locating), search, modelStatus ->
-        val (commute, commuteUnavailable) = commuteState
+    ) { (saved, settings), (contents, fetching), current, search, modelStatus ->
         val pages = buildList {
             if (settings.useCurrentLocation) {
                 add(PageUi(CURRENT, current, contents[CURRENT] ?: PageContent.Loading, CURRENT in fetching))
             }
             saved.forEach { add(PageUi(it.id, it, contents[it.id] ?: PageContent.Loading, it.id in fetching)) }
         }
-        WeatherUiState(pages, saved, settings, search, modelStatus, commute, commuteUnavailable, locating)
+        WeatherUiState(pages, saved, settings, search, modelStatus)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, WeatherUiState())
 
     init {
         if (widget != null) {
-            // The widget mirrors the first page that has a forecast, including Gemma's summary once it lands. With
-            // no pages at all it's cleared; while pages are loading or failed it keeps what it had.
+            // The widget mirrors the first page that has a forecast. With no pages at all it's cleared; while pages
+            // are loading or failed it keeps what it had.
             viewModelScope.launch {
                 uiState
                     .map { s ->
@@ -181,10 +145,7 @@ class WeatherViewModel(
                             val loaded = page.content as? PageContent.Loaded ?: return@firstNotNullOfOrNull null
                             val place = page.place ?: return@firstNotNullOfOrNull null
                             WidgetUpdate.Show(
-                                widgetSnapshotOf(
-                                    place, loaded.forecast, s.settings.primaryUnit, loaded.summary.text,
-                                    summaryByGemma = loaded.summary.source == NarrationSource.GEMMA, nowMillis = 0,
-                                ),
+                                widgetSnapshotOf(place, loaded.forecast, s.settings.primaryUnit, loaded.summary, nowMillis = 0),
                             )
                         } ?: WidgetUpdate.Keep
                     }
@@ -204,13 +165,12 @@ class WeatherViewModel(
             }
         }
         if (settingsRepo.settings.value.useCurrentLocation) refreshCurrentLocation()
-        refreshCommute()
-        // A download can finish while the user is anywhere in the app; re-narrate as soon as the model lands.
+        // A download can finish while the user is anywhere in the app; give Gemma its try at the meme once it lands.
         viewModelScope.launch {
             var wasInstalled = model.status.value is ModelStatus.Installed
             model.status.collect { status ->
                 val installed = status is ModelStatus.Installed
-                if (installed && !wasInstalled) renarrateAll()
+                if (installed && !wasInstalled) showMemesOnLoadedPages()
                 wasInstalled = installed
             }
         }
@@ -221,8 +181,6 @@ class WeatherViewModel(
     fun refresh(key: String) {
         if (key == CURRENT) refreshCurrentLocation()
         else places.places.value.firstOrNull { it.id == key }?.let { load(key, it) }
-        // The commute card is on Home, but pulling any page is a request for fresh weather.
-        refreshCommute()
     }
 
     /** Whether the app still needs the location permission (the one place this is checked). */
@@ -268,58 +226,45 @@ class WeatherViewModel(
             setContent(key, PageContent.Failed(e.message ?: "Couldn't load the weather"))
             return
         } finally {
-            // The (possibly slow) Gemma step below isn't part of "refreshing". A cancelled fetch mustn't clear the
+            // The (possibly slow) Gemma meme below isn't part of "refreshing". A cancelled fetch mustn't clear the
             // flag its replacement just set, hence the job check.
             if (jobs[key] === coroutineContext[Job]) fetching.update { it - key }
         }
         showForecast(key, place, forecast)
     }
 
-    /**
-     * Shows [forecast] with the instant template summary (and the day's meme), then swaps in Gemma's summary if it
-     * produces a valid one, then gives Gemma its one try at the day's meme.
-     */
+    /** Shows [forecast] with its template summary and the day's meme, then gives Gemma its one try at the meme. */
     private suspend fun showForecast(key: String, place: Place, forecast: Forecast) {
-        val settings = settingsRepo.settings.value
         val input = narrationInput(place, forecast)
-        val quickMeme = if (settings.memesEnabled && key == homePageKey()) savedOrTemplateMeme(key, place, input).meme else null
-        setContent(key, PageContent.Loaded(forecast, Narration(template.describe(input), NarrationSource.TEMPLATE), quickMeme))
-        // Alongside Gemma rather than before it: a slow holiday lookup must never hold up the summary.
+        val quickMeme = if (memesOn() && key == homePageKey()) savedOrTemplateMeme(key, place, input).meme else null
+        setContent(key, PageContent.Loaded(forecast, template.describe(input), quickMeme))
+        // Alongside the meme rather than before it: a slow holiday lookup must never hold up the page.
         viewModelScope.launch { showComingUp(key, place, forecast) }
-        if (gemmaReady()) {
-            val narration = llm!!.narrate(input)
-            if (narration.source == NarrationSource.GEMMA) updateLoaded(key, forecast) { it.copy(summary = narration) }
-        }
-        // Re-reads the setting: memes may have been turned on or off while Gemma was busy.
         showMeme(key, place, input)
     }
 
-    private fun narrationInput(place: Place, forecast: Forecast): NarrationInput {
-        val settings = settingsRepo.settings.value
-        return NarrationInput(place.name, forecast, settings.primaryUnit, settings.tone, settings.aboutMe)
-    }
+    private fun narrationInput(place: Place, forecast: Forecast): NarrationInput =
+        NarrationInput(place.name, forecast, settingsRepo.settings.value.primaryUnit)
 
-    /** Adds the countdowns for [place]'s country; seasons still show when the holiday lookup fails. */
     /**
-     * Adds the countdowns for [place]'s country (seasons still show when the holiday lookup fails) and the holiday
-     * dates the commute check skips. Holidays are fetched when either feature is on.
+     * Adds the countdowns for [place]'s country (seasons still show when the holiday lookup fails) and its holiday
+     * dates, for the breaks your days off make.
      */
     private suspend fun showComingUp(key: String, place: Place, forecast: Forecast) {
-        fun wanted() = settingsRepo.settings.value.let { it.comingUpEnabled || it.commute.enabled }
+        fun wanted() = settingsRepo.settings.value.comingUpEnabled
         if (!wanted()) return
         val today = forecast.current.time.toLocalDate()
         val year = countryCodeOf(place)?.let { cc -> holidays?.around(today, cc) }
         if (!wanted()) return // turned off while fetching
-        val show = settingsRepo.settings.value.comingUpEnabled
         val offDates = dayOffDates(settingsRepo.settings.value.personalDates, today)
-        val items = if (show) comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude, offDates = offDates) else emptyList()
+        val items = comingUp(today, year?.holidays.orEmpty(), year?.longWeekends.orEmpty(), place.latitude, offDates = offDates)
         val dates = year?.holidays.orEmpty().map { it.date }.toSet()
         updateLoaded(key, forecast) { it.copy(comingUp = items, holidays = dates) }
     }
 
-    /** Re-runs the holiday lookup for every loaded page (after a setting that needs it is switched on). */
+    /** Re-runs the holiday lookup for every loaded page (after Coming up is switched on or your dates change). */
     private fun refreshHolidays() {
-        // Not through launchFor: a page busy with Gemma still gets its card, and nothing gets cancelled. A page
+        // Not through launchFor: a page busy with Gemma's meme still gets its card, and nothing gets cancelled. A page
         // that's refetching drops this result (updateLoaded checks the forecast) and adds its own.
         visiblePlaces().forEach { (key, place) ->
             val content = contents.value[key]
@@ -328,7 +273,7 @@ class WeatherViewModel(
     }
 
     private fun gemmaReady(): Boolean =
-        llm != null && settingsRepo.settings.value.gemmaEnabled && model.status.value is ModelStatus.Installed
+        settingsRepo.settings.value.gemmaEnabled && model.status.value is ModelStatus.Installed
 
     private fun memesOn(): Boolean = settingsRepo.settings.value.memesEnabled
 
@@ -350,6 +295,8 @@ class WeatherViewModel(
         if (!saved.gemmaTried && saved.meme.source != NarrationSource.GEMMA && memeWriter.canUseModel && gemmaReady()) {
             val gemma = memeWriter.fromModel(input, key)
             if (!memesOn()) return // turned off while Gemma was writing: don't bring the card back
+            // Gemma switched off or its model removed meanwhile: keep the hand-written one, and let Gemma try again later.
+            if (!gemmaReady()) return
             gemma?.let { m -> updateLoaded(key, forecast) { it.copy(meme = m) } }
             result = SavedMeme(gemma ?: saved.meme, gemmaTried = true)
         }
@@ -368,17 +315,13 @@ class WeatherViewModel(
 
     /**
      * Rewrites the summary of every loaded page from its cached forecast, without touching the network. Used when
-     * something that only affects the wording changes (unit, Gemma on/off, model installed/removed).
+     * something the template's wording depends on changes (the unit, the phone's 12- or 24-hour clock).
      */
     private fun renarrateAll() {
-        // Visible pages only, in page order, so the page the user is most likely looking at goes first (Gemma
-        // generates one summary at a time). Built from the sources rather than uiState, which updates asynchronously.
+        // Built from the sources rather than uiState, which updates asynchronously.
         visiblePlaces().forEach { (key, place) ->
-            val content = contents.value[key]
-            // A page that's still fetching will narrate with the new settings when its forecast arrives.
-            if (content is PageContent.Loaded && key !in fetching.value) {
-                launchFor(key, fetch = false) { showForecast(key, place, content.forecast) }
-            }
+            val content = contents.value[key] as? PageContent.Loaded ?: return@forEach
+            updateLoaded(key, content.forecast) { it.copy(summary = template.describe(narrationInput(place, it.forecast))) }
         }
     }
 
@@ -395,8 +338,8 @@ class WeatherViewModel(
     }
 
     /**
-     * Adds memes to loaded pages after they're turned on, without re-running the summaries. Pages with a job in
-     * flight add theirs when that job reaches its meme step.
+     * Adds memes to loaded pages after they're turned on (or Gemma becomes available for them), without refetching.
+     * Pages with a job in flight add theirs when that job reaches its meme step.
      */
     private fun showMemesOnLoadedPages() {
         visiblePlaces().forEach { (key, place) ->
@@ -500,19 +443,6 @@ class WeatherViewModel(
     /** The phone switched between 12- and 24-hour time: summaries mention times, so rewrite them. */
     fun onClockFormatChanged() = renarrateAll()
 
-    fun setTone(tone: Tone) {
-        if (tone == settingsRepo.settings.value.tone) return
-        settingsRepo.update { it.copy(tone = tone) }
-        renarrateAll()
-    }
-
-    fun setAboutMe(text: String) {
-        val trimmed = capAboutMe(text)
-        if (trimmed == settingsRepo.settings.value.aboutMe) return
-        settingsRepo.update { it.copy(aboutMe = trimmed) }
-        renarrateAll()
-    }
-
     /** Only changes the activity card, which is computed from the cached forecast: nothing to refetch or re-narrate. */
     fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
 
@@ -539,92 +469,6 @@ class WeatherViewModel(
         }
     }
 
-    /**
-     * Without a home, the commute card is computed from the first page's cached forecast. With one, home's and the
-     * office's forecasts are fetched when the check is switched on or either place changes (new times need nothing).
-     */
-    fun setCommute(commute: CommuteSettings) {
-        val old = settingsRepo.settings.value.commute
-        settingsRepo.update { it.copy(commute = commute) }
-        // The commute skips public holidays, which come with the countdowns: fetch them if nothing has yet.
-        if (commute.enabled && !old.enabled) refreshHolidays()
-        val placesChanged = commute.home != old.home || commute.office != old.office
-        if (placesChanged) {
-            this.commute.value = null // never judge the new places with the old ones' weather
-            // A place set any other way wins over a location still being looked up.
-            locateJob?.cancel()
-            commuteLocating.value = null
-        } else if (commuteLocating.value?.error != null) {
-            commuteLocating.value = null // any other change moves on from the error
-        }
-        if (placesChanged || commute.enabled != old.enabled) refreshCommute()
-    }
-
-    /** Sets (or with null, clears) one end of the commute. */
-    fun setCommutePlace(end: CommuteEnd, place: Place?) {
-        locateJob?.cancel()
-        commuteLocating.value = null
-        setCommute(settingsRepo.settings.value.commute.with(end, place))
-    }
-
-    /** "Use where I am now": the device's location becomes [end]. The caller has asked for the permission. */
-    fun setCommutePlaceHere(end: CommuteEnd) {
-        locateJob?.cancel()
-        if (!location.hasPermission()) {
-            commuteLocating.value = CommuteLocating(end, "Location access is off for this app.")
-            return
-        }
-        commuteLocating.value = CommuteLocating(end)
-        locateJob = viewModelScope.launch {
-            val place = location.currentPlace()
-            if (place == null) {
-                commuteLocating.value = CommuteLocating(end, "Couldn't get your location. Is location turned on?")
-            } else {
-                commuteLocating.value = null
-                setCommute(settingsRepo.settings.value.commute.with(end, place))
-            }
-        }
-    }
-
-    /**
-     * Fetches home's and the office's forecasts for the commute card, with home's holidays. A failed refresh keeps
-     * what's shown (the office's too); with nothing to keep, a failed home forecast lets the card fall back to the
-     * first page, and a failed office forecast leaves the trips judged at home only.
-     */
-    private fun refreshCommute() {
-        commuteJob?.cancel()
-        commuteUnavailable.value = false
-        val settings = settingsRepo.settings.value.commute
-        val home = settings.home
-        if (!settings.enabled || home == null) {
-            commute.value = null
-            return
-        }
-        val office = settings.office
-        commuteJob = viewModelScope.launch {
-            val homeForecast = try {
-                api.forecast(home.latitude, home.longitude)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (commute.value == null) commuteUnavailable.value = true
-                return@launch
-            }
-            val officeForecast = office?.let {
-                try {
-                    api.forecast(it.latitude, it.longitude)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    commute.value?.takeIf { c -> c.office == office }?.officeForecast
-                }
-            }
-            val cc = countryCodeOf(home)
-            val dates = cc?.let { holidays?.around(homeForecast.current.time.toLocalDate(), it) }?.holidays.orEmpty()
-            commute.value = CommuteForecasts(home, homeForecast, office, officeForecast, dates.map { it.date }.toSet(), weekendDays(cc))
-        }
-    }
-
     /** Tonight's sky is computed from the clock and the cached forecast: nothing to fetch. */
     fun setSkyEnabled(enabled: Boolean) = settingsRepo.update { it.copy(skyEnabled = enabled) }
 
@@ -635,12 +479,13 @@ class WeatherViewModel(
         }
     }
 
+    /** Switching Gemma on gives it its try at today's meme; switching it off keeps the meme already shown. */
     fun setGemmaEnabled(enabled: Boolean) {
         settingsRepo.update { it.copy(gemmaEnabled = enabled) }
-        renarrateAll()
+        if (enabled) showMemesOnLoadedPages()
     }
 
-    /** Starts downloading Gemma from Hugging Face; summaries switch over automatically once it's installed. */
+    /** Starts downloading Gemma from Hugging Face; the meme switches over automatically once it's installed. */
     fun downloadModel(hfToken: String) {
         viewModelScope.launch { model.download(hfToken) }
     }
@@ -653,12 +498,11 @@ class WeatherViewModel(
 
     fun removeModel() {
         model.remove()
-        llm?.releaseResources()
-        renarrateAll()
+        memeWriter.releaseResources()
     }
 
     override fun onCleared() {
-        llm?.close()
+        memeWriter.close()
     }
 
     companion object {

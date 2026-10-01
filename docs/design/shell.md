@@ -59,7 +59,7 @@ It reuses `Hero()`, but without the floating action row: 16dp top padding and le
 
 A tappable `surfaceContainer` card, min 72dp tall, with 16dp padding. Tapping it opens the Weather tab on that place, using the existing `scrollTo`.
 
-**Which place:** the first page that can show weather, the same rule as `commutePage`.
+**Which place:** the first page, unless it's the current location still waiting for permission (`glancePageIndex`).
 
 **Content, left to right:**
 - a 36dp `WeatherIcon`;
@@ -85,8 +85,8 @@ The order is fixed and not user-reorderable. A card that is off, or has nothing 
 
 1. Hero
 2. Weather glance
-3. `CommuteCard`. No heading: its eyebrow does that job.
-4. "Coming up": `ComingUpCard` with the glance place's holidays plus your dates.
+3. "Coming up": `ComingUpCard` with the glance place's holidays plus your dates.
+4. "Tonight's sky": `SkyCard`.
 5. "On this day" (later)
 6. "Word of the day" (later; needs Gemma)
 7. "Today's weather meme": `MemeCard` for the glance forecast. It's always last, because it's the tallest card and the least actionable.
@@ -97,14 +97,14 @@ The order is fixed and not user-reorderable. A card that is off, or has nothing 
 
 **Other rules:**
 - When only the glance is on, show one quiet line under it: "Turn on more for Home in Settings", which opens the Settings tab.
-- Pull-to-refresh refreshes the glance place and the commute.
+- Pull-to-refresh refreshes the glance place.
 
 **Future cards:**
 - **On this day:** a 36dp disc holding the year (`labelSmall`, primary at 14%), then the event text, then "From Wikipedia". Tapping opens the article.
 - **Word of the day:**
   - `titleLarge` word plus its part of speech;
   - an `OutlinedTextField`, "What do you think it means?", with a "Check" button;
-  - the verdict in the `VoicePreview` block style, with Wiktionary's definition and "✦ Judged by Gemma on this device".
+  - the verdict in a quiet `surfaceContainerHighest` block, with Wiktionary's definition and "✦ Judged by Gemma on this device".
   - The card keeps the day's verdict.
 
 ## 3. Clocks
@@ -132,7 +132,7 @@ The order is fixed and not user-reorderable. A card that is off, or has nothing 
 - **Result rows:** "At 12:00 PM on Wednesday in Los Angeles it's…", then a row for every other clock, with "Thu · next day" when the day differs.
 - **Ask box:** under a divider, a field labelled "Ask", with the placeholder "What time is it in Romania at noon my time?" and a Send button.
   - While working: a progress bar and "Working it out…".
-  - The answer appears in the `VoicePreview` block: "It'll be 10:00 PM on Wednesday in Bucharest.", with "✦ Written by Gemma on this device".
+  - The answer appears in a quiet `surfaceContainerHighest` block: "It'll be 10:00 PM on Wednesday in Bucharest.", with "✦ Written by Gemma on this device".
   - On failure: "Gemma couldn't work that one out. Try the picker above."
   - **The answer sets the chips.** When Gemma's tools resolve a moment and a zone, the chips are set to them, so the result rows show the same conversion in every clock. The prose is the answer; the rows are the proof.
   - A place that isn't a saved clock is added to the results for that answer only, with an "Add clock" button.
@@ -143,11 +143,10 @@ The order is fixed and not user-reorderable. A card that is off, or has nothing 
 Settings becomes a tab with no back arrow. Its sections:
 
 1. **Temperature** (°F first or °C first). It applies everywhere.
-2. **Home:** "Office or home?", "Holidays and countdowns", "Your dates", "Daily weather meme", and later On this day, Word of the day and Greeting. The copy should say "on Home" rather than "on the first page".
+2. **Home:** "Holidays and countdowns", "Your dates", "Daily weather meme", and later On this day, Word of the day and Greeting. The copy should say "on Home" rather than "on the first page".
 3. **Weather:** a Places row that opens the Places screen, and Activity.
-4. **Voice** (was "Summary style"): "Gemma writes the summary and the Home greeting in this voice."
-5. **Gemma** (was "AI summary"): a "Use Gemma on this device" switch, then the model section.
-6. **Footer:** "Daybreak 1.5.0".
+4. **Gemma** (was "AI summary"): a "Use Gemma for the meme" switch, then the model section. Gemma no longer writes the weather summary; the template does.
+5. **Footer:** "Daybreak 1.5.0".
 
 There's no Clocks section until a clock setting exists.
 

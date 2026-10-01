@@ -53,14 +53,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
-import app.daybreak.domain.Activity
-import app.daybreak.domain.CommuteSettings
-import app.daybreak.domain.Forecast
 import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
-import app.daybreak.domain.commuteAdvice
 import app.daybreak.domain.countryCodeOf
-import app.daybreak.domain.dayOffDates
 import app.daybreak.domain.describeWeatherCode
 import app.daybreak.domain.formatBothUnits
 import app.daybreak.domain.formatDegrees
@@ -73,7 +68,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * The page Home follows (the glance, the commute fallback, the holidays and the meme): the first page, unless it's
+ * The page Home follows (the glance, the holidays and the meme): the first page, unless it's
  * the current location still waiting for permission and a saved place can stand in. A failed page stays, so a
  * failed refresh shows its error (and "Try again") rather than quietly switching Home to another city. -1 with no
  * pages at all.
@@ -86,7 +81,7 @@ fun glancePageIndex(pages: List<PageUi>): Int {
 
 /**
  * Home: the day at a glance. A greeting on the sky of the glance place, the weather glance (which opens that place
- * on the Weather tab), then the personal cards in a fixed order: the commute call, what's coming up, and the meme
+ * on the Weather tab), then the personal cards in a fixed order: what's coming up, tonight's sky, and the meme
  * last since it's the tallest and the least to act on. A card that's off or has nothing to say isn't shown.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -151,7 +146,7 @@ fun HomeScreen(
             HomeCards(state, page, loaded, now, zone)
             // Only when every card is switched off (not while they're waiting for a forecast).
             val settings = state.settings
-            if (!settings.commute.enabled && !settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled) {
+            if (!settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Turn on more cards in Settings",
@@ -179,17 +174,6 @@ private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
     val today = forecast?.current?.time?.toLocalDate() ?: now.toLocalDate()
     val holidays = loaded?.holidays.orEmpty()
     val weekend = weekendDays(page?.place?.let(::countryCodeOf))
-    val offDates = remember(settings.personalDates, today) { dayOffDates(settings.personalDates, today) }
-
-    if (settings.commute.enabled) {
-        // Walking is the fallback mode when outdoor plans are off.
-        val mode = settings.activity ?: Activity.WALKING
-        val advice = commuteAdviceFor(settings.commute, mode, forecast, holidays + offDates, weekend, state.commute, state.commuteUnavailable, offDates)
-        if (advice != null) {
-            Spacer(Modifier.height(16.dp))
-            CommuteCard(advice.first, mode, unit, advice.second, Modifier.padding(horizontal = PageMargin))
-        }
-    }
 
     // The place's holidays and seasons, with your own next dates among them.
     val upcoming = remember(loaded?.comingUp, settings.personalDates, settings.comingUpEnabled, holidays, weekend, today) {
@@ -215,34 +199,6 @@ private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
     if (meme != null) {
         SectionHeading("Today's weather meme")
         MemeCard(meme, Modifier.padding(horizontal = PageMargin))
-    }
-}
-
-/**
- * The commute call and the day it's for. With a home set, home's (and the office's) own forecasts; until they
- * load, nothing, unless home's couldn't be fetched, when the glance forecast is better than no card at all.
- */
-@Composable
-private fun commuteAdviceFor(
-    commute: CommuteSettings,
-    mode: Activity,
-    forecast: Forecast?,
-    holidays: Set<java.time.LocalDate>,
-    weekend: Set<java.time.DayOfWeek>,
-    forecasts: CommuteForecasts?,
-    unavailable: Boolean,
-    offDates: Set<java.time.LocalDate>,
-): Pair<app.daybreak.domain.CommuteAdvice, java.time.LocalDate>? {
-    val c = forecasts?.takeIf { commute.home != null && it.home == commute.home && it.office == commute.office }
-    return remember(forecast, mode, commute, holidays, weekend, c, unavailable, offDates) {
-        when {
-            // Your days off are skipped like public holidays.
-            c != null -> commuteAdvice(c.homeForecast, mode, commute, c.holidays + offDates, c.weekend, c.officeForecast)
-                ?.let { it to c.homeForecast.current.time.toLocalDate() }
-            forecast != null && (commute.home == null || unavailable) -> commuteAdvice(forecast, mode, commute, holidays, weekend)
-                ?.let { it to forecast.current.time.toLocalDate() }
-            else -> null
-        }
     }
 }
 

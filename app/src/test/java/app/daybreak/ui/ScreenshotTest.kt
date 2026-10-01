@@ -27,24 +27,16 @@ import app.daybreak.domain.ClockFormat
 import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
 import app.daybreak.narration.ModelStatus
-import app.daybreak.narration.Narration
 import app.daybreak.narration.NarrationInput
 import app.daybreak.narration.NarrationSource
-import app.daybreak.domain.Tone
 import app.daybreak.domain.Term
 import app.daybreak.domain.explain
 import app.daybreak.domain.Activity
-import app.daybreak.domain.CommuteAdvice
-import app.daybreak.domain.HourForecast
-import app.daybreak.domain.HourScore
-import app.daybreak.domain.Limit
 import app.daybreak.domain.Clock
-import app.daybreak.domain.CommuteEnd
 import app.daybreak.domain.describeSky
 import app.daybreak.domain.moonPhase
 import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.PersonalDate
-import app.daybreak.domain.CommuteSettings
 import app.daybreak.domain.ActivityScorer
 import app.daybreak.data.parseLongWeekends
 import app.daybreak.data.parsePublicHolidays
@@ -80,19 +72,9 @@ class ScreenshotTest {
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, showSystemUi = false)
 
     private val forecast = TestData.forecast()
-    private val templateSummary = Narration(
-        TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F)),
-        NarrationSource.TEMPLATE,
-    )
-    private val gemmaSummary = Narration(
-        "A mild, partly cloudy afternoon at 71°, but grab an umbrella: rain moves in around 6 PM.",
-        NarrationSource.GEMMA,
-    )
+    private val templateSummary = TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F))
     private val rainyNight = TestData.rainyNight()
-    private val rainyNightSummary = Narration(
-        TemplateNarrator(Locale.US).describe(NarrationInput(london.name, rainyNight, TempUnit.C)),
-        NarrationSource.TEMPLATE,
-    )
+    private val rainyNightSummary = TemplateNarrator(Locale.US).describe(NarrationInput(london.name, rainyNight, TempUnit.C))
 
     /**
      * The 2026 US calendar from the fixtures plus a made-up holiday two days out, so the card shows all three
@@ -167,13 +149,12 @@ class ScreenshotTest {
     }
 
     @Composable
-    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings(), commuteLocating: CommuteLocating? = null) {
+    private fun Settings(status: ModelStatus, settings: AppSettings = AppSettings()) {
         SettingsScreen(
             today = forecast.current.time.toLocalDate(),
             settings = settings,
             modelStatus = status,
-            commuteLocating = commuteLocating,
-            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onToneChange = {}, onAboutMeChange = {}, onActivityChange = {}, onCommuteChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
+            onUnitChange = {}, onGemmaEnabledChange = {}, onMemesEnabledChange = {}, onActivityChange = {}, onComingUpEnabledChange = {}, onDownloadModel = {}, onCancelDownload = {},
             onImportModel = {}, onRemoveModel = {}, onBack = null,
         )
     }
@@ -188,24 +169,13 @@ class ScreenshotTest {
 
     // --- Home -----------------------------------------------------------------------------------
 
-    /** A dry, mild Tuesday after the fixture's Monday, so the commute has trips to look at. */
-    private val withTomorrow by lazy {
-        val tomorrow = forecast.current.time.toLocalDate().plusDays(1)
-        forecast.copy(
-            hours = forecast.hours + (2 until 24).map { h ->
-                HourForecast(tomorrow.atTime(h, 0), tempC = 13.0 + (h - 2) * 0.5, precipChance = 5, code = 1, windKmh = 12.0, gustKmh = 18.0)
-            },
-        )
-    }
-
-    /** Everything on: greeting on the place's sky, the glance, the commute call, what's coming up (with your dates) and the meme. */
+    /** Everything on: greeting on the place's sky, the glance, what's coming up (with your dates), tonight's sky and the meme. */
     @Test fun homeFull() = snap("home_full", tall = true) {
         val today = forecast.current.time.toLocalDate()
         Home(
             weatherState(
-                PageContent.Loaded(withTomorrow, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp),
+                PageContent.Loaded(forecast, templateSummary, TemplateMemes.pick(MemeMood.RAIN, 0), sanFranciscoComingUp),
                 settings = AppSettings(
-                    commute = CommuteSettings(8, 17, enabled = true),
                     personalDates = listOf(PersonalDate(today.plusDays(1), name = "Board presentation")),
                 ),
             ),
@@ -386,10 +356,6 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun weatherGemma() = snap("weather_gemma") {
-        Weather(weatherState(PageContent.Loaded(forecast, gemmaSummary)))
-    }
-
     @Test fun weatherRainyNight() = snap("weather_rainy_night") {
         Weather(
             weatherState(
@@ -494,38 +460,9 @@ class ScreenshotTest {
         Settings(ModelStatus.Installed(529L shl 20))
     }
 
-    @Test fun settingsVoice() = snap("settings_voice", tall = true) {
-        Settings(
-            ModelStatus.Installed(529L shl 20),
-            AppSettings(commute = CommuteSettings(8, 17, enabled = true), tone = Tone.PIRATE, aboutMe = "I cycle to work and hate getting rained on"),
-        )
-    }
-
-    /** Home set with no office yet; a new lookup for home has failed, and says why under the place it keeps. */
-    @Test fun settingsCommute() = snap("settings_commute", tall = true) {
-        Settings(
-            ModelStatus.Installed(529L shl 20),
-            AppSettings(
-                commute = CommuteSettings(
-                    8, 17, enabled = true,
-                    home = Place(Place.COMMUTE_HOME_ID, "Oakland", "California", latitude = 37.8, longitude = -122.27),
-                ),
-            ),
-            commuteLocating = CommuteLocating(CommuteEnd.HOME, "Couldn't get your location. Is location turned on?"),
-        )
-    }
-
-    @Test fun settingsCommuteOffice() = snap("settings_commute_office", tall = true) {
-        Settings(
-            ModelStatus.Installed(529L shl 20),
-            AppSettings(
-                commute = CommuteSettings(
-                    8, 17, enabled = true,
-                    home = Place(Place.COMMUTE_HOME_ID, "Oakland", "California", latitude = 37.8, longitude = -122.27),
-                    office = sanFrancisco.copy(id = Place.COMMUTE_OFFICE_ID),
-                ),
-            ),
-        )
+    /** The whole page with the model installed, down to the Gemma section. */
+    @Test fun settingsFull() = snap("settings_full", tall = true) {
+        Settings(ModelStatus.Installed(529L shl 20))
     }
 
     /** A clear window; a showery afternoon with two one-hour windows (amber bars, the marker under the pick); none at all. */
@@ -539,37 +476,6 @@ class ScreenshotTest {
         }
     }
 
-    /** The three verdicts: a clear ride (green office block), a showery ride home (amber), and a wet walk in (blue house). */
-    @Test fun commuteCards() = snap("commute_cards", tall = true) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { CommuteCardSamples() }
-    }
-
-    /** Dark theme on the narrow screen at 1.5x: the detail wraps without stranding a dot, and the tints still read. */
-    @Test fun commuteCardsLargeFontDark() = snap("commute_cards_large_font_dark", night = true, narrow = true, fontScale = 1.5f) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { CommuteCardSamples() }
-    }
-
-    @Composable
-    private fun CommuteCardSamples() {
-        val today = forecast.current.time.toLocalDate()
-        fun trip(hour: Int, precip: Int, tempC: Double = 16.0, code: Int = 1, limits: Set<Limit> = emptySet(), score: Int = 95) =
-            HourScore(HourForecast(today.plusDays(1).atTime(hour, 0), tempC, precip, code, 10.0, 15.0), score, limits)
-        CommuteCard(CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.OFFICE, trip(8, 0), trip(17, 5, 18.0)), Activity.CYCLING, TempUnit.F, today)
-        CommuteCard(
-            CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.OFFICE_WITH_CAVEAT, trip(8, 0), trip(17, 35, limits = setOf(Limit.RAIN), score = 55)),
-            Activity.CYCLING, TempUnit.F, today,
-        )
-        CommuteCard(
-            CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.WORK_FROM_HOME, trip(8, 80, code = 63, limits = setOf(Limit.RAIN), score = 10), trip(17, 20)),
-            Activity.WALKING, TempUnit.C, today,
-        )
-        // With an office set: the rain is at the office end on the way home.
-        CommuteCard(
-            CommuteAdvice(today.plusDays(1), CommuteAdvice.Verdict.WORK_FROM_HOME, trip(8, 0), trip(17, 75, code = 63, limits = setOf(Limit.RAIN), score = 20), inboundAtOffice = true),
-            Activity.CYCLING, TempUnit.F, today,
-        )
-    }
-
     /**
      * The phone on the 24-hour clock: "15:00" in the 52dp hourly cards, "07:02" in the sun tiles, and the copy that
      * names an hour (the summary, "Now–18:00").
@@ -578,10 +484,7 @@ class ScreenshotTest {
         ClockFormat.use24Hour = true
         try {
             snap("weather_24_hour", tall = true) {
-                val summary = Narration(
-                    TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F)),
-                    NarrationSource.TEMPLATE,
-                )
+                val summary = TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F))
                 Weather(
                     weatherState(
                         PageContent.Loaded(forecast, summary, comingUp = sanFranciscoComingUp),
@@ -668,11 +571,6 @@ class ScreenshotTest {
             Sheet(explain(Term.RAIN_CHANCE, rainyNight, TempUnit.C))
             Sheet(explain(Term.SUN, rainyNight, TempUnit.C))
         }
-    }
-
-    @Test fun weatherPirate() = snap("weather_pirate") {
-        val input = NarrationInput(sanFrancisco.name, forecast, TempUnit.F, Tone.PIRATE)
-        Weather(weatherState(PageContent.Loaded(forecast, Narration(TemplateNarrator(Locale.US).describe(input), NarrationSource.TEMPLATE))))
     }
 
     /** The adaptive launcher icon, composited the way a circular launcher mask would show it. */
