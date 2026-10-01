@@ -56,13 +56,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import app.daybreak.domain.DayRain
 import app.daybreak.domain.DaySummary
+import app.daybreak.domain.FEELS_LIKE_GAP
 import app.daybreak.domain.Forecast
-import app.daybreak.domain.HourForecast
+import app.daybreak.domain.Mix
 import app.daybreak.domain.Precip
 import app.daybreak.domain.RainPeriod
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.Term
+import app.daybreak.domain.degrees
 import app.daybreak.domain.describeWeatherCode
 import app.daybreak.domain.explain
 import app.daybreak.domain.formatBothUnits
@@ -76,12 +79,13 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.min
 
 /** Height of the floating back-arrow row over the day's sky. */
 private val DayBarHeight = 56.dp
 
-/** Hours a day's bar chart has, one bar each. */
+/** Hours a day's bar chart has, one bar each: the day's stamps, 00:00 to 23:00. */
 private const val CHART_HOURS = 24
 
 /** Bars stop growing at this many mm an hour, so one downpour doesn't flatten the rest. */
@@ -102,13 +106,14 @@ fun DayScreen(
     onBack: () -> Unit,
 ) {
     val day = forecast.day(date) ?: return
+    val rain = remember(forecast, date) { Precip.dayRain(forecast, date) }
     val today = forecast.today.date
     val isToday = date == today
     val dark = MaterialTheme.isDark
     val gradient = heroGradient(skyOf(day.code), night = false, darkTheme = dark)
     var explaining by rememberSaveable { mutableStateOf<Term?>(null) }
     explaining?.let { term ->
-        ExplainSheet(explain(term, forecast, unit, Locale.getDefault(), date)) { explaining = null }
+        ExplainSheet(explain(term, forecast, unit, date)) { explaining = null }
     }
     val openExplanation = remember { { t: Term -> explaining = t } }
     CompositionLocalProvider(LocalExplain provides openExplanation) {
@@ -131,14 +136,13 @@ fun DayScreen(
                         unit = unit,
                         label = { i, h -> if (isToday && i == 0) "Now" else formatHour(h.time) },
                         night = { i, h -> if (isToday && i == 0) forecast.isNightNow else forecast.isNight(h) },
-                        showPrecip = false,
                         highlightFirst = isToday,
                     )
                 }
                 Spacer(Modifier.height(16.dp))
-                RainCard(forecast, day, unit, Modifier.padding(horizontal = PageMargin))
+                RainCard(rain, unit, Modifier.padding(horizontal = PageMargin))
                 val daysAhead = ChronoUnit.DAYS.between(today, date)
-                if (daysAhead >= 2 && (Precip.dayAmount(day, unit) != null || Precip.dayRain(forecast, date).timing != null)) {
+                if (daysAhead >= 2 && rain.amountShown) {
                     Text(
                         "Amounts this far ahead are rough; the chance is the better guide.",
                         style = MaterialTheme.typography.labelSmall,
@@ -152,21 +156,49 @@ fun DayScreen(
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
             StatusBarScrim(scroll, heroBottom, gradient.first(), extra = DayBarHeight)
-            CompositionLocalProvider(LocalContentColor provides Color.White) {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().height(DayBarHeight).padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                }
-            }
+            DayBar(onBack)
+        }
+    }
+}
+
+/** The back arrow, floating in white over the day's sky. */
+@Composable
+private fun DayBar(onBack: () -> Unit) {
+    CompositionLocalProvider(LocalContentColor provides Color.White) {
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().height(DayBarHeight).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         }
     }
 }
 
 /**
- * The day's name and date, its condition, and pills for the high and low (both units) and the feels-like range,
- * on the day's sky.
+ * The day page while its forecast is still on its way (the app was stopped in the background and has just come
+ * back): a plain sky, the back arrow, and a line saying so.
+ */
+@Composable
+internal fun DayLoading(onBack: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(Modifier.fillMaxSize()) {
+            Hero(neutralGradient(MaterialTheme.isDark), top = DayBarHeight) { Spacer(Modifier.height(48.dp)) }
+            Spacer(Modifier.height(48.dp))
+            Text(
+                "Getting the forecast…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = PageMargin),
+            )
+        }
+        DayBar(onBack)
+    }
+}
+
+/**
+ * The day's name and date, its condition, and pills for the high and low (both units) and, when it's 3° or more
+ * away at either end, the feels-like range, on the day's sky.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -204,16 +236,24 @@ private fun DayHeader(placeName: String, forecast: Forecast, day: DaySummary, un
         if (feels.isNotEmpty()) {
             val hi = feels.max()
             val lo = feels.min()
-            HeroPill(
-                "Feels like",
-                "${formatDegrees(hi, unit)} / ${formatDegrees(lo, unit)}",
-                "high ${formatBothUnits(hi, unit)}, low ${formatBothUnits(lo, unit)}",
-            )
+            if (feelsWorthAPill(hi, lo, day, unit)) {
+                HeroPill(
+                    "Feels like",
+                    "${formatDegrees(hi, unit)} / ${formatDegrees(lo, unit)}",
+                    "high ${formatBothUnits(hi, unit)}, low ${formatBothUnits(lo, unit)}",
+                    secondary = "${formatTemp(hi, other)} / ${formatTemp(lo, other)}",
+                )
+            }
         }
     }
 }
 
-/** The day's strongest wind with where it comes from, and its strongest gust; nothing when neither is known. */
+/** The feels-like range earns its pill once it's 3° or more (in the unit shown) from the high or the low. */
+internal fun feelsWorthAPill(feelsHighC: Double, feelsLowC: Double, day: DaySummary, unit: TempUnit): Boolean =
+    abs(degrees(feelsHighC, unit) - degrees(day.highC, unit)) >= FEELS_LIKE_GAP ||
+        abs(degrees(feelsLowC, unit) - degrees(day.lowC, unit)) >= FEELS_LIKE_GAP
+
+/** The day's strongest wind with where it comes from (or "calm"), and its strongest gust; nothing when neither is known. */
 @Composable
 private fun WindTiles(day: DaySummary, unit: TempUnit) {
     val wind = day.windMaxKmh
@@ -222,7 +262,10 @@ private fun WindTiles(day: DaySummary, unit: TempUnit) {
     Spacer(Modifier.height(16.dp))
     TileRow {
         if (wind != null) {
-            StatTile("Wind", keepUnitsTogether("Up to ${formatWind(wind, unit)}"), Modifier.weight(1f), direction = day.windDirectionDeg)
+            StatTile(
+                "Wind", keepUnitsTogether("Up to ${formatWind(wind, unit)}"), Modifier.weight(1f),
+                direction = day.windDirectionDeg, windKmh = wind,
+            )
         }
         if (gust != null) StatTile("Gusts", keepUnitsTogether("Up to ${formatWind(gust, unit)}"), Modifier.weight(1f))
     }
@@ -230,28 +273,26 @@ private fun WindTiles(day: DaySummary, unit: TempUnit) {
 
 /**
  * The day's rain (or snow): a verdict with the chance word, total and hours; when in the day it falls; a bar per
- * hour with the chance every three hours; and the daytime and overnight halves. Tapping it explains the total.
+ * hour with the chance every three hours; the parts of the day that aren't dry, which add up to the verdict; and a
+ * line when it carries on after midnight. Tapping it explains the total.
  */
 @Composable
-internal fun RainCard(forecast: Forecast, day: DaySummary, unit: TempUnit, modifier: Modifier = Modifier) {
-    val rain = remember(forecast, day.date) { Precip.dayRain(forecast, day.date) }
-    val title = if (Precip.isSnowDay(day)) "Snow" else "Rain"
-    val verdict = Precip.verdict(day, unit)
-    val timing = rain.timing?.let { Precip.timingSentence(it) }
-    val showChart = rain.hasAmounts && rain.hours.any { (it.precipMm ?: 0.0) >= Precip.HOUR_AMOUNT_MIN_MM }
-    // The halves of the day that aren't dry, in order; "Before sunrise" only shows up when the night before
-    // carries on past midnight, so the day's total never goes missing from the rows.
-    val periods = listOfNotNull(
-        rain.beforeSunrise?.takeIf { !it.dry }?.let { "Before sunrise" to it },
-        rain.daytime?.takeIf { !it.dry }?.let { "Daytime" to it },
-        rain.overnight?.takeIf { !it.dry }?.let { "Overnight" to it },
-    )
+internal fun RainCard(rain: DayRain, unit: TempUnit, modifier: Modifier = Modifier) {
+    val title = rain.title
+    val verdict = Precip.verdict(rain, unit)
+    val timing = rain.timing?.takeIf { rain.amountShown }?.let { Precip.timingSentence(it) }
+    val showChart = rain.complete && rain.amountShown && rain.counted.any { (it.precipMm ?: 0.0) >= Precip.HOUR_AMOUNT_MIN_MM }
+    val rows = rain.rows
+    // A card titled "Snow" doesn't say "snow" again on every row; "Rain" and "Rain and snow" do, where it's snow.
+    val snowWord = rain.mix != Mix.SNOW
+    val carryOn = rain.carryOn?.takeIf { !rain.dry }?.let { Precip.carryOnLine(it, unit) }
     val explain = LocalExplain.current
     val spoken = buildList {
         add(title)
         add(verdict.replace(" · ", ", "))
         timing?.let { add(it) }
-        periods.forEach { (name, p) -> add("$name, ${formatHour(p.start)} to ${formatHour(p.end)}, ${p.spoken(unit)}") }
+        rows.forEach { p -> add("${p.name}, ${formatHour(p.labelStart)} to ${formatHour(p.labelEnd)}, ${p.spoken(unit)}") }
+        carryOn?.let { add(it.removeSuffix(".")) }
     }.joinToString(". ")
     Card(
         onClick = { explain?.invoke(Term.RAIN_DAY) },
@@ -280,14 +321,22 @@ internal fun RainCard(forecast: Forecast, day: DaySummary, unit: TempUnit, modif
             }
             if (showChart) {
                 Spacer(Modifier.height(16.dp))
-                RainChart(rain.hours, day.date)
+                RainChart(rain)
             }
-            if (periods.isNotEmpty()) {
+            if (rows.isNotEmpty()) {
                 Spacer(Modifier.height(if (showChart) 16.dp else 12.dp))
-                periods.forEachIndexed { i, (name, period) ->
+                rows.forEachIndexed { i, period ->
                     if (i > 0) Spacer(Modifier.height(10.dp))
-                    PeriodRow(name, period, unit)
+                    PeriodRow(period, unit, snowWord)
                 }
+            }
+            if (carryOn != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    keepUnitsTogether(carryOn),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -295,17 +344,22 @@ internal fun RainCard(forecast: Forecast, day: DaySummary, unit: TempUnit, modif
 
 /**
  * A bar per hour of the day, its height the amount (capped at 4 mm an hour, where the bar darkens), with the chance
- * under every third hour ("·" below 10%) and the time every six. One blue at different heights stands in for
- * light, moderate and heavy. Hidden from screen readers: the verdict and the rows carry the same numbers.
+ * under every third hour ("·" below 10%) and the time every six. Each value is drawn over the hour it falls in, the
+ * hour before its stamp, so the first bar is the hour before midnight that opens the day's figures (see [Precip]).
+ * Only the hours the verdict counts get a bar. One blue at different heights stands in for light, moderate and heavy.
+ * Hidden from screen readers: the verdict and the rows carry the same numbers.
  */
 @Composable
-private fun RainChart(hours: List<HourForecast>, date: LocalDate) {
+private fun RainChart(rain: DayRain) {
     val rainColor = MaterialTheme.weatherColors.rain
     val capColor = if (MaterialTheme.isDark) lerp(rainColor, Color.White, 0.45f) else lerp(rainColor, Color.Black, 0.35f)
     val baseColor = MaterialTheme.colorScheme.outlineVariant
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val small = MaterialTheme.typography.labelSmall
-    val byHour = hours.associateBy { it.time.hour }
+    val date = rain.date
+    // Slot i holds the value stamped i:00, which fell from (i - 1):00 to i:00.
+    val counted = rain.counted.associateBy { it.time.hour }
+    val chances = rain.hours.associateBy { it.time.hour }
     BoxWithConstraints(Modifier.fillMaxWidth().clearAndSetSemantics { }) {
         // "40%" when three bars leave room for "100%", else plain numbers.
         val withPercent = maxWidth * 3 / CHART_HOURS >= widestText(listOf("100%"), small) + 4.dp
@@ -316,22 +370,24 @@ private fun RainChart(hours: List<HourForecast>, date: LocalDate) {
                 val bar = slot - gap
                 val floor = size.height - 1.dp.toPx()
                 drawLine(baseColor, Offset(0f, size.height - 0.5.dp.toPx()), Offset(size.width, size.height - 0.5.dp.toPx()), 1.dp.toPx())
-                byHour.forEach { (hour, h) ->
+                counted.forEach { (index, h) ->
                     val mm = h.precipMm ?: 0.0
                     if (mm < Precip.HOUR_AMOUNT_MIN_MM) return@forEach
                     val fraction = (min(mm, BAR_CAP_MM) / BAR_CAP_MM).toFloat()
                     val height = (fraction * floor).coerceAtLeast(3.dp.toPx())
                     drawRoundRect(
                         color = if (mm >= BAR_CAP_MM) capColor else rainColor,
-                        topLeft = Offset(hour * slot + gap / 2, floor - height),
+                        topLeft = Offset(index * slot + gap / 2, floor - height),
                         size = Size(bar, height),
                         cornerRadius = CornerRadius(2.dp.toPx()),
                     )
                 }
             }
             Spacer(Modifier.height(4.dp))
-            TickRow((0 until CHART_HOURS step 3).toList()) { hour ->
-                val chance = byHour[hour]?.precipChance ?: 0
+            // The chance under the bars that end at 1, 4, 7 … 10 PM.
+            val chanceSlots = (1 until CHART_HOURS step 3).toList()
+            TickRow(chanceSlots.map { it + 0.5f }) { i ->
+                val chance = chances[chanceSlots[i]]?.precipChance ?: 0
                 val shown = Precip.showHourChance(chance)
                 Text(
                     if (shown) "$chance${if (withPercent) "%" else ""}" else "·",
@@ -342,27 +398,29 @@ private fun RainChart(hours: List<HourForecast>, date: LocalDate) {
                 )
             }
             Spacer(Modifier.height(2.dp))
-            TickRow(listOf(0, 6, 12, 18)) { hour ->
-                Text(formatHour(date.atTime(hour, 0)), style = small, color = muted, maxLines = 1, softWrap = false)
+            // The times sit on the boundaries between bars: midnight is one bar in.
+            val times = listOf(0, 6, 12, 18)
+            TickRow(times.map { it + 1f }) { i ->
+                Text(formatHour(date.atTime(times[i], 0)), style = small, color = muted, maxLines = 1, softWrap = false)
             }
         }
     }
 }
 
 /**
- * Labels centred under the bars of [hours] (kept inside the row at its ends). When large text leaves no room, a
- * label that would touch the one before it is left out, so they thin out rather than overlap.
+ * Labels centred on [centres] (in bars from the left edge), kept inside the row at its ends. When large text leaves
+ * no room, a label that would touch the one before it is left out, so they thin out rather than overlap.
  */
 @Composable
-private fun TickRow(hours: List<Int>, label: @Composable (Int) -> Unit) {
-    Layout(content = { hours.forEach { label(it) } }, modifier = Modifier.fillMaxWidth()) { measurables, constraints ->
+private fun TickRow(centres: List<Float>, label: @Composable (Int) -> Unit) {
+    Layout(content = { centres.indices.forEach { label(it) } }, modifier = Modifier.fillMaxWidth()) { measurables, constraints ->
         val width = constraints.maxWidth
         val gap = 4.dp.roundToPx()
         val placeables = measurables.map { it.measure(Constraints()) }
         layout(width, placeables.maxOfOrNull { it.height } ?: 0) {
             var free = 0
             placeables.forEachIndexed { i, p ->
-                val center = (hours[i] + 0.5f) * width / CHART_HOURS
+                val center = centres[i] * width / CHART_HOURS
                 val x = (center - p.width / 2f).toInt().coerceIn(0, (width - p.width).coerceAtLeast(0))
                 if (x >= free) {
                     p.place(x, 0)
@@ -376,18 +434,18 @@ private fun TickRow(hours: List<Int>, label: @Composable (Int) -> Unit) {
 /** "Daytime  7 AM–7 PM ……… 90% · 11 mm · 5 h"; the numbers move under the name when large text leaves no room. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PeriodRow(name: String, period: RainPeriod, unit: TempUnit) {
+private fun PeriodRow(period: RainPeriod, unit: TempUnit, snowWord: Boolean) {
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Column(Modifier.padding(end = 12.dp)) {
-            Text(name, style = MaterialTheme.typography.titleSmall)
+            Text(period.name, style = MaterialTheme.typography.titleSmall)
             Text(
-                "${formatHour(period.start)}–${formatHour(period.end)}",
+                "${formatHour(period.labelStart)}–${formatHour(period.labelEnd)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Text(
-            keepUnitsTogether(period.describe(unit)),
+            keepUnitsTogether(period.describe(unit, snowWord)),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.align(Alignment.CenterVertically),
         )

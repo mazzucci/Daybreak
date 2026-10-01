@@ -23,6 +23,7 @@ class WidgetStore(private val store: KeyValueStore) {
                 highC = o.getDouble("high"),
                 lowC = o.getDouble("low"),
                 precipChance = o.getInt("precip"),
+                snow = o.optBoolean("snow", false),
                 code = o.getInt("code"),
                 night = o.getBoolean("night"),
                 summary = o.getString("summary"),
@@ -46,7 +47,7 @@ class WidgetStore(private val store: KeyValueStore) {
             KEY,
             JSONObject()
                 .put("place", s.placeName).put("lat", s.latitude).put("lon", s.longitude).put("unit", s.unit.name)
-                .put("temp", s.tempC).put("high", s.highC).put("low", s.lowC).put("precip", s.precipChance)
+                .put("temp", s.tempC).put("high", s.highC).put("low", s.lowC).put("precip", s.precipChance).put("snow", s.snow)
                 .put("code", s.code).put("night", s.night).put("summary", s.summary)
                 .put("updated", s.updatedAt.toString()).put("written", s.writtenAtMillis)
                 .toString(),

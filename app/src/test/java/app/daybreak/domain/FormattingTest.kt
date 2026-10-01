@@ -97,11 +97,20 @@ class FormattingTest {
         assertEquals("from the southwest", formatWindFromSpoken(230.0))
     }
 
+    @Test fun `under 2 km per hour the wind is calm`() {
+        assertTrue(isCalm(0.0))
+        assertTrue(isCalm(1.9))
+        assertFalse(isCalm(2.0))
+    }
+
     @Test fun `updated lines count from our fetch time`() {
         val at = java.time.Instant.parse("2026-10-01T12:00:00Z")
         assertEquals("Updated just now", formatUpdated(at, at.plusSeconds(30)))
         assertEquals("Updated 8 min ago", formatUpdated(at, at.plusSeconds(8 * 60)))
-        assertEquals("Updated 1 hour ago", formatUpdated(at, at.plusSeconds(61 * 60)))
+        assertEquals("Updated 59 min ago", formatUpdated(at, at.plusSeconds(59 * 60)))
+        assertEquals("Updated over an hour ago", formatUpdated(at, at.plusSeconds(60 * 60)))
+        assertEquals("Updated over an hour ago", formatUpdated(at, at.plusSeconds(119 * 60)))
+        assertEquals("Updated 2 hours ago", formatUpdated(at, at.plusSeconds(120 * 60)))
         assertEquals("Updated 2 hours ago", formatUpdated(at, at.plusSeconds(150 * 60)))
         assertEquals("Updated 3 days ago", formatUpdated(at, at.plusSeconds(3 * 24 * 3600)))
         assertEquals("Updated just now", formatUpdated(at, at.minusSeconds(60))) // a clock that went back

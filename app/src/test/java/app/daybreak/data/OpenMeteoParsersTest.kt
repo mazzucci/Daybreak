@@ -105,7 +105,6 @@ class OpenMeteoParsersTest {
         assertEquals(27.6, snowy.precipSumMm!!, 0.001)
         assertEquals(19.32, snowy.snowSumCm!!, 0.001)
         assertEquals(21.0, snowy.precipHours!!, 0.001)
-        assertEquals(44, snowy.precipChanceMean)
         assertEquals(4.0, snowy.windDirectionDeg!!, 0.001)
         val wet = f.hours.first { it.time == LocalDateTime.of(2026, 10, 2, 1, 0) }
         assertEquals(6.3, wet.precipMm!!, 0.001)
@@ -114,7 +113,15 @@ class OpenMeteoParsersTest {
         assertEquals(333.0, wet.windDirectionDeg!!, 0.001)
     }
 
-    @Test fun `older responses without the detail fields still parse`() {
+    @Test fun `the wind's direction now comes with its speed now`() {
+        val json = fixture("forecast_alps_10day.json").replace("\"wind_speed_10m\":3.1,", "\"wind_speed_10m\":3.1,\"wind_direction_10m\":225,")
+        val f = parseForecast(json)
+        assertEquals(3.1, f.current.windKmh, 0.001)
+        assertEquals(225.0, f.current.windDirectionDeg!!, 0.001)
+        assertNull(parseForecast(fixture("forecast_alps_10day.json")).current.windDirectionDeg)
+    }
+
+    @Test fun `responses without the detail fields still parse`() {
         val f = parseForecast(fixture("forecast_sf.json"))
         assertNull(f.today.sunrise)
         assertNull(f.today.uvIndexMax)
@@ -129,17 +136,18 @@ class OpenMeteoParsersTest {
     @Test fun `null detail values become null, not zero`() {
         val json = """
             {"current":{"time":"2026-06-21T12:00","temperature_2m":1,"apparent_temperature":0,
-              "relative_humidity_2m":90,"wind_speed_10m":3,"weather_code":3,"is_day":null},
+              "relative_humidity_2m":90,"wind_speed_10m":3,"weather_code":3,"is_day":null,"wind_direction_10m":null},
              "hourly":{"time":["2026-06-21T12:00"],"temperature_2m":[1],"precipitation_probability":[0],"weather_code":[3],
               "wind_speed_10m":[null],"wind_gusts_10m":[null],"is_day":[null],"apparent_temperature":[null],
               "precipitation":[null],"snowfall":[null],"wind_direction_10m":[null]},
              "daily":{"time":["2026-06-21"],"temperature_2m_max":[2],"temperature_2m_min":[-1],
               "precipitation_probability_max":[0],"weather_code":[3],"sunrise":[null],"sunset":["not a time"],
               "wind_speed_10m_max":[null],"wind_gusts_10m_max":[null],"precipitation_sum":[null],"uv_index_max":[null],
-              "precipitation_hours":[null],"snowfall_sum":[null],"precipitation_probability_mean":[null],"wind_direction_10m_dominant":[null]}}
+              "precipitation_hours":[null],"snowfall_sum":[null],"wind_direction_10m_dominant":[null]}}
         """.trimIndent()
         val f = parseForecast(json)
         assertNull(f.current.isDay)
+        assertNull(f.current.windDirectionDeg)
         with(f.today) {
             assertNull(sunrise)
             assertNull(sunset)
@@ -149,7 +157,6 @@ class OpenMeteoParsersTest {
             assertNull(uvIndexMax)
             assertNull(precipHours)
             assertNull(snowSumCm)
-            assertNull(precipChanceMean)
             assertNull(windDirectionDeg)
         }
         with(f.nextHours.single()) {

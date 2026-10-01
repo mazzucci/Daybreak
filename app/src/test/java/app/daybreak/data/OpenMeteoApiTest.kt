@@ -21,8 +21,12 @@ class OpenMeteoApiTest {
         listOf(
             "sunrise", "sunset", "wind_gusts_10m_max", "uv_index_max", "precipitation_sum", "wind_gusts_10m", "is_day",
             "apparent_temperature", "precipitation", "snowfall", "wind_direction_10m", "precipitation_hours",
-            "snowfall_sum", "precipitation_probability_mean", "wind_direction_10m_dominant",
+            "snowfall_sum", "wind_direction_10m_dominant",
         ).forEach { assertTrue("missing $it", Regex("[=,]$it(,|&)").containsMatchIn(url)) }
+        // The wind's direction now, to go with its speed now.
+        assertTrue(Regex("current=[^&]*wind_direction_10m").containsMatchIn(url))
+        // Nothing reads the mean chance, so it isn't asked for.
+        assertTrue("precipitation_probability_mean" !in url)
         assertEquals(12, f.nextHours.size)
     }
 

@@ -246,7 +246,13 @@ private fun details(s: WidgetSnapshot) =
 private fun shortDetails(s: WidgetSnapshot) =
     "↑${formatDegrees(s.highC, s.unit)} ↓${formatDegrees(s.lowC, s.unit)}" + rainSuffix(s)
 
-private fun rainSuffix(s: WidgetSnapshot) = if (Precip.showDayChance(s.precipChance)) " · Rain ${s.precipChance}%" else ""
+/**
+ * " · Rain 60%" or " · Snow 70%": the day's chance once it's 20% or more (the snapshot has 0 for a day [Precip.classify]
+ * calls dry). A day that's only a small chance with a real amount says nothing here: amounts aren't for a glance.
+ */
+private fun rainSuffix(s: WidgetSnapshot) = if (Precip.showDayChance(s.precipChance)) " · ${noun(s)} ${s.precipChance}%" else ""
+
+private fun noun(s: WidgetSnapshot) = if (s.snow) "Snow" else "Rain"
 
 /** One description for the whole widget, so a screen reader reads it as a single item rather than five fragments. */
 private fun GlanceModifier.describe(s: WidgetSnapshot): GlanceModifier = semantics {
@@ -255,7 +261,7 @@ private fun GlanceModifier.describe(s: WidgetSnapshot): GlanceModifier = semanti
         append(formatBothUnits(s.tempC, s.unit)).append(", ")
         append(describeWeatherCode(s.code)).append(". ")
         append("High ${formatDegrees(s.highC, s.unit)}, low ${formatDegrees(s.lowC, s.unit)}")
-        if (Precip.showDayChance(s.precipChance)) append(", ${s.precipChance}% chance of rain")
+        if (Precip.showDayChance(s.precipChance)) append(", ${s.precipChance}% chance of ${noun(s).lowercase()}")
         append(". ")
         append(s.summary)
     }

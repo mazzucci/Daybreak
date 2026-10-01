@@ -20,14 +20,15 @@ object TestData {
     val tokyo = Place("geo:1850147", "Tokyo", "Tokyo", "Japan", 35.6895, 139.6917, countryCode = "JP")
 
     /**
-     * 21.4°C (71°F) partly cloudy now; high 23.6 (74°F), low 13.2 (56°F); rain possible from 6 PM (60%, then 40%),
-     * about 6.5 mm today. From 6 PM the breeze makes it feel 2.5°C colder, enough to show in °F.
+     * 21.4°C (71°F) partly cloudy now; high 23.6 (74°F), low 13.2 (56°F); rain possible from 5 PM (60% stamped 6 PM,
+     * then 40%), 4.1 mm of it still to come, about 6.5 mm today. From 6 PM the breeze makes it feel 2.5°C colder,
+     * enough to show in °F. Wind from the SW.
      */
     fun forecast(
         tempC: Double = 21.4,
         rainAt: Int? = 4,
     ): Forecast = Forecast(
-        current = CurrentConditions(now, tempC, feelsLikeC = 20.1, humidity = 58, windKmh = 14.2, code = 2),
+        current = CurrentConditions(now, tempC, feelsLikeC = 20.1, humidity = 58, windKmh = 14.2, code = 2, windDirectionDeg = 235.0),
         days = week(now, DaySummary(now.toLocalDate(), 23.6, 13.2, precipChance = if (rainAt != null) 60 else 5, code = 61, uvIndexMax = 6.2)),
         hours = (0 until 12).map { i ->
             HourForecast(
@@ -53,7 +54,7 @@ object TestData {
     fun rainyNight(): Forecast {
         val at = LocalDateTime.of(2026, 9, 28, 22, 30)
         return Forecast(
-            current = CurrentConditions(at, tempC = 9.8, feelsLikeC = 7.4, humidity = 91, windKmh = 27.0, code = 63),
+            current = CurrentConditions(at, tempC = 9.8, feelsLikeC = 7.4, humidity = 91, windKmh = 27.0, code = 63, windDirectionDeg = 200.0),
             days = week(at, DaySummary(at.toLocalDate(), 14.1, 8.3, precipChance = 90, code = 63, uvIndexMax = 1.4)),
             hours = (0 until 12).map { i ->
                 HourForecast(

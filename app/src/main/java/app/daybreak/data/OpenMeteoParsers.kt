@@ -10,7 +10,6 @@ import org.json.JSONObject
 import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalDateTime
-import kotlin.math.roundToInt
 
 /**
  * Parses an Open-Meteo /v1/forecast response requested with `timezone=auto` and the
@@ -18,7 +17,7 @@ import kotlin.math.roundToInt
  * All returned days and hours are kept; [Forecast] derives today and the next-hours window.
  * The core fields are required; the detail fields (wind and its direction, gusts, sun times, UV, is_day, feels-like,
  * precipitation amounts, hours and snow) are optional, and a missing array or a null value becomes null rather than
- * failing the whole forecast, so a response cached by an older version still renders.
+ * failing the whole forecast: some weather models leave some of them out for some places or hours.
  */
 fun parseForecast(json: String): Forecast {
     val root = JSONObject(json)
@@ -32,6 +31,7 @@ fun parseForecast(json: String): Forecast {
         windKmh = cur.getDouble("wind_speed_10m"),
         code = cur.getInt("weather_code"),
         isDay = cur.optBooleanFlag("is_day"),
+        windDirectionDeg = cur.optDoubleOrNull("wind_direction_10m"),
     )
 
     val hourly = root.getJSONObject("hourly")
@@ -77,7 +77,6 @@ fun parseForecast(json: String): Forecast {
     val uvMax = daily.optJSONArray("uv_index_max")
     val precipHours = daily.optJSONArray("precipitation_hours")
     val snowSum = daily.optJSONArray("snowfall_sum")
-    val precipMean = daily.optJSONArray("precipitation_probability_mean")
     val windDir = daily.optJSONArray("wind_direction_10m_dominant")
     val days = (0 until dayDates.length()).map { i ->
         DaySummary(
@@ -94,7 +93,6 @@ fun parseForecast(json: String): Forecast {
             uvIndexMax = uvMax.doubleOrNull(i),
             precipHours = precipHours.doubleOrNull(i),
             snowSumCm = snowSum.doubleOrNull(i),
-            precipChanceMean = precipMean.doubleOrNull(i)?.roundToInt(),
             windDirectionDeg = windDir.doubleOrNull(i),
         )
     }
@@ -141,6 +139,9 @@ private fun JSONObject.optBooleanFlag(key: String): Boolean? = when (val v = opt
     is Number -> v.toInt() != 0
     else -> null
 }
+
+private fun JSONObject.optDoubleOrNull(key: String): Double? =
+    if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
 
 private fun JSONObject.optStringOrNull(key: String): String? =
     if (has(key) && !isNull(key)) getString(key).ifBlank { null } else null

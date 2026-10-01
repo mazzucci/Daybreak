@@ -61,7 +61,6 @@ import app.daybreak.domain.Explanation
 import app.daybreak.narration.TemplateNarrator
 import org.junit.Rule
 import org.junit.Test
-import java.util.Locale
 
 /**
  * Renders the app's screens with sample data. Regenerate the README images with:
@@ -72,9 +71,9 @@ class ScreenshotTest {
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, showSystemUi = false)
 
     private val forecast = TestData.forecast()
-    private val templateSummary = TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F))
+    private val templateSummary = TemplateNarrator().describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F))
     private val rainyNight = TestData.rainyNight()
-    private val rainyNightSummary = TemplateNarrator(Locale.US).describe(NarrationInput(london.name, rainyNight, TempUnit.C))
+    private val rainyNightSummary = TemplateNarrator().describe(NarrationInput(london.name, rainyNight, TempUnit.C))
 
     /**
      * The 2026 US calendar from the fixtures plus a made-up holiday two days out, so the card shows all three
@@ -309,9 +308,9 @@ class ScreenshotTest {
      * list with each day's total (snow days in cm of snow), the last three days lighter under "less certain".
      */
     @Test fun weatherAmounts() = snap("weather_amounts", tall = true) {
-        val afternoon = alps.copy(current = alps.current.copy(time = java.time.LocalDateTime.of(2026, 10, 1, 15, 15), isDay = true))
+        val afternoon = alps.copy(current = alps.current.copy(time = java.time.LocalDateTime.of(2026, 10, 1, 15, 15), isDay = true, windDirectionDeg = 178.0))
         val place = Place("geo:2659811", "Jungfraujoch", "Bern", "Switzerland", 46.55, 7.98)
-        val summary = TemplateNarrator(Locale.US).describe(NarrationInput(place.name, afternoon, TempUnit.C))
+        val summary = TemplateNarrator().describe(NarrationInput(place.name, afternoon, TempUnit.C))
         Weather(
             weatherState(PageContent.Loaded(afternoon, summary, fetchedAt = fetched), place = place, key = place.id, settings = AppSettings(primaryUnit = TempUnit.C, activity = null)),
         )
@@ -392,6 +391,19 @@ class ScreenshotTest {
         )
     }
 
+    /** A refresh that failed keeps the forecast and says so, in amber; under 2 km/h the wind is calm, with no arrow. */
+    @Test fun weatherRefreshFailed() = snap("weather_refresh_failed") {
+        val calm = rainyNight.copy(current = rainyNight.current.copy(windKmh = 1.2))
+        Weather(
+            now = fetched.plusSeconds(2 * 3600),
+            state = weatherState(
+                PageContent.Loaded(calm, rainyNightSummary, fetchedAt = fetched, refreshFailed = true),
+                place = london, key = london.id,
+                settings = AppSettings(primaryUnit = TempUnit.C),
+            )
+        )
+    }
+
     /** Fetched two hours ago: the "updated" line turns amber and suggests pulling to refresh. */
     @Test fun weatherRainyNightDark() = snap("weather_rainy_night_dark", night = true) {
         Weather(
@@ -434,6 +446,18 @@ class ScreenshotTest {
     @Test fun dayLargeFont() = snap("day_large_font", tall = true, narrow = true, fontScale = 1.5f) {
         Day(java.time.LocalDate.of(2026, 10, 9), TempUnit.F)
     }
+
+    /** A real amount at a low chance: "A small chance of rain · up to 2 mm", and the one row it falls in. */
+    @Test fun daySmallChance() = snap("day_small_chance", tall = true) { Day(java.time.LocalDate.of(2026, 10, 4), TempUnit.C) }
+
+    /** Polar night: the rows read Early, Midday (7 AM to 7 PM) and Evening, and the Daylight tile replaces sun times. */
+    @Test fun dayPolar() = snap("day_polar", tall = true) {
+        val polar = alps.copy(days = alps.days.map { it.copy(sunrise = it.date.atStartOfDay(), sunset = it.date.atStartOfDay()) })
+        Day(java.time.LocalDate.of(2026, 10, 1), TempUnit.C, polar)
+    }
+
+    /** Back on a day page after the app was stopped, while its forecast is fetched again. */
+    @Test fun dayLoading() = snap("day_loading") { DayLoading(onBack = {}) }
 
     @Test fun loading() = snap("loading") {
         Weather(weatherState(PageContent.Loading))
@@ -531,7 +555,7 @@ class ScreenshotTest {
         ClockFormat.use24Hour = true
         try {
             snap("weather_24_hour", tall = true) {
-                val summary = TemplateNarrator(Locale.US).describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F))
+                val summary = TemplateNarrator().describe(NarrationInput(sanFrancisco.name, forecast, TempUnit.F))
                 Weather(
                     weatherState(
                         PageContent.Loaded(forecast, summary, comingUp = sanFranciscoComingUp),

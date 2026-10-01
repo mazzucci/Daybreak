@@ -154,18 +154,27 @@ fun formatWindFrom(degrees: Double): String = "from the ${compassPoint(degrees)}
 /** "from the southwest", for screen readers. */
 fun formatWindFromSpoken(degrees: Double): String = "from the ${COMPASS_LONG[compassIndex(degrees)]}"
 
+/** Below this the wind is calm (Beaufort 0): it has no direction worth giving. */
+const val CALM_KMH = 2.0
+
+fun isCalm(kmh: Double): Boolean = kmh < CALM_KMH
+
 private fun compassIndex(degrees: Double): Int = (((degrees % 360 + 360) % 360 + 22.5) / 45).toInt() % 8
 
 /** Past this, a page's forecast counts as stale: the "updated" line turns amber and suggests a refresh. */
 val STALE_AFTER: java.time.Duration = java.time.Duration.ofMinutes(90)
 
-/** "Updated just now", "Updated 8 min ago", "Updated 2 hours ago", "Updated 3 days ago". */
+/**
+ * "Updated just now", "Updated 8 min ago", "Updated over an hour ago" (60 to 119 minutes, rather than a "1 hour"
+ * that's really nearly two), "Updated 2 hours ago", "Updated 3 days ago".
+ */
 fun formatUpdated(fetchedAt: java.time.Instant, now: java.time.Instant): String {
     val minutes = java.time.Duration.between(fetchedAt, now).toMinutes().coerceAtLeast(0)
     val ago = when {
         minutes < 1 -> return "Updated just now"
         minutes < 60 -> "$minutes min"
-        minutes < 48 * 60 -> (minutes / 60).let { if (it == 1L) "1 hour" else "$it hours" }
+        minutes < 120 -> "over an hour"
+        minutes < 48 * 60 -> "${minutes / 60} hours"
         else -> "${minutes / (24 * 60)} days"
     }
     return "Updated $ago ago"

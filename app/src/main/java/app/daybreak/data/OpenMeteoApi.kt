@@ -29,11 +29,12 @@ class OpenMeteoApi(private val http: HttpClient) : WeatherApi {
     companion object {
         fun forecastUrl(latitude: Double, longitude: Double): String =
             "https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude" +
-                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day" +
+                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m," +
+                "weather_code,is_day" +
                 "&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,snowfall," +
                 "weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day" +
                 "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max," +
-                "precipitation_probability_mean,weather_code,sunrise,sunset,wind_speed_10m_max,wind_gusts_10m_max," +
+                "weather_code,sunrise,sunset,wind_speed_10m_max,wind_gusts_10m_max," +
                 "wind_direction_10m_dominant,precipitation_sum,precipitation_hours,snowfall_sum,uv_index_max" +
                 "&timezone=auto&forecast_days=$FORECAST_DAYS"
 

@@ -66,9 +66,10 @@ private const val UMBRELLA_GUST_KMH = 40.0
 
 /**
  * Explains [term] with this forecast's values, in the primary [unit]. Hand-written and built from the data (no
- * model involved), so every number matches the page. [date] picks the day for [Term.RAIN_DAY] (today if null).
+ * model involved), so every number matches the page; numbers are written the US way, as everywhere in the app's
+ * English copy. [date] picks the day for [Term.RAIN_DAY] (today if null).
  */
-fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Locale.US, date: LocalDate? = null): Explanation {
+fun explain(term: Term, forecast: Forecast, unit: TempUnit, date: LocalDate? = null): Explanation {
     val cur = forecast.current
     val today = forecast.today
     return when (term) {
@@ -204,62 +205,78 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, locale: Locale = Loc
             }
         }
         Term.RAIN_CHANCE -> {
-            val p = today.precipChance
             val rain = Precip.dayRain(forecast, today.date)
-            // "About 4 mm over 3 hours, mostly this evening." when the total is worth a number.
-            val amount = Precip.dayAmount(today, unit, locale)?.let {
-                val total = if (Precip.isSnowDay(today)) Precip.proseSnow(today.snowSumCm!!, unit, locale) else Precip.proseRain(today.precipSumMm!!, unit, locale)
-                val hours = today.precipHours?.roundToInt()?.takeIf { h -> h > 0 }?.let { h -> " over ${plural(h.toLong(), "hour")}" } ?: ""
-                val timing = rain.timing?.let { t -> ", ${Precip.timingToday(t)}" } ?: ""
-                "About $total$hours$timing. "
-            } ?: ""
+            val p = rain.chance
             Explanation(
-                title = "Chance of rain",
+                title = if (rain.showsSnow) "Chance of snow" else "Chance of rain",
                 value = "$p%",
                 detail = "Highest hourly chance today",
-                now = amount + umbrella(p, today.gustMaxKmh),
+                now = todaysAmount(rain, cur.time, unit) + umbrella(p, today.gustMaxKmh),
                 meaning = "The chance that at least a little rain (or snow) falls at this place in a given hour. We show today's highest hour, so the chance of some rain at some point today can be higher. It says nothing about how long it rains or how heavy it is.",
                 gauge = Gauge.Scale(p / 100f, "0%", "100%", Gauge.Scale.Kind.MOISTURE),
             )
         }
         Term.RAIN_DAY -> {
             val day = date?.let { forecast.day(it) } ?: today
-            val snow = Precip.isSnowDay(day)
-            val name = formatDayName(day.date, today.date, locale).let { if (it == "Today") "today" else it }
-            val sumMm = day.precipSumMm ?: 0.0
             val rain = Precip.dayRain(forecast, day.date)
-            val hours = day.precipHours?.roundToInt() ?: 0
+            val snow = rain.showsSnow
+            val name = formatDayName(day.date, today.date, Locale.US).let { if (it == "Today") "today" else it }
+            val hours = rain.wetHours
             val what = if (snow) "snow" else "rain"
-            val timing = rain.timing?.let { Precip.timingSentence(it, locale) }
+            val timing = rain.timing?.takeIf { rain.amountShown }?.let(Precip::timingSentence)
             val spell = when {
                 hours > 0 && timing != null -> "About ${plural(hours.toLong(), "hour")} of $what. $timing"
                 hours > 0 -> "About ${plural(hours.toLong(), "hour")} of $what."
                 timing != null -> timing
                 else -> "No $what expected."
             }
+            // Snow is measured as depth, so its gauge is too: 20 cm (8 inches) is deep, as 20 mm of rain is a wet day.
+            val top = when {
+                snow && unit == TempUnit.C -> 20.0
+                snow -> 8 * 2.54
+                unit == TempUnit.C -> WET_DAY_SCALE_MM
+                else -> 0.8 * 25.4
+            }
+            val amount = if (snow) rain.snowCm else rain.totalMm
             Explanation(
                 title = if (snow) "Snow" else "Rain",
-                value = if (snow) Precip.formatSnow(day.snowSumCm!!, unit, locale) else Precip.formatRain(sumMm, unit, locale),
+                value = if (snow) Precip.formatSnow(rain.snowCm, unit, rain.rough) else Precip.formatRain(rain.totalMm, unit, rain.rough),
                 detail = if (snow) "Expected snowfall for $name" else "Expected total for $name",
-                now = "$spell ${umbrella(day.precipChance, day.gustMaxKmh)}",
+                now = "$spell ${umbrella(rain.chance, day.gustMaxKmh)}",
                 meaning = if (snow) {
                     "The fresh snow the forecast expects over the day, as depth before it settles. 1 cm dusts the ground; 5 cm covers it; 20 cm is deep. Hours count any hour with at least 0.1 mm of rain or melted snow."
                 } else {
                     "The total rain (and melted snow) the forecast expects to fall over the day. 1 mm is a few drops on the pavement; 5 mm wets everything; 20 mm is a wet day. Hours count any hour with at least 0.1 mm."
                 },
                 gauge = Gauge.Scale(
-                    (sumMm / WET_DAY_SCALE_MM).toFloat().coerceIn(0f, 1f),
-                    if (unit == TempUnit.C) "0 mm" else "0 in",
-                    Precip.formatRain(WET_DAY_SCALE_MM, unit, locale),
+                    (amount / top).toFloat().coerceIn(0f, 1f),
+                    when {
+                        unit == TempUnit.F -> "0 in"
+                        snow -> "0 cm"
+                        else -> "0 mm"
+                    },
+                    if (snow) Precip.formatSnow(top, unit) else Precip.formatRain(top, unit),
                     Gauge.Scale.Kind.MOISTURE,
                 ),
                 spoken = listOfNotNull(
-                    if (snow) Precip.spokenSnow(day.snowSumCm!!, unit, locale) else Precip.spokenRain(sumMm, unit, locale),
+                    if (snow) Precip.spokenSnow(rain.snowCm, unit, rain.rough) else Precip.spokenRain(rain.totalMm, unit, rain.rough),
                     if (snow) "expected snowfall for $name" else "expected in total for $name",
                 ).joinToString(", "),
             )
         }
     }
+}
+
+/**
+ * Today's amount for the rain explanation, with whether it's still to come: "Still to come today: about 4 mm over 3
+ * hours, mostly this evening. ", or "Today in all: about 4 mm over 3 hours, mostly before sunrise. " once none of
+ * it is left. Nothing when the day isn't worth an amount.
+ */
+private fun todaysAmount(rain: DayRain, now: LocalDateTime, unit: TempUnit): String {
+    if (!rain.amountShown) return ""
+    val rest = rain.stillToCome(now)
+    return if (rest.mm >= Precip.HOUR_AMOUNT_MIN_MM) "Still to come today: ${Precip.spanPhrase(rest, rain, unit)}. "
+    else "Today in all: ${Precip.spanPhrase(rain.whole, rain, unit)}. "
 }
 
 /** What to take, by the chance (with the same words as everywhere else) and how gusty it gets. */

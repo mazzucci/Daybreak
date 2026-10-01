@@ -14,7 +14,10 @@ data class WidgetSnapshot(
     val tempC: Double,
     val highC: Double,
     val lowC: Double,
+    /** Today's highest hourly chance; 0 when [Precip.classify] calls the day dry. */
     val precipChance: Int,
+    /** Whether today's rain is mostly snow, so the widget says "Snow 70%". */
+    val snow: Boolean = false,
     val code: Int,
     val night: Boolean,
     val summary: String,
@@ -30,32 +33,39 @@ fun widgetSnapshotOf(
     unit: TempUnit,
     summary: String,
     nowMillis: Long,
-) = WidgetSnapshot(
-    placeName = place.name,
-    latitude = place.latitude,
-    longitude = place.longitude,
-    unit = unit,
-    tempC = forecast.current.tempC,
-    highC = forecast.today.highC,
-    lowC = forecast.today.lowC,
-    precipChance = forecast.today.precipChance,
-    code = forecast.current.code,
-    night = forecast.isNightNow,
-    summary = summary,
-    updatedAt = forecast.current.time,
-    writtenAtMillis = nowMillis,
-)
-
-/** A background refresh: new numbers and [summary] from [forecast], for the same place. */
-fun refreshedSnapshot(old: WidgetSnapshot, forecast: Forecast, summary: String, nowMillis: Long): WidgetSnapshot =
-    old.copy(
+): WidgetSnapshot {
+    val rain = Precip.dayRain(forecast, forecast.today.date)
+    return WidgetSnapshot(
+        placeName = place.name,
+        latitude = place.latitude,
+        longitude = place.longitude,
+        unit = unit,
         tempC = forecast.current.tempC,
         highC = forecast.today.highC,
         lowC = forecast.today.lowC,
-        precipChance = forecast.today.precipChance,
+        precipChance = if (rain.dry) 0 else rain.chance,
+        snow = rain.showsSnow,
         code = forecast.current.code,
         night = forecast.isNightNow,
         summary = summary,
         updatedAt = forecast.current.time,
         writtenAtMillis = nowMillis,
     )
+}
+
+/** A background refresh: new numbers and [summary] from [forecast], for the same place. */
+fun refreshedSnapshot(old: WidgetSnapshot, forecast: Forecast, summary: String, nowMillis: Long): WidgetSnapshot {
+    val rain = Precip.dayRain(forecast, forecast.today.date)
+    return old.copy(
+        tempC = forecast.current.tempC,
+        highC = forecast.today.highC,
+        lowC = forecast.today.lowC,
+        precipChance = if (rain.dry) 0 else rain.chance,
+        snow = rain.showsSnow,
+        code = forecast.current.code,
+        night = forecast.isNightNow,
+        summary = summary,
+        updatedAt = forecast.current.time,
+        writtenAtMillis = nowMillis,
+    )
+}

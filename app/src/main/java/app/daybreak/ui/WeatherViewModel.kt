@@ -33,6 +33,7 @@ import app.daybreak.narration.TemplateNarrator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,11 +49,51 @@ import java.util.Locale
 import kotlin.coroutines.coroutineContext
 
 /** What the widget should do after a UI change. */
-private sealed interface WidgetUpdate {
+internal sealed interface WidgetUpdate {
     data object Clear : WidgetUpdate
     data object Keep : WidgetUpdate
     data class Show(val snapshot: WidgetSnapshot) : WidgetUpdate
 }
+
+/** What the widget is drawn from: the first page with a forecast, as its page shows it. */
+private sealed interface WidgetSource {
+    data object Clear : WidgetSource
+    data object Keep : WidgetSource
+    /** [pageSummary] is there to notice a rewritten summary (the unit or the 12/24-hour clock changed). */
+    data class Show(val place: Place, val forecast: Forecast, val unit: TempUnit, val pageSummary: String) : WidgetSource
+}
+
+/**
+ * The widget mirrors the first page that has a forecast. With no pages at all it's cleared; while pages are loading or
+ * failed it keeps what it had. Only a change to what it shows gets as far as [summary] (the template, which isn't
+ * free), not the many unrelated UI changes (a search, a refresh starting, a meme).
+ */
+internal fun widgetUpdates(states: Flow<WeatherUiState>, summary: (NarrationInput) -> String): Flow<WidgetUpdate> =
+    states
+        .map { s ->
+            // From the settings, not the page list: the very first UI state has no pages yet either.
+            if (s.savedPlaces.isEmpty() && !s.settings.useCurrentLocation) return@map WidgetSource.Clear
+            s.pages.firstNotNullOfOrNull { page ->
+                val loaded = page.content as? PageContent.Loaded ?: return@firstNotNullOfOrNull null
+                val place = page.place ?: return@firstNotNullOfOrNull null
+                WidgetSource.Show(place, loaded.forecast, s.settings.primaryUnit, loaded.summary)
+            } ?: WidgetSource.Keep
+        }
+        .distinctUntilChanged()
+        .map { source ->
+            when (source) {
+                WidgetSource.Clear -> WidgetUpdate.Clear
+                WidgetSource.Keep -> WidgetUpdate.Keep
+                // The page's summary without the amount still to come, which the widget has no room for.
+                is WidgetSource.Show -> WidgetUpdate.Show(
+                    widgetSnapshotOf(
+                        source.place, source.forecast, source.unit,
+                        summary(NarrationInput(source.place.name, source.forecast, source.unit)), nowMillis = 0,
+                    ),
+                )
+            }
+        }
+        .distinctUntilChanged()
 
 sealed interface PageContent {
     data object Loading : PageContent
@@ -73,6 +114,8 @@ sealed interface PageContent {
          * current.time (that's the model's time step). Null where it isn't known (previews).
          */
         val fetchedAt: Instant? = null,
+        /** The last refresh failed, so [forecast] is the one from [fetchedAt]: the "updated" line says so. */
+        val refreshFailed: Boolean = false,
     ) : PageContent
 }
 
@@ -95,6 +138,11 @@ data class WeatherUiState(
     val settings: AppSettings = AppSettings(),
     val search: SearchUi = SearchUi(),
     val modelStatus: ModelStatus = ModelStatus.NotInstalled,
+    /**
+     * False only for the placeholder before the ViewModel's first state, when [pages] is empty because nothing has been
+     * read yet rather than because there are no places (so an open day page waits instead of closing).
+     */
+    val ready: Boolean = false,
 )
 
 class WeatherViewModel(
@@ -135,36 +183,19 @@ class WeatherViewModel(
             }
             saved.forEach { add(PageUi(it.id, it, contents[it.id] ?: PageContent.Loading, it.id in fetching)) }
         }
-        WeatherUiState(pages, saved, settings, search, modelStatus)
+        WeatherUiState(pages, saved, settings, search, modelStatus, ready = true)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, WeatherUiState())
 
     init {
         if (widget != null) {
-            // The widget mirrors the first page that has a forecast. With no pages at all it's cleared; while pages
-            // are loading or failed it keeps what it had.
             viewModelScope.launch {
-                uiState
-                    .map { s ->
-                        // From the settings, not the page list: the very first UI state has no pages yet either.
-                        if (s.savedPlaces.isEmpty() && !s.settings.useCurrentLocation) return@map WidgetUpdate.Clear
-                        s.pages.firstNotNullOfOrNull { page ->
-                            val loaded = page.content as? PageContent.Loaded ?: return@firstNotNullOfOrNull null
-                            val place = page.place ?: return@firstNotNullOfOrNull null
-                            // The page's summary without the rain total, which the widget has no room for.
-                            val summary = template.describe(NarrationInput(place.name, loaded.forecast, s.settings.primaryUnit), withTotal = false)
-                            WidgetUpdate.Show(
-                                widgetSnapshotOf(place, loaded.forecast, s.settings.primaryUnit, summary, nowMillis = 0),
-                            )
-                        } ?: WidgetUpdate.Keep
+                widgetUpdates(uiState) { template.describe(it, withTotal = false) }.collect { update ->
+                    when (update) {
+                        WidgetUpdate.Clear -> widget.clear()
+                        WidgetUpdate.Keep -> Unit
+                        is WidgetUpdate.Show -> widget.publish(update.snapshot.copy(writtenAtMillis = clock()))
                     }
-                    .distinctUntilChanged()
-                    .collect { update ->
-                        when (update) {
-                            WidgetUpdate.Clear -> widget.clear()
-                            WidgetUpdate.Keep -> Unit
-                            is WidgetUpdate.Show -> widget.publish(update.snapshot.copy(writtenAtMillis = clock()))
-                        }
-                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -212,7 +243,7 @@ class WeatherViewModel(
             showLoadingIfEmpty(CURRENT)
             val place = location.currentPlace()
             if (place == null) {
-                setContent(CURRENT, PageContent.Failed("Couldn't get your location. Is location turned on?"))
+                showFailure(CURRENT, "Couldn't get your location. Is location turned on?")
             } else {
                 currentPlace.value = place
                 fetchAndShow(CURRENT, place)
@@ -231,7 +262,7 @@ class WeatherViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            setContent(key, PageContent.Failed(e.message ?: "Couldn't load the weather"))
+            showFailure(key, e.message ?: "Couldn't load the weather")
             return
         } finally {
             // The (possibly slow) Gemma meme below isn't part of "refreshing". A cancelled fetch mustn't clear the
@@ -322,7 +353,7 @@ class WeatherViewModel(
         }
 
     /**
-     * Rewrites the summary of every loaded page from its cached forecast, without touching the network. Used when
+     * Rewrites the summary of every loaded page from the forecast it already has, without touching the network. Used when
      * something the template's wording depends on changes (the unit, the phone's 12- or 24-hour clock).
      */
     private fun renarrateAll() {
@@ -370,6 +401,15 @@ class WeatherViewModel(
                 fetching.update { it - key }
             }
         }
+    }
+
+    /**
+     * A failed fetch: a page that already shows a forecast keeps it and says the refresh failed (in its "updated"
+     * line); only a page with nothing to show gets the error card.
+     */
+    private fun showFailure(key: String, message: String) = contents.update { map ->
+        val loaded = map[key] as? PageContent.Loaded
+        map + (key to (loaded?.copy(refreshFailed = true) ?: PageContent.Failed(message)))
     }
 
     private fun showLoadingIfEmpty(key: String) {
@@ -451,7 +491,7 @@ class WeatherViewModel(
     /** The phone switched between 12- and 24-hour time: summaries mention times, so rewrite them. */
     fun onClockFormatChanged() = renarrateAll()
 
-    /** Only changes the activity card, which is computed from the cached forecast: nothing to refetch or re-narrate. */
+    /** Only changes the activity card, which is computed from the forecast the page already has: nothing to refetch or re-narrate. */
     fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
 
     /**
@@ -477,7 +517,7 @@ class WeatherViewModel(
         }
     }
 
-    /** Tonight's sky is computed from the clock and the cached forecast: nothing to fetch. */
+    /** Tonight's sky is computed from the clock and the forecast the page already has: nothing to fetch. */
     fun setSkyEnabled(enabled: Boolean) = settingsRepo.update { it.copy(skyEnabled = enabled) }
 
     fun setMemesEnabled(enabled: Boolean) {

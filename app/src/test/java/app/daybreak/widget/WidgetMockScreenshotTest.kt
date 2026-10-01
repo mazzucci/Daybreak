@@ -29,6 +29,7 @@ import app.cash.paparazzi.Paparazzi
 import app.daybreak.TestData
 import app.daybreak.domain.Forecast
 import app.daybreak.domain.Place
+import app.daybreak.domain.Precip
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.WidgetSnapshot
 import app.daybreak.domain.formatDegrees
@@ -37,7 +38,6 @@ import app.daybreak.domain.other
 import app.daybreak.domain.widgetSnapshotOf
 import app.daybreak.narration.NarrationInput
 import app.daybreak.narration.TemplateNarrator
-import java.util.Locale
 import app.daybreak.ui.WeatherIcon
 import app.daybreak.ui.heroGradient
 import app.daybreak.ui.monoPalette
@@ -59,7 +59,7 @@ class WidgetMockScreenshotTest {
     private val night = snapshot(TestData.london, TestData.rainyNight(), TempUnit.C)
 
     private fun snapshot(place: Place, forecast: Forecast, unit: TempUnit) = widgetSnapshotOf(
-        place, forecast, unit, TemplateNarrator(Locale.US).describe(NarrationInput(place.name, forecast, unit), withTotal = false), nowMillis = 0,
+        place, forecast, unit, TemplateNarrator().describe(NarrationInput(place.name, forecast, unit), withTotal = false), nowMillis = 0,
     )
 
     /** Realistic launcher sizes (a Pixel's 4×2 is about 300 × 180 dp) and the grid minimums the breakpoints are keyed to. */
@@ -174,10 +174,13 @@ private fun CompactMock(s: WidgetSnapshot, modifier: Modifier) {
 }
 
 private fun details(s: WidgetSnapshot) =
-    "High ${formatDegrees(s.highC, s.unit)} · Low ${formatDegrees(s.lowC, s.unit)} · Rain ${s.precipChance}%"
+    "High ${formatDegrees(s.highC, s.unit)} · Low ${formatDegrees(s.lowC, s.unit)}" + rainSuffix(s)
 
 private fun shortDetails(s: WidgetSnapshot) =
-    "↑${formatDegrees(s.highC, s.unit)} ↓${formatDegrees(s.lowC, s.unit)} · Rain ${s.precipChance}%"
+    "↑${formatDegrees(s.highC, s.unit)} ↓${formatDegrees(s.lowC, s.unit)}" + rainSuffix(s)
+
+private fun rainSuffix(s: WidgetSnapshot) =
+    if (Precip.showDayChance(s.precipChance)) " · ${if (s.snow) "Snow" else "Rain"} ${s.precipChance}%" else ""
 
 private object MockType {
     private val white = Color.White
