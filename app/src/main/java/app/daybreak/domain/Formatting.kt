@@ -16,11 +16,14 @@ fun degrees(c: Double, unit: TempUnit): Int = when (unit) {
     TempUnit.F -> cToF(c).roundToInt()
 }
 
-/** "72°F" / "22°C". */
-fun formatTemp(c: Double, unit: TempUnit): String = "${degrees(c, unit)}°${unit.name}"
+/** "72°F" / "22°C" / "−6°C" (a true minus sign, U+2212, as typeset temperatures use). */
+fun formatTemp(c: Double, unit: TempUnit): String = "${signed(degrees(c, unit))}°${unit.name}"
 
-/** "72°" — for places where the unit is already clear from context. */
-fun formatDegrees(c: Double, unit: TempUnit): String = "${degrees(c, unit)}°"
+/** "72°", "−6°" — for places where the unit is already clear from context. */
+fun formatDegrees(c: Double, unit: TempUnit): String = "${signed(degrees(c, unit))}°"
+
+/** A whole number with a true minus sign (U+2212) rather than a hyphen when it's negative. */
+private fun signed(n: Int): String = if (n < 0) "\u2212${-n}" else "$n"
 
 /** "74°F (23°C)": both units, primary first, for accessibility labels. */
 fun formatBothUnits(c: Double, unit: TempUnit): String = "${formatTemp(c, unit)} (${formatTemp(c, unit.other())})"

@@ -51,6 +51,7 @@ object TestData {
                 windDirectionDeg = 235.0,
             )
         },
+        utcOffsetSeconds = -7 * 3600, // PDT
     )
 
     /** 9.8°C (50°F), steady rain at 10:30 PM in London; a few hours of showers then clearing to overcast. */
@@ -83,6 +84,7 @@ object TestData {
                     windDirectionDeg = 200.0,
                 )
             },
+            utcOffsetSeconds = 3600, // BST
         )
     }
 
@@ -139,7 +141,8 @@ object TestData {
 
     /**
      * A forecast with full hourly data for [days] (today first, at [at]), built to order for the outlook's rules: a
-     * smooth day from each low to high, rain stamped at the end of the hour it falls in (see Precip), sunrise 7 AM and
+     * smooth day from each low to high, rain stamped at the end of the hour it falls in (see Precip) with the weather
+     * code at its start (an instant value), sunrise 7 AM and
      * sunset 7 PM unless [sun] says otherwise.
      */
     fun synthetic(days: List<DaySpec>, at: LocalDateTime = LocalDateTime.of(2026, 10, 1, 8, 0), sun: Sun = Sun.NORMAL): Forecast {
@@ -154,7 +157,8 @@ object TestData {
                     time = stamp(d, h),
                     tempC = t,
                     precipChance = if (wet) spec.chance else 5,
-                    code = if (wet) (if (spec.snow) 73 else 63) else 1,
+                    // The code is instant (Open-Meteo): it's raining at h when rain falls during the hour from h.
+                    code = if (spec.rainHours?.contains(h) == true) (if (spec.snow) 73 else 63) else 1,
                     windKmh = spec.windKmh,
                     gustKmh = spec.gustKmh,
                     precipMm = if (wet) spec.mmPerHour else 0.0,

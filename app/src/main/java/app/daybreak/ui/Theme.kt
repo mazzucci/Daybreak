@@ -112,11 +112,13 @@ data class WeatherColors(
     val attention: Color,
     /** Skeleton blocks while loading. */
     val skeleton: Color,
-    /** The "This week" strip's bars by tier: green, soft green, neutral, muted blue-grey. */
+    /**
+     * The "This week" strip's bars by tier: a deep green for great, a lighter one for good, and one quiet blue-grey
+     * for mixed and stay-in days alike (their heights tell them apart).
+     */
     val outlookGreat: Color,
     val outlookGood: Color,
-    val outlookMeh: Color,
-    val outlookStayIn: Color,
+    val outlookRest: Color,
 )
 
 private val LightWeatherColors = WeatherColors(
@@ -128,9 +130,8 @@ private val LightWeatherColors = WeatherColors(
     attention = Amber,
     skeleton = Color(0xFFDCE4EE),
     outlookGreat = Color(0xFF2E7D32),
-    outlookGood = Color(0xFF8BC48E),
-    outlookMeh = Color(0xFFA9B3BF),
-    outlookStayIn = Color(0xFF6E86A8),
+    outlookGood = Color(0xFF4F9A55),
+    outlookRest = Color(0xFF7F8EA3),
 )
 
 private val DarkWeatherColors = WeatherColors(
@@ -142,9 +143,8 @@ private val DarkWeatherColors = WeatherColors(
     attention = AmberLight,
     skeleton = Color(0xFF29344A),
     outlookGreat = Color(0xFF5BC38A),
-    outlookGood = Color(0xFF3D7D5B),
-    outlookMeh = Color(0xFF5A6474),
-    outlookStayIn = Color(0xFF5F7A9F),
+    outlookGood = Color(0xFF45996E),
+    outlookRest = Color(0xFF7F8EA3),
 )
 
 val LocalWeatherColors = staticCompositionLocalOf { LightWeatherColors }

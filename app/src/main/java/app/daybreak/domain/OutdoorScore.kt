@@ -35,15 +35,22 @@ object OutdoorScorer {
         score(hour, profile, dark = isDark(hour, forecast, isNow))
 
     /**
-     * Scores [hour] from 100 down: storms rule it out (and snow, unless the profile allows it); rain, a chance over the
-     * profile's limit, temperatures outside the ideal band, and wind or gusts over the limits each cost points. A
-     * [dark] hour is never more than "poor", however nice the weather.
+     * Scores [hour] (with the rain that falls during it) from 100 down: storms rule it out (and snow, unless the
+     * profile allows it); rain, a chance over the profile's limit, temperatures outside the ideal band, and wind or
+     * gusts over the limits each cost points. A [dark] hour is never more than "poor", however nice the weather.
+     *
+     * The weather code's rain and snow only count when the hour's own chance and amount aren't dry by
+     * [Precip.classify], so the score never calls an hour wet that every other surface calls dry; a storm code with
+     * dry numbers still costs [DRY_STORM] points (a storm nearby), and is still named.
      */
     fun score(hour: HourForecast, profile: WeatherProfile, dark: Boolean): HourScore {
         val limits = mutableSetOf<Limit>()
         var score = 100.0
+        val dry = Precip.classify(hour.precipChance, hour.precipMm).dry
         when {
+            hour.code in 95..99 && dry -> { limits += Limit.STORM; score -= DRY_STORM }
             hour.code in 95..99 -> { limits += Limit.STORM; score = 0.0 }
+            dry -> Unit
             hour.code in SNOW && !profile.snowOk -> { limits += Limit.SNOW; score = 0.0 }
             hour.code in SNOW -> { limits += Limit.SNOW; score -= 35 }
             hour.code in RAIN -> { limits += Limit.RAIN; score -= 45 }
@@ -92,6 +99,9 @@ object OutdoorScorer {
 
     /** Extra cost for crossing a rain or wind limit at all, so an hour over the limit rarely still counts as good. */
     private const val LIMIT_STEP = 15.0
+
+    /** What a storm code costs when the hour's chance and amount are dry. */
+    private const val DRY_STORM = 30.0
 
     /** The best a dark hour can score. */
     private const val DARK_MAX = 30.0

@@ -66,6 +66,7 @@ import app.daybreak.domain.moonPhase
 import app.daybreak.domain.weekendDays
 import app.daybreak.domain.WeekOutlook
 import app.daybreak.domain.keepUnitsTogether
+import app.daybreak.domain.outlookMoment
 import app.daybreak.domain.weekOutlook
 import app.daybreak.domain.HabitsSummary
 import java.time.LocalDateTime
@@ -150,7 +151,7 @@ fun HomeScreen(
             }
             Spacer(Modifier.height(16.dp))
             WeatherGlance(
-                page, unit,
+                page, unit, now.atZone(zone).toInstant(),
                 onOpen = { onOpenWeather(index) },
                 onRetry = { page?.let { onRefresh(it.key) } },
                 onRequestPermission = onRequestPermission,
@@ -254,6 +255,8 @@ fun greeting(hour: Int): String = when (hour) {
 private fun WeatherGlance(
     page: PageUi?,
     unit: TempUnit,
+    /** The moment Home is viewed, for the outlook's today line ([outlookMoment]). */
+    clock: java.time.Instant,
     onOpen: () -> Unit,
     onRetry: () -> Unit,
     onRequestPermission: () -> Unit,
@@ -267,7 +270,9 @@ private fun WeatherGlance(
         val name = page.place?.name ?: "My location"
         val today = f.today
         // The same classifier as everywhere else: the chance from 20%, and "Snow" when it's mostly snow.
-        val todayRain = remember(f) { Precip.dayRain(f, today.date) }
+        // Every day's rain once, for the chance here and for the outlook.
+        val rains = remember(f) { f.upcomingDays().map { Precip.dayRain(f, it.date) } }
+        val todayRain = rains.first()
         val rain = todayRain.chance.takeIf { !todayRain.dry && Precip.showDayChance(it) }
         val condition = describeWeatherCode(f.current.code)
         val range = "↑${formatDegrees(today.highC, unit)} ↓${formatDegrees(today.lowC, unit)}"
@@ -275,7 +280,8 @@ private fun WeatherGlance(
         val chance = rain?.let { if (condition in DRY_SKIES) "${todayRain.noun} $it%" else "$it% chance" }
         val line = listOfNotNull(condition, range, chance).joinToString(" · ")
         // The "This week" today line, quietly under the glance; the weekend doesn't matter to it.
-        val outlook = remember(f, unit) { weekOutlook(f, unit) }
+        val outlookNow = outlookMoment(f, clock)
+        val outlook = remember(f, unit, outlookNow, rains) { weekOutlook(f, unit, now = outlookNow, rains = rains) }
         val spoken = listOfNotNull(
             name,
             formatBothUnits(f.current.tempC, unit),
@@ -362,24 +368,17 @@ private fun WeatherGlance(
     }
 }
 
-/**
- * The outlook's today line under the glance, one line, starting under the place name: a dot in the tier's colour
- * (centred under the weather icon) and the line in bodySmall.
- */
+/** The outlook's today line under the glance, one line in bodySmall, starting under the place name. */
 @Composable
 private fun OutlookGlanceLine(outlook: WeekOutlook) {
-    val tier = outlook.focus?.tier
-    Row(Modifier.padding(start = 30.dp, top = 6.dp, end = 16.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (tier != null) tierColor(tier) else MaterialTheme.colorScheme.outlineVariant))
-        Spacer(Modifier.width(26.dp))
-        Text(
-            keepUnitsTogether(outlook.today.text),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    Text(
+        keepUnitsTogether(outlook.today.text),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(start = 64.dp, top = 6.dp, end = 16.dp, bottom = 14.dp),
+    )
 }
 
 /** Conditions that aren't precipitation, so the rain chance needs its word. */

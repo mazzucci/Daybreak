@@ -29,13 +29,23 @@ class OutdoorScorerTest {
     }
 
     @Test fun `storms rule an hour out, snow only dents it`() {
-        assertEquals(0, score(hour(code = 95)).score)
-        assertEquals(setOf(Limit.STORM), score(hour(code = 95)).limits)
-        val snow = score(hour(code = 73, tempC = 2.0))
+        assertEquals(0, score(hour(code = 95, precip = 60)).score)
+        assertEquals(setOf(Limit.STORM, Limit.RAIN), score(hour(code = 95, precip = 60)).limits)
+        val snow = score(hour(code = 73, tempC = 2.0, precip = 25))
         assertTrue(snow.score in 1 until Outlook.GOOD_MIN)
         assertTrue(Limit.SNOW in snow.limits)
         // A profile that can't take snow rules it out.
-        assertEquals(0, OutdoorScorer.score(hour(code = 73), outdoor.copy(snowOk = false), dark = false).score)
+        assertEquals(0, OutdoorScorer.score(hour(code = 73, precip = 25), outdoor.copy(snowOk = false), dark = false).score)
+    }
+
+    @Test fun `codes only count when the hour's chance and amount aren't dry`() {
+        // A rain or snow code with a 5% chance and nothing falling costs nothing.
+        assertEquals(100, score(hour(code = 63, precip = 5)).score)
+        assertEquals(100, score(hour(code = 73, precip = 5)).score)
+        // A storm code with dry numbers costs a little, and is still named.
+        val storm = score(hour(code = 95, precip = 5))
+        assertEquals(70, storm.score)
+        assertEquals(setOf(Limit.STORM), storm.limits)
     }
 
     @Test fun `each limit lowers the score and is named`() {

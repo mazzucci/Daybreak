@@ -142,7 +142,10 @@ class ScreenshotTest {
                 fontScale = fontScale,
             )
         )
-        paparazzi.snapshot(name) { WeatherTheme(darkTheme = night, content = content) }
+        // Snapshots see the first frame only, so the outlook's bars start grown.
+        paparazzi.snapshot(name) {
+            CompositionLocalProvider(LocalOutlookGrowth provides false) { WeatherTheme(darkTheme = night, content = content) }
+        }
     }
 
     /** The moment the sample pages are viewed: 2:30 PM in San Francisco, 8 minutes after [fetched]. */
@@ -186,10 +189,11 @@ class ScreenshotTest {
         now: java.time.LocalDateTime = forecast.current.time,
         habits: HabitsData? = null,
         celebration: Celebration? = null,
+        zone: java.time.ZoneId = java.time.ZoneId.of("America/Los_Angeles"),
     ) {
         HomeScreen(
             state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {},
-            now = now, zone = java.time.ZoneId.of("America/Los_Angeles"),
+            now = now, zone = zone,
             habits = habits?.let { summarize(it, now.toLocalDate()) }, celebration = celebration,
         )
     }
@@ -225,6 +229,7 @@ class ScreenshotTest {
                 settings = AppSettings(primaryUnit = TempUnit.C),
             ),
             now = rainyNight.current.time,
+            zone = java.time.ZoneId.of("Europe/London"),
         )
     }
 
@@ -777,7 +782,7 @@ class ScreenshotTest {
         Weather(weatherState(PageContent.Loaded(f, summary, fetchedAt = fetched), place = place, key = place.id, settings = AppSettings(primaryUnit = TempUnit.C)))
     }
 
-    /** "How This week works" for the mixed week's breezy Monday, and in the evening for tomorrow. */
+    /** "How the outlook works" for the mixed week's breezy Monday, and in the evening for tomorrow. */
     @Test fun explainWeek() = snap("explain_week", tall = true) {
         Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Sheet(explain(Term.WEEK, TestData.mixedWeek(), TempUnit.C))

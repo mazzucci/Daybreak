@@ -71,7 +71,14 @@ private const val UMBRELLA_GUST_KMH = 40.0
  * model involved), so every number matches the page; numbers are written the US way, as everywhere in the app's
  * English copy. [date] picks the day for [Term.RAIN_DAY] (today if null).
  */
-fun explain(term: Term, forecast: Forecast, unit: TempUnit, date: LocalDate? = null): Explanation {
+fun explain(
+    term: Term,
+    forecast: Forecast,
+    unit: TempUnit,
+    date: LocalDate? = null,
+    /** The moment "This week" is for ([outlookMoment]), so the explanation matches the card. */
+    now: LocalDateTime = forecast.current.time,
+): Explanation {
     val cur = forecast.current
     val today = forecast.today
     return when (term) {
@@ -266,12 +273,12 @@ fun explain(term: Term, forecast: Forecast, unit: TempUnit, date: LocalDate? = n
                 ).joinToString(", "),
             )
         }
-        Term.WEEK -> explainWeek(weekOutlook(forecast, unit), forecast, unit)
+        Term.WEEK -> explainWeek(weekOutlook(forecast, unit, now = now), forecast, unit)
     }
 }
 
 /**
- * "How This week works": the score of the day the today line is about, from which hours and what held it back,
+ * "How the outlook works": the score of the day the today line is about, from which hours and what held it back,
  * then the rules. No weekend days needed: the explanation never names the best day.
  */
 private fun explainWeek(outlook: WeekOutlook, forecast: Forecast, unit: TempUnit): Explanation {
@@ -284,25 +291,35 @@ private fun explainWeek(outlook: WeekOutlook, forecast: Forecast, unit: TempUnit
         val hours = read.best
         val from = hours.first().hour.time
         val to = hours.last().hour.time.plusHours(1)
-        val held = when (read.topic.takeIf { read.tier != OutlookTier.GREAT }) {
-            OutlookTopic.WET -> "Rain is what holds it back most."
-            OutlookTopic.WIND -> "The wind is what holds it back most."
-            OutlookTopic.HEAT -> "The heat is what holds it back most."
-            OutlookTopic.COLD -> "The cold is what holds it back most."
-            OutlookTopic.DARK, null -> if (read.polarNight) "It's polar night, so it can't score higher than mixed." else "Nothing much holds it back."
+        val ahead = " still ahead".takeIf { read.date == today } ?: ""
+        val held = when {
+            read.polarNight -> "It's polar night, so it can't score higher than mixed."
+            read.shortDay -> "There's hardly any daylight, so it can't score higher than mixed."
+            read.mostlyWet && read.tier == OutlookTier.MEH -> "Rain falls in at least a third of its hours, so it can't score higher than mixed."
+            else -> when (read.topic.takeIf { read.tier != OutlookTier.GREAT }) {
+                OutlookTopic.WET -> if (read.stormy && read.hours.none { Limit.RAIN in it.limits || Limit.SNOW in it.limits }) "The risk of thunderstorms is what holds it back most."
+                else "Rain is what holds it back most."
+                OutlookTopic.WIND -> "The wind is what holds it back most."
+                OutlookTopic.HEAT -> "The heat is what holds it back most."
+                OutlookTopic.COLD -> "The cold is what holds it back most."
+                OutlookTopic.DARK, null -> "Nothing much holds it back."
+            }
         }
         listOfNotNull(
             "Today's daylight is over, so the outlook looks at tomorrow.".takeIf { read.date != today },
-            if (read.fromDaily) "$who scores ${read.score} out of 100, from the day's figures."
-            else "$who scores ${read.score} out of 100, from its best ${plural(hours.size.toLong(), "hour")} of daylight" +
-                (" still ahead".takeIf { read.date == today } ?: "") + " (${formatSpan(from, to)}).",
+            when {
+                read.fromDaily -> "$who scores ${read.score} out of 100, from the day's figures."
+                // Without daylight the hours are waking hours, and their times would only confuse.
+                read.dim -> "$who scores ${read.score} out of 100, from its best ${plural(hours.size.toLong(), "waking hour")}$ahead."
+                else -> "$who scores ${read.score} out of 100, from its best ${plural(hours.size.toLong(), "hour")} of daylight$ahead (${formatSpan(from, to)})."
+            },
             held,
         ).joinToString(" ")
     }
     val profile = WeatherProfile.OUTDOOR
     val band = "${degrees(profile.idealC.start, unit)}–${formatTemp(profile.idealC.endInclusive, unit)}"
     return Explanation(
-        title = "How This week works",
+        title = "How the outlook works",
         value = read?.tier?.word ?: "–",
         detail = read?.let { "$who: ${it.score} out of 100" },
         now = now,
@@ -310,8 +327,10 @@ private fun explainWeek(outlook: WeekOutlook, forecast: Forecast, unit: TempUnit
             "from its best ${Outlook.RUN_HOURS} hours of daylight in a row, so one nice hour doesn't make a good day. Each hour " +
             "loses points for rain, snow and storms, for wind over ${formatWind(profile.maxWindKmh, unit)} or gusts over " +
             "${formatWind(profile.maxGustKmh, unit)}, and for temperatures outside $band. ${Outlook.GREAT_MIN} and up is great, " +
-            "${Outlook.GOOD_MIN} good and ${Outlook.MEH_MIN} mixed; below that it's a day for staying in. Rainy days and spells " +
-            "follow the same rain rules as the rest of the app, and days further out than a week are left out as less certain.",
+            "${Outlook.GOOD_MIN} good and ${Outlook.MEH_MIN} mixed. Below that it's a day for staying in. A day with rain in " +
+            "a third of its hours or more is mixed at best, however dry its best hours, and so is a day without daylight. " +
+            "Rainy days and spells follow the same rain rules as the rest of the app, and days further out than a week are " +
+            "left out as less certain.",
         spoken = read?.let { "${it.tier.word}. $who: ${it.score} out of 100" },
     )
 }

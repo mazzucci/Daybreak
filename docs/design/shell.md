@@ -70,7 +70,7 @@ A tappable `surfaceContainer` card, min 72dp tall, with 16dp padding. Tapping it
 - `DualTemp` in `headlineMedium` (for example "71°" over "21°C");
 - a `KeyboardArrowRight` chevron.
 
-**Under that row:** the "This week" today line ("Mixed day: dry until 5 PM, then rain"), one line in `bodySmall` variant that ellipsizes, starting under the place name, with an 8dp dot in the tier's colour centred under the icon. It's the only outlook on Home: the week lines and the strip stay on the Weather tab.
+**Under that row:** the "This week" today line ("Mixed day: dry until 5 PM, then rain"), one line in `bodySmall` `onSurfaceVariant` that ellipsizes, starting under the place name (`padding(start = 64.dp, top = 6.dp, end = 16.dp, bottom = 14.dp)`), with no dot or other mark. It's worked out for the place's current hour, so a forecast fetched at 2 PM doesn't give afternoon advice at 8 PM. It's the only outlook on Home: the week lines and the strip stay on the Weather tab.
 
 **Screen reader:** one node, "San Francisco, 71 degrees Fahrenheit, 21 degrees Celsius, partly cloudy, high 74, low 56, 60 percent chance of rain. Mixed day: dry until 5 PM, then rain. Opens Weather."
 
@@ -95,7 +95,7 @@ The order is fixed and not user-reorderable. A card that is off, or has nothing 
 7. "Word of the day" (later; needs Gemma)
 8. "Today's weather meme": `MemeCard` for the glance forecast. It's always last, because it's the tallest card and the least actionable.
 
-"This week" (`WeekOutlookSection`) stays on the Weather tab, between the hourly strip and the sun tiles; Home gets only its today line, in the glance.
+"This week" (`WeekOutlookSection`) stays on the Weather tab, between the sun tiles and the 10-day list; Home gets only its today line, in the glance.
 
 **Spacing:** 16dp between cards, 24dp before a heading, 12dp from a heading to its card.
 
