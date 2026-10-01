@@ -64,6 +64,7 @@ import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.describeSky
 import app.daybreak.domain.moonPhase
 import app.daybreak.domain.weekendDays
+import app.daybreak.domain.HabitsSummary
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -82,8 +83,9 @@ fun glancePageIndex(pages: List<PageUi>): Int {
 
 /**
  * Home: the day at a glance. A greeting on the sky of the glance place, the weather glance (which opens that place
- * on the Weather tab), then the personal cards in a fixed order: what's coming up, tonight's sky, and the meme
- * last since it's the tallest and the least to act on. A card that's off or has nothing to say isn't shown.
+ * on the Weather tab), then the personal cards in a fixed order: today's habits, what's coming up, tonight's sky,
+ * and the meme last since it's the tallest and the least to act on. A card that's off or has nothing to say isn't
+ * shown.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +100,14 @@ fun HomeScreen(
     now: LocalDateTime? = null,
     /** The phone's zone, for tonight's sky; fixed in screenshot tests. */
     zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    /** The habits worked out for today (by the ViewModel); null or empty for none. */
+    habits: HabitsSummary? = null,
+    celebration: Celebration? = null,
+    onLogHabit: (String) -> Unit = {},
+    onUndoHabit: (String) -> Unit = {},
+    onCelebrationShown: (Long) -> Unit = {},
+    habitsUndoHint: Boolean = false,
+    onOpenHabits: () -> Unit = {},
 ) {
     val now = now ?: rememberMinuteClock().atZone(zone).toLocalDateTime()
     val index = glancePageIndex(state.pages)
@@ -144,10 +154,20 @@ fun HomeScreen(
                 onOpenSearch = onOpenSearch,
                 modifier = Modifier.padding(horizontal = PageMargin),
             )
+            // Today's habits, between the weather and what's coming up; only once there's a habit.
+            val showHabits = state.settings.habitsOnHome && !habits?.stats.isNullOrEmpty()
+            if (showHabits && habits != null) {
+                CelebrationTimer(celebration, onCelebrationShown)
+                SectionHeading("Today's habits")
+                HabitsHomeCard(
+                    habits, celebration, onLogHabit, onUndoHabit, Modifier.padding(horizontal = PageMargin),
+                    undoHint = habitsUndoHint, onOpenHabits = onOpenHabits,
+                )
+            }
             HomeCards(state, page, loaded, now, zone)
-            // Only when every card is switched off (not while they're waiting for a forecast).
+            // Only when every card is switched off (not while they're waiting for a forecast), or habits have none.
             val settings = state.settings
-            if (!settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled) {
+            if (!settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled && !showHabits) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Turn on more cards in Settings",

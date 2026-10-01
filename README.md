@@ -1,9 +1,10 @@
 # Daybreak
 
-A personal Android app for the start of your day: the weather for where you are and the places you save (in both °F and °C), holidays and your own dates, and a few fun things, with an optional on-device Gemma model writing the daily meme. (It began as a weather app; the tabs Home · Weather · Clocks · Settings are on the way, see [docs/design/shell.md](docs/design/shell.md).)
+A personal Android app for the start of your day: the weather for where you are and the places you save (in both °F and °C), holidays and your own dates, the habits you're building or breaking, your clocks, and a few fun things, with an optional on-device Gemma model writing the daily meme. (It began as a weather app; it now has the tabs Home · Weather · Habits · Clocks · Settings, see [docs/design/shell.md](docs/design/shell.md).)
 
 > **Coming from the old "Weather" app?** Daybreak has a new application id (`app.daybreak`), so it installs as a separate app and starts empty: add your places again, import or download the Gemma model again, and re-add your dates. Then uninstall the old Weather app (its widget and background refresh go with it).
 
+- Habits: as many as you like, each with a name, a colour, and a goal: something to **build** (drink water 8 times a day, ride a bike once a week) or to **avoid** (no takeout, or at most two coffees a day). Tap +1 to log (or "Had one" for a slip); long-press it or tap − to take one back. Build habits show today's or this week's progress as a ring and the current and best streak; avoid habits show the days since the last one and whether the allowance is kept this week, so a slip never reads as a broken streak. Each has a 12-week map in its colour. Points for each log (up to the goal) and each day or week the goal is met or the allowance kept, with bonuses when a run reaches 7, 30 and 100, add up to a level, and a few badges mark firsts and long runs; meeting a goal or a milestone gets a one-line cheer in place ("7-day streak! +61"). Changing a goal applies from that day on, never to the past. Weeks start on your region's first day, set when you add your first habit and changeable in Settings → Habits. Today's habits are also on Home, to log with a tap (turn that off in Settings → Habits). Habits are kept on the phone and aren't backed up
 - Tonight's sky (on Home): the moon drawn as it is tonight with its phase and how much is lit, the next full moon by its old name (the Harvest Moon, the Hunter's Moon…), the next meteor shower when one peaks within two weeks (and whether a bright moon will wash it out), and whether the forecast says it's clear enough to look up. All worked out on the phone. Turn it off in Settings → Fun
 - Clocks: the places you call or work with, each with its time, whether it's today or tomorrow there, how far ahead or behind you it is and its UTC offset, following daylight saving. A converter shows one moment in every clock ("At 12:00 PM today in Los Angeles it's 10:00 PM in Bucharest"). Places come from the same search as Weather, which gives each one's time zone
 - Search for any city and save it; swipe between places, reorder or remove them
@@ -48,6 +49,10 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dayWet_day_wet.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_daySnowy_day_snowy.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dayDry_day_dry.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_dayDark_day_dark.png" width="200"> |
 
+| Habits | Habits (dark) | Add a habit | Habits on Home |
+|:---:|:---:|:---:|:---:|
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitsList_habits.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitsDark_habits_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitEditorNew_habit_editor_new.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitsHomeCard_habits_home_card.png" width="200"> |
+
 | Settings: installed | Settings: failed (dark) | Rainy night (dark) | App icon |
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsInstalled_settings_installed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsFailed_settings_failed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherRainyNightDark_weather_rainy_night_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_appIcon_app_icon.png" width="120"> |
@@ -85,14 +90,15 @@ How it works:
 app/src/main/java/app/daybreak/
   domain/     Place, Forecast, AppSettings; unit conversion and formatting; WMO code descriptions;
               Precip (the one rule set for rain and snow: thresholds, the classifier, words, amounts, a day's timing and parts);
-              ActivityScorer (best time to ride/run/walk); ComingUp (holidays, long weekends, seasons)
+              ActivityScorer (best time to ride/run/walk); ComingUp (holidays, long weekends, seasons);
+              Habits (streaks, days since, allowances, points, levels, badges, the 12-week map)
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
-              saved places, settings and daily meme repositories (SharedPreferences), device location,
+              saved places, settings, clocks, habits and daily meme repositories (SharedPreferences), device location,
               Nager.Date holiday API + HolidayRepository (cached per country and year)
   narration/  TemplateNarrator (the summary line), GemmaNarrator (MediaPipe),
               GemmaModelStore (model download + import),
               Meme (mood, template captions, prompt, validator, MemeWriter)
-  ui/         WeatherViewModel (StateFlow), stateless screens (DayScreen: a day's details), WeatherApp (navigation, pickers),
+  ui/         WeatherViewModel, ClocksViewModel and HabitsViewModel (StateFlow), stateless screens (DayScreen: a day's details), WeatherApp (navigation, pickers),
               Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs),
               MemeCard
   widget/     WeatherWidget (Jetpack Glance), its receiver, WidgetRefreshWorker (WorkManager), WidgetPublisher
@@ -108,7 +114,7 @@ Requires JDK 17 and the Android SDK (`ANDROID_HOME` or `local.properties` pointi
 
 [GitHub Actions](.github/workflows/ci.yml) runs the same command on every pull request and push to `main`, and uploads the test reports and screenshot diffs if a test or screenshot check fails.
 
-The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the rain rules and the day page's verdict, timing and the parts of the day, the template narrator, meme caption validation, the repositories and the ViewModel (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
+The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the rain rules and the day page's verdict, timing and the parts of the day, the template narrator, meme caption validation, habit streaks, points and badges, the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
 
 ## License
 

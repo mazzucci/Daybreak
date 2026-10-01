@@ -96,6 +96,13 @@ class SettingsRepositoryTest {
         assertEquals(AppSettings(TempUnit.F, useCurrentLocation = false, gemmaEnabled = false), reloaded)
     }
 
+    @Test fun `remembers habits on Home`() {
+        val store = InMemoryStore()
+        SettingsRepository(store).update { it.copy(habitsOnHome = false) }
+        assertFalse(SettingsRepository(store).settings.value.habitsOnHome)
+        assertTrue(SettingsRepository(InMemoryStore()).settings.value.habitsOnHome)
+    }
+
     @Test fun `bad stored values fall back to defaults`() {
         val store = InMemoryStore(mapOf("primary_unit" to "K", "use_current_location" to "maybe"))
         assertEquals(AppSettings(), SettingsRepository(store).settings.value)

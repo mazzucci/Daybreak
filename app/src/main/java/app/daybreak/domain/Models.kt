@@ -212,4 +212,6 @@ data class AppSettings(
     val skyEnabled: Boolean = true,
     /** Whether each page shows a daily weather meme (made on the phone; Gemma writes it when available). */
     val memesEnabled: Boolean = true,
+    /** Whether Home shows today's habits to tap (once there's a habit). */
+    val habitsOnHome: Boolean = true,
 )
