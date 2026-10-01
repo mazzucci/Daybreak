@@ -70,7 +70,10 @@ data class PersonalDate(
 /** Longest name a date keeps; enough for "Lisbon with the kids". */
 const val PERSONAL_DATE_NAME_MAX = 40
 
-/** Every day off in [dates] from yesterday on, with a yearly one's next two times round. */
+/**
+ * Every day off in [dates] from yesterday on (so a break that began yesterday still counts towards the one it
+ * joins), with a yearly one's next two times round.
+ */
 fun dayOffDates(dates: List<PersonalDate>, today: LocalDate): Set<LocalDate> {
     val from = today.minusDays(1)
     return dates.filter { it.dayOff }

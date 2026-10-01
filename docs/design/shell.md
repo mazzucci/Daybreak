@@ -59,7 +59,7 @@ It reuses `Hero()`, but without the floating action row: 16dp top padding and le
 
 A tappable `surfaceContainer` card, min 72dp tall, with 16dp padding. Tapping it opens the Weather tab on that place, using the existing `scrollTo`.
 
-**Which place:** the first page that can show weather, the first page, unless it's the current location still waiting for permission (`glancePageIndex`).
+**Which place:** the first page, unless it's the current location still waiting for permission (`glancePageIndex`).
 
 **Content, left to right:**
 - a 36dp `WeatherIcon`;

@@ -108,14 +108,8 @@ import app.daybreak.domain.TempUnit
 import app.daybreak.domain.formatDegrees
 import app.daybreak.domain.Activity
 import app.daybreak.domain.ActivityScorer
-import app.daybreak.domain.PersonalDate
-import app.daybreak.domain.upcomingPersonalDates
-import app.daybreak.domain.Countdown
 import androidx.compose.material3.minimumInteractiveComponentSize
-import java.time.DayOfWeek
-import app.daybreak.domain.countryCodeOf
 import app.daybreak.domain.DaySummary
-import app.daybreak.narration.Meme
 import app.daybreak.domain.Daylight
 import app.daybreak.domain.describeUv
 import app.daybreak.domain.describeWeatherCode

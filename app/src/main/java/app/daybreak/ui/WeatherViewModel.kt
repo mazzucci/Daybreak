@@ -295,6 +295,8 @@ class WeatherViewModel(
         if (!saved.gemmaTried && saved.meme.source != NarrationSource.GEMMA && memeWriter.canUseModel && gemmaReady()) {
             val gemma = memeWriter.fromModel(input, key)
             if (!memesOn()) return // turned off while Gemma was writing: don't bring the card back
+            // Gemma switched off or its model removed meanwhile: keep the hand-written one, and let Gemma try again later.
+            if (!gemmaReady()) return
             gemma?.let { m -> updateLoaded(key, forecast) { it.copy(meme = m) } }
             result = SavedMeme(gemma ?: saved.meme, gemmaTried = true)
         }

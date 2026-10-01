@@ -128,8 +128,12 @@ class SettingsRepositoryTest {
     @Test fun `settings of removed features are cleared once, and your dates are kept`() {
         val store = InMemoryStore(mapOf("tone" to "PIRATE", "commute" to "on-8-17", "primary_unit" to "C"))
         val trip = PersonalDate(LocalDate.of(2026, 10, 12), name = "Lisbon trip")
-        val private = InMemoryStore(mapOf("about_me" to "I cycle", "commute_home" to "{}", "commute_office" to "{}"))
-        SettingsRepository(InMemoryStore(), privateStore = private).update { it.copy(personalDates = listOf(trip)) }
+        // Your dates saved by an earlier version, alongside the old keys, all in the private store the cleanup reads.
+        val scratch = InMemoryStore()
+        SettingsRepository(InMemoryStore(), privateStore = scratch).update { it.copy(personalDates = listOf(trip)) }
+        val private = InMemoryStore(
+            mapOf("about_me" to "I cycle", "commute_home" to "{}", "commute_office" to "{}", "personal_dates" to scratch.getString("personal_dates")!!),
+        )
         val repo = SettingsRepository(store, privateStore = private)
         listOf("tone", "commute").forEach { assertNull(it, store.getString(it)) }
         listOf("about_me", "commute_home", "commute_office").forEach { assertNull(it, private.getString(it)) }
