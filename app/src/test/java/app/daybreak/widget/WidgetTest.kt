@@ -14,9 +14,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import app.cash.paparazzi.Paparazzi
 
 class WidgetTest {
+    /**
+     * Unused for snapshots: Paparazzi puts layoutlib's android.os.Trace on the test classpath, and its rule loads the
+     * native library that Glance's Compose runtime needs, so these tests don't depend on a screenshot test running first.
+     */
+    @get:Rule
+    val paparazzi = Paparazzi()
+
     private val snapshot = widgetSnapshotOf(
         TestData.sanFrancisco, TestData.forecast(), TempUnit.F, "A mild afternoon.", nowMillis = 1_000,
     )
