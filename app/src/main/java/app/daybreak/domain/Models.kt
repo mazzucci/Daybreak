@@ -212,4 +212,6 @@ data class AppSettings(
     val memesEnabled: Boolean = true,
     /** Whether Home shows today's habits to tap (once there's a habit). */
     val habitsOnHome: Boolean = true,
+    /** Whether Home shows a cheerful moment from today's date in history, from Wikipedia. */
+    val onThisDayEnabled: Boolean = true,
 )

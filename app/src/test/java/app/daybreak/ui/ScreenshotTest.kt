@@ -67,6 +67,16 @@ import app.daybreak.domain.HabitKind
 import app.daybreak.domain.HabitPeriod
 import app.daybreak.domain.HabitsData
 import app.daybreak.domain.summarize
+import android.graphics.Bitmap
+import app.daybreak.data.ImageLoader
+import app.daybreak.data.OnThisDayFeed
+import app.daybreak.data.OnThisDayToday
+import app.daybreak.data.parseOnThisDay
+import app.daybreak.domain.OnThisDay
+import app.daybreak.domain.OnThisDayPick
+import app.daybreak.domain.OnThisDayPicture
+import app.daybreak.data.ImageRequest
+import androidx.compose.runtime.CompositionLocalProvider
 import org.junit.Rule
 import org.junit.Test
 
@@ -190,19 +200,103 @@ class ScreenshotTest {
         habits: HabitsData? = null,
         celebration: Celebration? = null,
         zone: java.time.ZoneId = java.time.ZoneId.of("America/Los_Angeles"),
+        onThisDay: OnThisDayToday? = null,
     ) {
         HomeScreen(
             state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {},
             now = now, zone = zone,
             habits = habits?.let { summarize(it, now.toLocalDate()) }, celebration = celebration,
+            onThisDay = onThisDay, images = FakeImages,
         )
+    }
+
+    /** October 1st's real picks (from the fixture), for the "On this day" card. */
+    private val onThisDayPicks = OnThisDay.choose(
+        parseOnThisDay(TestData.fixture("onthisday_selected_10_01.json"), OnThisDayFeed.SELECTED),
+        java.time.LocalDate.of(2026, 10, 1),
+    )
+    private val onThisDayDate = java.time.LocalDate.of(2026, 10, 1)
+    private fun pickFor(year: Int) = OnThisDay.choose(
+        parseOnThisDay(TestData.fixture("onthisday_selected_10_01.json"), OnThisDayFeed.SELECTED).filter { it.year == year },
+        onThisDayDate,
+    ).single()
+
+    /** A real pick with one of the stand-in pictures below, at the size the stand-in imitates. */
+    private fun withPicture(pick: OnThisDayPick, kind: StandIn) =
+        pick.copy(picture = OnThisDayPicture(kind.url, null, kind.width, kind.height, fromSvg = kind.svg))
+
+    /** What the stand-in pictures imitate: their original size, and whether they're drawings. */
+    private enum class StandIn(val width: Int, val height: Int, val svg: Boolean = false) {
+        Landscape(3264, 2176), Portrait(1500, 2000), Flag(1200, 600, svg = true), Seal(800, 800, svg = true);
+
+        /** Shaped like a Commons address, so the card links the picture's page; never fetched. */
+        val url get() = "https://upload.wikimedia.org/wikipedia/commons/a/ab/Stand-in_$name.jpg"
+    }
+
+    private val tuvaluFlag = pickFor(1978).let { withPicture(it, StandIn.Flag) }
+    private val ali = pickFor(1975).let { withPicture(it, StandIn.Portrait) }
+    private val landscape = OnThisDayPick(
+        1890, "Yosemite National Park was established by the U.S. Congress at the encouragement of John Muir.",
+        "Yosemite National Park", "https://en.wikipedia.org/wiki/Yosemite_National_Park",
+    ).let { withPicture(it, StandIn.Landscape) }
+    private val seal = OnThisDayPick(
+        1946, "The first session of the International Court of Justice opened in The Hague, Netherlands.",
+        "International Court of Justice", "https://en.wikipedia.org/wiki/International_Court_of_Justice",
+    ).let { withPicture(it, StandIn.Seal) }
+
+    /** Pictures drawn here, one for each kind the card treats differently: no network in screenshot tests. */
+    private object FakeImages : ImageLoader {
+        private val drawn = mutableMapOf<String, Bitmap>()
+        /** A stand-in's drawing; nothing for a real picture's address (the next pick's, fetched ahead). */
+        override fun cached(request: ImageRequest): Bitmap? =
+            StandIn.entries.firstOrNull { it.url == request.url }?.let { kind -> drawn.getOrPut(request.url) { draw(kind) } }
+        override suspend fun load(request: ImageRequest): Bitmap? = cached(request)
+
+        private fun draw(kind: StandIn): Bitmap {
+            val w = 600
+            val h = w * kind.height / kind.width
+            val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val c = android.graphics.Canvas(b)
+            val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            fun color(argb: Long) { p.shader = null; p.color = argb.toInt() }
+            when (kind) {
+                StandIn.Landscape -> { // a valley at golden hour: sky, sun, mountains, meadow
+                    p.shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF7FB3E6.toInt(), 0xFFFFD9A8.toInt(), android.graphics.Shader.TileMode.CLAMP)
+                    c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+                    color(0xFFFFC94D); c.drawCircle(w * 0.72f, h * 0.28f, h * 0.09f, p)
+                    color(0xFF6F7F99)
+                    c.drawPath(android.graphics.Path().apply { moveTo(0f, h * 0.75f); lineTo(w * 0.28f, h * 0.22f); lineTo(w * 0.55f, h * 0.7f); lineTo(w * 0.8f, h * 0.35f); lineTo(w.toFloat(), h * 0.6f); lineTo(w.toFloat(), h.toFloat()); lineTo(0f, h.toFloat()); close() }, p)
+                    color(0xFF5E8C3A); c.drawRect(0f, h * 0.78f, w.toFloat(), h.toFloat(), p)
+                    color(0xFF2F5D2B); for (i in 0 until 9) c.drawCircle(w * (0.05f + i * 0.11f), h * 0.8f, h * 0.06f, p)
+                }
+                StandIn.Portrait -> { // a person against a studio backdrop
+                    color(0xFFB9A58A); c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+                    color(0xFF3B2A20); c.drawOval(w * 0.15f, h * 0.62f, w * 0.85f, h * 1.25f, p)
+                    color(0xFF8D5A3B); c.drawOval(w * 0.32f, h * 0.2f, w * 0.68f, h * 0.6f, p)
+                    color(0xFF1E1A18); c.drawOval(w * 0.3f, h * 0.14f, w * 0.7f, h * 0.32f, p)
+                }
+                StandIn.Flag -> { // a 2:1 flag: a blue field, a canton and stars
+                    color(0xFF5AB4E5); c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+                    color(0xFF012169); c.drawRect(0f, 0f, w / 2f, h / 2f, p)
+                    color(0xFFFFFFFF); c.drawRect(0f, h * 0.2f, w / 2f, h * 0.3f, p); c.drawRect(w * 0.2f, 0f, w * 0.3f, h / 2f, p)
+                    color(0xFFFFCE00); listOf(0.6f to 0.3f, 0.75f to 0.55f, 0.9f to 0.25f, 0.7f to 0.8f, 0.85f to 0.75f).forEach { (x, y) -> c.drawCircle(w * x, h * y, h * 0.04f, p) }
+                }
+                StandIn.Seal -> { // a round seal on white
+                    color(0xFFFFFFFF); c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+                    color(0xFF1F3F7A); c.drawCircle(w / 2f, h / 2f, w * 0.46f, p)
+                    color(0xFFE8D9A0); c.drawCircle(w / 2f, h / 2f, w * 0.36f, p)
+                    color(0xFF1F3F7A); c.drawCircle(w / 2f, h / 2f, w * 0.18f, p)
+                }
+            }
+            return b
+        }
     }
 
     // --- Home -----------------------------------------------------------------------------------
 
     /**
      * Everything on: greeting on the place's sky, the glance, today's habits, what's coming up (with your dates),
-     * tonight's sky and the meme.
+     * tonight's sky, on this day and the meme.
      */
     @Test fun homeFull() = snap("home_full", tall = true) {
         val today = forecast.current.time.toLocalDate()
@@ -214,6 +308,7 @@ class ScreenshotTest {
                 ),
             ),
             habits = habitsData,
+            onThisDay = OnThisDayToday(today, listOf(landscape) + onThisDayPicks),
         )
     }
 
@@ -233,6 +328,61 @@ class ScreenshotTest {
         )
     }
 
+    // --- On this day ----------------------------------------------------------------------------
+
+    @Composable
+    private fun OnThisDayCards(vararg picks: OnThisDayPick, another: Boolean = true) {
+        Column(
+            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            picks.forEach { OnThisDayCard(it, onThisDayDate, onAnother = if (another) ({}) else null, images = FakeImages) }
+        }
+    }
+
+    /** The renderer here doesn't apply render effects: the backdrop is drawn the pre-Android 12 way. */
+    @Composable
+    private fun NoRenderEffects(content: @Composable () -> Unit) = CompositionLocalProvider(LocalBlurBackdrop provides false, content = content)
+
+    /** A landscape photo fills the frame; a portrait is a poster. */
+    @Test fun onThisDayFill() = snap("on_this_day", tall = true) {
+        NoRenderEffects { OnThisDayCards(landscape, ali) }
+    }
+
+    @Test fun onThisDayFillDark() = snap("on_this_day_dark", night = true, tall = true) {
+        NoRenderEffects { OnThisDayCards(landscape, ali) }
+    }
+
+    /** Drawings are posters too: a 2:1 flag and a square seal. */
+    @Test fun onThisDayPoster() = snap("on_this_day_poster", tall = true) {
+        NoRenderEffects { OnThisDayCards(tuvaluFlag, seal) }
+    }
+
+    @Test fun onThisDayPosterDark() = snap("on_this_day_poster_dark", night = true, tall = true) {
+        NoRenderEffects { OnThisDayCards(tuvaluFlag, seal) }
+    }
+
+    /** Words only: a pick without a picture, and a day with just the one pick (no "Another"), 331 BC. */
+    @Test fun onThisDayTextOnly() = snap("on_this_day_text_only") {
+        val words = pickFor(1975).copy(picture = null)
+        Column {
+            OnThisDayCards(words)
+            OnThisDayCards(
+                words.copy(text = "Alexander the Great defeated Darius III of Persia at Gaugamela.", year = -331, title = "Alexander the Great"),
+                another = false,
+            )
+        }
+    }
+
+    /** The narrowest phone at a large font: the words get more lines, the footer wraps. */
+    @Test fun onThisDayLargeFont() = snap("on_this_day_large_font", narrow = true, fontScale = 1.5f, tall = true) {
+        NoRenderEffects { OnThisDayCards(ali, landscape.copy(picture = null)) }
+    }
+
+    @Test fun onThisDayHugeFont() = snap("on_this_day_huge_font", narrow = true, fontScale = 2f, tall = true) {
+        NoRenderEffects { OnThisDayCards(landscape) }
+    }
+
     /** The current-location page waiting for permission: the glance asks, the rest of Home waits. */
     @Test fun homePermission() = snap("home_permission") {
         Home(
@@ -247,7 +397,7 @@ class ScreenshotTest {
 
     /** No places yet, and every Home card off: the glance offers a place, and a line points to Settings. */
     @Test fun homeEmpty() = snap("home_empty") {
-        Home(WeatherUiState(settings = AppSettings(comingUpEnabled = false, memesEnabled = false, skyEnabled = false)))
+        Home(WeatherUiState(settings = AppSettings(comingUpEnabled = false, memesEnabled = false, skyEnabled = false, onThisDayEnabled = false)))
     }
 
     /** The moon through its cycle, each with its card's words, in both themes' card colours. */

@@ -135,6 +135,7 @@ class SettingsRepository(
         store.putString(KEY_COMING_UP, s.comingUpEnabled.toString())
         store.putString(KEY_SKY, s.skyEnabled.toString())
         store.putString(KEY_HABITS_HOME, s.habitsOnHome.toString())
+        store.putString(KEY_ON_THIS_DAY, s.onThisDayEnabled.toString())
         if (s.personalDates.isEmpty()) {
             privateStore.remove(KEY_DATES)
         } else {
@@ -178,6 +179,7 @@ class SettingsRepository(
         comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         skyEnabled = store.getString(KEY_SKY)?.toBooleanStrictOrNull() ?: defaults.skyEnabled,
         habitsOnHome = store.getString(KEY_HABITS_HOME)?.toBooleanStrictOrNull() ?: defaults.habitsOnHome,
+        onThisDayEnabled = store.getString(KEY_ON_THIS_DAY)?.toBooleanStrictOrNull() ?: defaults.onThisDayEnabled,
         personalDates = loadPersonalDates() ?: defaults.personalDates,
     )
 
@@ -189,6 +191,7 @@ class SettingsRepository(
         const val KEY_COMING_UP = "coming_up_enabled"
         const val KEY_SKY = "sky_enabled"
         const val KEY_HABITS_HOME = "habits_on_home"
+        const val KEY_ON_THIS_DAY = "on_this_day_enabled"
         const val KEY_DATES = "personal_dates"
         val REMOVED_KEYS = listOf("tone", "commute", "activity")
         val REMOVED_PRIVATE_KEYS = listOf("about_me", "commute_home", "commute_office")

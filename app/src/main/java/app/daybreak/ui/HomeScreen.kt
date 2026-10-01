@@ -32,6 +32,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.layout.onSizeChanged
@@ -69,6 +74,8 @@ import app.daybreak.domain.keepUnitsTogether
 import app.daybreak.domain.outlookMoment
 import app.daybreak.domain.weekOutlook
 import app.daybreak.domain.HabitsSummary
+import app.daybreak.data.ImageLoader
+import app.daybreak.data.OnThisDayToday
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -88,8 +95,8 @@ fun glancePageIndex(pages: List<PageUi>): Int {
 /**
  * Home: the day at a glance. A greeting on the sky of the glance place, the weather glance (which opens that place
  * on the Weather tab), then the personal cards in a fixed order: today's habits, what's coming up, tonight's sky,
- * and the meme last since it's the tallest and the least to act on. A card that's off or has nothing to say isn't
- * shown.
+ * on this day, and the meme last since it's the tallest and the least to act on. A card that's off or has nothing
+ * to say isn't shown.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,6 +119,11 @@ fun HomeScreen(
     onCelebrationShown: (Long) -> Unit = {},
     habitsUndoHint: Boolean = false,
     onOpenHabits: () -> Unit = {},
+    /** Today's "On this day" picks; null hides the card (switched off, offline, or not loaded yet). */
+    onThisDay: OnThisDayToday? = null,
+    onAnotherOnThisDay: () -> Unit = {},
+    /** Loads the card's picture; null for words only. */
+    images: ImageLoader? = null,
 ) {
     val now = now ?: rememberMinuteClock().atZone(zone).toLocalDateTime()
     val index = glancePageIndex(state.pages)
@@ -168,10 +180,10 @@ fun HomeScreen(
                     undoHint = habitsUndoHint, onOpenHabits = onOpenHabits,
                 )
             }
-            HomeCards(state, page, loaded, now, zone)
+            HomeCards(state, page, loaded, now, zone, onThisDay, onAnotherOnThisDay, images)
             // Only when every card is switched off (not while they're waiting for a forecast), or habits have none.
             val settings = state.settings
-            if (!settings.comingUpEnabled && !settings.skyEnabled && !settings.memesEnabled && !showHabits) {
+            if (!settings.comingUpEnabled && !settings.skyEnabled && !settings.onThisDayEnabled && !settings.memesEnabled && !showHabits) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Turn on more cards in Settings",
@@ -192,7 +204,16 @@ fun HomeScreen(
 
 /** The personal cards under the glance, in order. */
 @Composable
-private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.Loaded?, now: LocalDateTime, zone: java.time.ZoneId) {
+private fun HomeCards(
+    state: WeatherUiState,
+    page: PageUi?,
+    loaded: PageContent.Loaded?,
+    now: LocalDateTime,
+    zone: java.time.ZoneId,
+    onThisDay: OnThisDayToday?,
+    onAnotherOnThisDay: () -> Unit,
+    images: ImageLoader?,
+) {
     val settings = state.settings
     val unit = settings.primaryUnit
     val forecast = loaded?.forecast
@@ -218,6 +239,29 @@ private fun HomeCards(state: WeatherUiState, page: PageUi?, loaded: PageContent.
         val sky = remember(instant, forecast, latitude) { describeSky(instant, zone, forecast, latitude) }
         SectionHeading("Tonight's sky")
         SkyCard(phase, sky, Modifier.padding(horizontal = PageMargin), southern = latitude < 0)
+    }
+
+    // The fun section: a moment from history, then the meme. Only today's (never yesterday's just after midnight).
+    // It opens out when the day's picks arrive, and the last one stays while it folds away (switched off).
+    val history = onThisDay?.takeIf { settings.onThisDayEnabled && it.date == now.toLocalDate() && it.current != null }
+    var lastHistory by remember { mutableStateOf(history) }
+    if (history != null) lastHistory = history
+    AnimatedVisibility(history != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        val day = history ?: lastHistory
+        val pick = day?.current
+        if (day != null && pick != null) {
+            Column {
+                SectionHeading("On this day")
+                OnThisDayCard(
+                    pick,
+                    today = day.date,
+                    onAnother = if (day.picks.size > 1) onAnotherOnThisDay else null,
+                    modifier = Modifier.padding(horizontal = PageMargin),
+                    images = images,
+                    next = day.picks.takeIf { it.size > 1 }?.let { it[(day.index + 1).mod(it.size)] },
+                )
+            }
+        }
     }
 
     val meme = loaded?.meme

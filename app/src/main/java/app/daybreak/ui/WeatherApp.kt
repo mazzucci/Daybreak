@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.unit.isSpecified
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalView
@@ -74,7 +75,12 @@ internal fun dayOverlay(state: WeatherUiState, key: String?, date: LocalDate?): 
 
 /** Wires the ViewModel to the stateless screens and owns navigation and system pickers/prompts. */
 @Composable
-fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm: HabitsViewModel? = null) {
+fun WeatherApp(
+    vm: WeatherViewModel,
+    clocksVm: ClocksViewModel? = null,
+    habitsVm: HabitsViewModel? = null,
+    onThisDayVm: OnThisDayViewModel? = null,
+) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
     val habits = habitsVm?.summary?.collectAsStateWithLifecycle()?.value
@@ -82,6 +88,9 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
     val celebration = habitsVm?.celebration?.collectAsStateWithLifecycle()?.value
     val undoHint = habitsVm?.undoHint?.collectAsStateWithLifecycle()?.value ?: false
     if (habitsVm != null) OnNewDay(habitsVm::refresh)
+    val onThisDay = onThisDayVm?.day?.collectAsStateWithLifecycle()?.value
+    // Once the settings are read, so a card that's switched off is never fetched.
+    if (onThisDayVm != null && state.ready) OnThisDayLoader(onThisDayVm, state.settings.onThisDayEnabled)
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
     // Set while Search is adding a clock rather than a page.
@@ -228,7 +237,11 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
                                 scrollTo = index
                                 tab = Tab.Weather
                             },
-                            onRefresh = vm::refresh,
+                            onRefresh = { key ->
+                                vm.refresh(key)
+                                // A card that couldn't be fetched (offline) gets another go.
+                                if (state.settings.onThisDayEnabled) onThisDayVm?.load(force = true)
+                            },
                             onRequestPermission = requestPermission,
                             onOpenSearch = openSearch,
                             onOpenSettings = { tab = Tab.Settings },
@@ -239,6 +252,9 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm
                             onCelebrationShown = { habitsVm?.celebrationShown(it) },
                             habitsUndoHint = undoHint,
                             onOpenHabits = { tab = Tab.Habits },
+                            onThisDay = onThisDay,
+                            onAnotherOnThisDay = { onThisDayVm?.another() },
+                            images = onThisDayVm?.images,
                         )
                         Tab.Weather -> WeatherPagerScreen(
                             state = state,
@@ -294,6 +310,19 @@ private fun OnNewDay(onDay: () -> Unit) {
     LaunchedEffect(day) { onDay() }
 }
 
+/**
+ * Asks for today's "On this day" while it's switched on: each time the app comes back (which also retries after
+ * being offline) and when the date changes. Switched off, the card goes at once.
+ */
+@Composable
+private fun OnThisDayLoader(vm: OnThisDayViewModel, enabled: Boolean) {
+    val day = rememberToday()
+    LifecycleResumeEffect(enabled, day) {
+        if (enabled) vm.load() else vm.clear()
+        onPauseOrDispose {}
+    }
+}
+
 @Composable
 private fun SettingsTab(
     state: WeatherUiState,
@@ -310,6 +339,7 @@ private fun SettingsTab(
             onMemesEnabledChange = vm::setMemesEnabled,
             onSkyEnabledChange = vm::setSkyEnabled,
             onHabitsOnHomeChange = vm::setHabitsOnHome,
+            onOnThisDayEnabledChange = vm::setOnThisDayEnabled,
             habitsWeekStart = habitsWeekStart,
             onHabitsWeekStartChange = onHabitsWeekStartChange,
             onComingUpEnabledChange = vm::setComingUpEnabled,

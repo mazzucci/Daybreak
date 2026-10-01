@@ -101,6 +101,7 @@ fun SettingsScreen(
     onMemesEnabledChange: (Boolean) -> Unit,
     onSkyEnabledChange: (Boolean) -> Unit = {},
     onHabitsOnHomeChange: (Boolean) -> Unit = {},
+    onOnThisDayEnabledChange: (Boolean) -> Unit = {},
     /** The habits' first day of the week; null hides the choice (no habits store). */
     habitsWeekStart: DayOfWeek? = null,
     onHabitsWeekStartChange: (DayOfWeek) -> Unit = {},
@@ -239,6 +240,27 @@ fun SettingsScreen(
                         checked = settings.skyEnabled,
                         onCheckedChange = onSkyEnabledChange,
                         modifier = Modifier.semantics { contentDescription = "Tonight's sky" },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("On this day on Home", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "A cheerful moment from today's date in history, with a picture, fetched once a day. " +
+                                "Wikipedia and its image servers see your IP address and the date.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = settings.onThisDayEnabled,
+                        onCheckedChange = onOnThisDayEnabledChange,
+                        modifier = Modifier.semantics { contentDescription = "On this day on Home" },
                     )
                 }
             }
@@ -640,13 +662,13 @@ private fun SetupSteps(onDownloadModel: (String) -> Unit, onImportModel: () -> U
 
 /**
  * Opens [url] in the browser; devices without one (or with it disabled) get the address inline instead of a
- * crash, since [androidx.compose.ui.platform.UriHandler.openUri] throws when no activity can handle it.
+ * crash (see [tryOpen]).
  */
 @Composable
 private fun LinkButton(label: String, url: String) {
     val uriHandler = LocalUriHandler.current
     var failed by remember { mutableStateOf(false) }
-    OutlinedButton({ failed = runCatching { uriHandler.openUri(url) }.isFailure }) { Text(label) }
+    OutlinedButton({ failed = !uriHandler.tryOpen(url) }) { Text(label) }
     if (failed) {
         Spacer(Modifier.height(6.dp))
         Text(

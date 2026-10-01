@@ -102,6 +102,15 @@ class SettingsRepositoryTest {
         assertTrue(SettingsRepository(InMemoryStore()).settings.value.habitsOnHome)
     }
 
+    @Test fun `remembers On this day on Home`() {
+        val store = InMemoryStore()
+        assertTrue(SettingsRepository(store).settings.value.onThisDayEnabled)
+        SettingsRepository(store).update { it.copy(onThisDayEnabled = false) }
+        assertFalse(SettingsRepository(store).settings.value.onThisDayEnabled)
+        SettingsRepository(store).update { it.copy(onThisDayEnabled = true) }
+        assertTrue(SettingsRepository(store).settings.value.onThisDayEnabled)
+    }
+
     @Test fun `bad stored values fall back to defaults`() {
         val store = InMemoryStore(mapOf("primary_unit" to "K", "use_current_location" to "maybe"))
         assertEquals(AppSettings(), SettingsRepository(store).settings.value)

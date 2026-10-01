@@ -35,6 +35,12 @@ import android.text.format.DateFormat
 import app.daybreak.ui.WeatherTheme
 import app.daybreak.ui.WeatherViewModel
 import java.util.Locale
+import java.io.File
+import app.daybreak.data.ImageDiskCache
+import app.daybreak.data.OnThisDayRepository
+import app.daybreak.data.WebImageLoader
+import app.daybreak.data.WikipediaOnThisDayApi
+import app.daybreak.ui.OnThisDayViewModel
 
 class MainActivity : ComponentActivity() {
     private val vm: WeatherViewModel by viewModels { weatherViewModelFactory(applicationContext) }
@@ -46,11 +52,23 @@ class MainActivity : ComponentActivity() {
         viewModelFactory { initializer { HabitsViewModel(HabitsRepository(SharedPrefsStore(applicationContext, PRIVATE_PREFS))) } }
     }
 
+    // "On this day": one fetch a day, pictures cached on disk; nothing personal, so the ordinary store.
+    private val onThisDayVm: OnThisDayViewModel by viewModels {
+        viewModelFactory {
+            initializer {
+                OnThisDayViewModel(
+                    OnThisDayRepository(WikipediaOnThisDayApi(UrlConnectionHttpClient(timeoutMs = 8_000)), SharedPrefsStore(applicationContext)),
+                    images = WebImageLoader(ImageDiskCache(File(applicationContext.cacheDir, "images"))),
+                )
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         syncClockFormat(recreateOnChange = false) // about to compose anyway
-        setContent { WeatherTheme { WeatherApp(vm, clocksVm, habitsVm) } }
+        setContent { WeatherTheme { WeatherApp(vm, clocksVm, habitsVm, onThisDayVm) } }
     }
 
     override fun onResume() {

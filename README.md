@@ -6,6 +6,7 @@ A personal Android app for the start of your day: the weather for where you are 
 
 - Habits: as many as you like, each with a name, a colour, and a goal: something to **build** (drink water 8 times a day, ride a bike once a week) or to **avoid** (no takeout, or at most two coffees a day). Tap +1 to log (or "Had one" for a slip); long-press it or tap − to take one back. Build habits show today's or this week's progress as a ring and the current and best streak; avoid habits show the days since the last one and whether the allowance is kept this week, so a slip never reads as a broken streak. Each has a 12-week map in its colour. Points for each log (up to the goal) and each day or week the goal is met or the allowance kept, with bonuses when a run reaches 7, 30 and 100, add up to a level, and a few badges mark firsts and long runs; meeting a goal or a milestone gets a one-line cheer in place ("7-day streak! +61"). Changing a goal applies from that day on, never to the past. Weeks start on your region's first day, set when you add your first habit and changeable in Settings → Habits. Today's habits are also on Home, to log with a tap (turn that off in Settings → Habits). Habits are kept on the phone and aren't backed up
 - Tonight's sky (on Home): the moon drawn as it is tonight with its phase and how much is lit, the next full moon by its old name (the Harvest Moon, the Hunter's Moon…), the next meteor shower when one peaks within two weeks (and whether a bright moon will wash it out), and whether the forecast says it's clear enough to look up. All worked out on the phone. Turn it off in Settings → Fun
+- On this day (on Home): one pleasant or interesting moment from today's date in history, from Wikipedia's "On this day" feed (free, no key; Wikipedia and its image servers see your IP address and the date, nothing else). A free picture from Wikimedia Commons runs across the top of the card when there's a good one (a landscape photo fills it; a portrait, flag or seal is shown whole over a blurred copy of itself), then "1975 · 51 years ago", what happened, and the article to read. Grim items (violence, disasters, deaths, persecution, wars) are filtered out by a tested word list, checked against real items it used to get wrong, and the rest are scored so that science, culture, sport, space, nature and milestones, firsts, openings and good pictures come first, with no two from the same decade. The day's picks (up to five; "Another" slides through them) are fetched once a day, the same all day, and kept with the one showing; pictures are cached on the phone, and a "Picture" link credits each one on Commons. Offline, the card simply isn't there; pull to refresh to try again at once. Tap it to read the article. Turn it off in Settings → Fun
 - Clocks: the places you call or work with, each with its time, whether it's today or tomorrow there, how far ahead or behind you it is and its UTC offset, following daylight saving. A converter shows one moment in every clock ("At 12:00 PM today in Los Angeles it's 10:00 PM in Bucharest"). Places come from the same search as Weather, which gives each one's time zone
 - Search for any city and save it; swipe between places, reorder or remove them
 - Current location is optional: turn it off and use saved places only
@@ -57,11 +58,15 @@ The backdrop follows the conditions and the time of day at each place (clear, cl
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitsList_habits.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitsDark_habits_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitEditorNew_habit_editor_new.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_habitsHomeCard_habits_home_card.png" width="200"> |
 
+| On this day: photo and portrait | Drawings (dark) | Words only, 331 BC | Large font (1.5x, 320dp) |
+|:---:|:---:|:---:|:---:|
+| <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_onThisDayFill_on_this_day.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_onThisDayPosterDark_on_this_day_poster_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_onThisDayTextOnly_on_this_day_text_only.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_onThisDayLargeFont_on_this_day_large_font.png" width="200"> |
+
 | Settings: installed | Settings: failed (dark) | Rainy night (dark) | App icon |
 |:---:|:---:|:---:|:---:|
 | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsInstalled_settings_installed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_settingsFailed_settings_failed.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_weatherRainyNightDark_weather_rainy_night_dark.png" width="200"> | <img src="app/src/test/snapshots/images/app.daybreak.ui_ScreenshotTest_appIcon_app_icon.png" width="120"> |
 
-These are rendered from the app's real UI code with sample data using [Paparazzi](https://github.com/cashapp/paparazzi). Weather icons and the launcher icon are drawn in code and as vector drawables, so there are no bitmap assets. To regenerate the screenshots after UI changes:
+These are rendered from the app's real UI code with sample data using [Paparazzi](https://github.com/cashapp/paparazzi). Weather icons and the launcher icon are drawn in code and as vector drawables, so there are no bitmap assets; the "On this day" pictures in the screenshots are stand-ins drawn by the test (a landscape, a portrait, a flag and a seal), since screenshot tests don't use the network. To regenerate the screenshots after UI changes:
 
 ```
 ./gradlew recordPaparazziDebug
@@ -96,16 +101,18 @@ app/src/main/java/app/daybreak/
               Precip (the one rule set for rain and snow: thresholds, the classifier, words, amounts, a day's timing and parts);
               OutdoorScorer (an hour's score for being outside); WeekOutlook ("This week": day scores, tiers, spells,
               the best day and the lines); ComingUp (holidays, long weekends, seasons);
-              Habits (streaks, days since, allowances, points, levels, badges, the 12-week map)
+              Habits (streaks, days since, allowances, points, levels, badges, the 12-week map);
+              OnThisDay (the grim filter, scoring, the day's picks, the subject and its Commons picture, text tidying)
   data/       HttpClient, Open-Meteo forecast + geocoding API and JSON parsers,
               saved places, settings, clocks, habits and daily meme repositories (SharedPreferences), device location,
-              Nager.Date holiday API + HolidayRepository (cached per country and year)
+              Nager.Date holiday API + HolidayRepository (cached per country and year),
+              Wikipedia "On this day" API + OnThisDayRepository (cached per day), ImageLoader (a tiny picture loader: decodes to the slot's size, disk and memory caches)
   narration/  TemplateNarrator (the summary line), GemmaNarrator (MediaPipe),
               GemmaModelStore (model download + import),
               Meme (mood, template captions, prompt, validator, MemeWriter)
-  ui/         WeatherViewModel, ClocksViewModel and HabitsViewModel (StateFlow), stateless screens (DayScreen: a day's details), WeatherApp (navigation, pickers),
+  ui/         WeatherViewModel, ClocksViewModel, HabitsViewModel and OnThisDayViewModel (StateFlow), stateless screens (DayScreen: a day's details), WeatherApp (navigation, pickers),
               Theme (palettes, type), Sky (condition -> backdrop), WeatherIcons (Canvas-drawn glyphs),
-              MemeCard, WeekOutlookCard ("This week" and its 7-day strip)
+              MemeCard, WeekOutlookCard ("This week" and its 7-day strip), OnThisDayCard
   widget/     WeatherWidget (Jetpack Glance), its receiver, WidgetRefreshWorker (WorkManager), WidgetPublisher
 ```
 
@@ -119,7 +126,7 @@ Requires JDK 17 and the Android SDK (`ANDROID_HOME` or `local.properties` pointi
 
 [GitHub Actions](.github/workflows/ci.yml) runs the same command on every pull request and push to `main`, and uploads the test reports and screenshot diffs if a test or screenshot check fails.
 
-The unit tests cover JSON parsing (with real Open-Meteo responses as fixtures), formatting, the rain rules and the day page's verdict, timing and the parts of the day, the "This week" outlook (spells, the best day, the today line in the evening and under polar night or day, with real and made-to-order forecasts), the template narrator, meme caption validation, habit streaks, points and badges, the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
+The unit tests cover JSON parsing (with real Open-Meteo and Wikipedia responses as fixtures), the "On this day" filter (with a regression table of real items), scoring, picks, pictures, per-day cache and picture loader, formatting, the rain rules and the day page's verdict, timing and the parts of the day, the "This week" outlook (spells, the best day, the today line in the evening and under polar night or day, with real and made-to-order forecasts), the template narrator, meme caption validation, habit streaks, points and badges, the repositories and the ViewModels (with fakes). The APK ends up in `app/build/outputs/apk/debug/`.
 
 ## License
 
