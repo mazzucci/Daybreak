@@ -66,56 +66,6 @@ fun describeUv(uv: Double): String = when (uv.roundToInt()) {
     else -> "Extreme"
 }
 
-/**
- * "9 AM–1 PM" for an activity window; "Now–6 PM" when it starts this hour ([startsNow]), and "From 8 AM" when it
- * runs to the end of the data, since the good weather may well carry on.
- */
-fun formatWindow(w: ActivityWindow, startsNow: Boolean = false, locale: Locale = Locale.getDefault()): String {
-    val start = if (startsNow) "Now" else formatHour(w.start, locale)
-    return when {
-        w.openEnded && startsNow -> "From now on"
-        w.openEnded -> "From $start"
-        else -> "$start–${formatHour(w.end, locale)}"
-    }
-}
-
-/** "Dry · light wind · 17–21°": what the window is like, in the primary unit. */
-fun describeWindow(w: ActivityWindow, unit: TempUnit): String =
-    listOfNotNull(windowRain(w), windowWind(w), windowTemps(w, unit)).joinToString(" · ")
-
-/** The same for screen readers: commas for pauses, "to" for ranges, and both units like the rest of the app. */
-fun describeWindowSpoken(w: ActivityWindow, unit: TempUnit): String {
-    val other = unit.other()
-    val temps = "${windowTemps(w, unit).replace("–", " to ")}${unit.name} (${windowTemps(w, other).replace("–", " to ")}${other.name})"
-    return listOfNotNull(windowRain(w), windowWind(w), temps).joinToString(", ")
-}
-
-private fun windowRain(w: ActivityWindow) = if (w.maxPrecipChance < 15) "Dry" else "${w.maxPrecipChance}% rain chance"
-
-private fun windowWind(w: ActivityWindow) = w.maxWindKmh?.let { if (it < 12) "calm" else if (it < 25) "light wind" else "breezy" }
-
-private fun windowTemps(w: ActivityWindow, unit: TempUnit): String {
-    val lo = degrees(w.minTempC, unit)
-    val hi = degrees(w.maxTempC, unit)
-    return if (lo == hi) "$lo°" else "$lo–$hi°"
-}
-
-/** "Rain and wind": the top one or two reasons there's no good window. */
-fun describeBlockers(limits: List<Limit>): String {
-    val words = limits.take(2).map {
-        when (it) {
-            Limit.STORM -> "storms"
-            Limit.SNOW -> "snow"
-            Limit.RAIN -> "rain"
-            Limit.WIND -> "strong wind"
-            Limit.COLD -> "the cold"
-            Limit.HEAT -> "the heat"
-            Limit.DARK -> "darkness"
-        }
-    }
-    return if (words.isEmpty()) "Not great conditions" else words.joinToString(" and ").replaceFirstChar { it.uppercase() }
-}
-
 /** WMO weather interpretation codes, as used by Open-Meteo. */
 fun describeWeatherCode(code: Int): String = when (code) {
     0 -> "Clear sky"

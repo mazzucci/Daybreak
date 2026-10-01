@@ -315,7 +315,6 @@ private fun SettingsTab(
             onComingUpEnabledChange = vm::setComingUpEnabled,
             onAddPersonalDate = vm::addPersonalDate,
             onRemovePersonalDate = vm::removePersonalDate,
-            onActivityChange = vm::setActivity,
             onDownloadModel = vm::downloadModel,
             onCancelDownload = vm::cancelModelDownload,
             onImportModel = { launchModelPicker(arrayOf("*/*")) },

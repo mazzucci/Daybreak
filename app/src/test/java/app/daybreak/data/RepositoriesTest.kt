@@ -3,7 +3,6 @@ package app.daybreak.data
 import app.daybreak.TestData.london
 import app.daybreak.TestData.sanFrancisco
 import app.daybreak.TestData.tokyo
-import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.Clock
 import app.daybreak.domain.PersonalDate
@@ -162,15 +161,15 @@ class SettingsRepositoryTest {
         assertNull(private.getString("personal_dates"))
     }
 
-    @Test fun `activity is saved, including off`() {
+    @Test fun `the removed activity setting is cleared once`() {
         val store = InMemoryStore()
-        assertEquals(Activity.CYCLING, SettingsRepository(store).settings.value.activity)
-        SettingsRepository(store).update { it.copy(activity = null) }
-        assertNull(SettingsRepository(store).settings.value.activity)
-        SettingsRepository(store).update { it.copy(activity = Activity.RUNNING) }
-        assertEquals(Activity.RUNNING, SettingsRepository(store).settings.value.activity)
-        store.putString("activity", "SKIING")
-        assertEquals(Activity.CYCLING, SettingsRepository(store).settings.value.activity)
+        store.putString("activity", "RUNNING")
+        store.putString("primary_unit", "C")
+        val repo = SettingsRepository(store)
+        assertNull(store.getString("activity"))
+        assertEquals(TempUnit.C, repo.settings.value.primaryUnit)
+        repo.update { it.copy(skyEnabled = false) }
+        assertNull(store.getString("activity")) // not written back either
     }
 
     @Test fun `clocks are saved in order, moved, removed, and a bad entry doesn't lose the rest`() {

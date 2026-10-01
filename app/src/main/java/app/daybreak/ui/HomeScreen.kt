@@ -64,6 +64,9 @@ import app.daybreak.domain.upcomingPersonalDates
 import app.daybreak.domain.describeSky
 import app.daybreak.domain.moonPhase
 import app.daybreak.domain.weekendDays
+import app.daybreak.domain.WeekOutlook
+import app.daybreak.domain.keepUnitsTogether
+import app.daybreak.domain.weekOutlook
 import app.daybreak.domain.HabitsSummary
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -271,13 +274,15 @@ private fun WeatherGlance(
         // Don't say rain twice: when the sky already is rain (or snow, or storms), the chance stands alone.
         val chance = rain?.let { if (condition in DRY_SKIES) "${todayRain.noun} $it%" else "$it% chance" }
         val line = listOfNotNull(condition, range, chance).joinToString(" · ")
+        // The "This week" today line, quietly under the glance; the weekend doesn't matter to it.
+        val outlook = remember(f, unit) { weekOutlook(f, unit) }
         val spoken = listOfNotNull(
             name,
             formatBothUnits(f.current.tempC, unit),
             describeWeatherCode(f.current.code).lowercase(),
             "high ${formatDegrees(today.highC, unit)}, low ${formatDegrees(today.lowC, unit)}",
             rain?.let { "$it percent chance of ${todayRain.noun.lowercase()}" },
-        ).joinToString(", ") + ". Opens Weather."
+        ).joinToString(", ") + ". ${outlook.today.spoken}. Opens Weather."
         Card(
             onClick = onOpen,
             modifier = modifier.fillMaxWidth().clearAndSetSemantics {
@@ -286,7 +291,7 @@ private fun WeatherGlance(
             },
             colors = colors,
         ) {
-            Row(Modifier.padding(16.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 WeatherIcon(f.current.code, night = f.isNightNow, cardIconPalette(), size = 36.dp, contentDescription = null)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -319,6 +324,7 @@ private fun WeatherGlance(
                     tint = MaterialTheme.colorScheme.outline,
                 )
             }
+            OutlookGlanceLine(outlook)
         }
         return
     }
@@ -353,6 +359,26 @@ private fun WeatherGlance(
                 }
             }
         }
+    }
+}
+
+/**
+ * The outlook's today line under the glance, one line, starting under the place name: a dot in the tier's colour
+ * (centred under the weather icon) and the line in bodySmall.
+ */
+@Composable
+private fun OutlookGlanceLine(outlook: WeekOutlook) {
+    val tier = outlook.focus?.tier
+    Row(Modifier.padding(start = 30.dp, top = 6.dp, end = 16.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (tier != null) tierColor(tier) else MaterialTheme.colorScheme.outlineVariant))
+        Spacer(Modifier.width(26.dp))
+        Text(
+            keepUnitsTogether(outlook.today.text),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

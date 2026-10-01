@@ -107,8 +107,9 @@ import app.daybreak.domain.Forecast
 import app.daybreak.domain.Place
 import app.daybreak.domain.TempUnit
 import app.daybreak.domain.formatDegrees
-import app.daybreak.domain.Activity
-import app.daybreak.domain.ActivityScorer
+import app.daybreak.domain.countryCodeOf
+import app.daybreak.domain.weekOutlook
+import app.daybreak.domain.weekendDays
 import androidx.compose.material3.minimumInteractiveComponentSize
 import app.daybreak.domain.DaySummary
 import app.daybreak.domain.Daylight
@@ -181,7 +182,6 @@ fun WeatherPagerScreen(
                 WeatherPage(
                     page = page,
                     unit = state.settings.primaryUnit,
-                    activity = state.settings.activity,
                     onRefresh = { onRefresh(page.key) },
                     onRequestPermission = onRequestPermission,
                     onOpenSearch = onOpenSearch,
@@ -253,7 +253,6 @@ private fun PageIndicator(pages: List<PageUi>, current: Int) {
 fun WeatherPage(
     page: PageUi,
     unit: TempUnit,
-    activity: Activity? = null,
     onRefresh: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -326,7 +325,7 @@ fun WeatherPage(
                             TextButton(onOpenSearch) { Text("Search for a place instead") }
                         }
                     }
-                    is PageContent.Loaded -> BodyForecast(content, unit, night, activity, now, onOpenDay)
+                    is PageContent.Loaded -> BodyForecast(content, unit, night, weekendDays(page.place?.let(::countryCodeOf)), now, onOpenDay)
                 }
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -541,7 +540,8 @@ private fun BodyForecast(
     content: PageContent.Loaded,
     unit: TempUnit,
     night: Boolean,
-    activity: Activity?,
+    /** The place's weekend days, for the outlook's best day. */
+    weekend: Set<java.time.DayOfWeek>,
     now: Instant?,
     onOpenDay: (LocalDate) -> Unit,
 ) {
@@ -578,13 +578,9 @@ private fun BodyForecast(
         night = { i, h -> if (i == 0) night else forecast.isNight(h) },
         rainDuring = forecast::rainDuring,
     )
-    if (activity != null) {
-        val plan = remember(forecast, activity) { ActivityScorer.plan(forecast, activity) }
-        if (plan.hours.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            ActivityCard(plan, unit, forecast.current.time.toLocalDate(), Modifier.padding(horizontal = PageMargin))
-        }
-    }
+    val outlook = remember(forecast, unit, weekend) { weekOutlook(forecast, unit, weekend) }
+    Spacer(Modifier.height(24.dp))
+    WeekOutlookSection(outlook, forecast.today.date, onOpenDay)
     SunAndUv(forecast.today)
     val days = forecast.upcomingDays()
     if (days.size > 1) {

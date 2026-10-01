@@ -202,8 +202,6 @@ data class AppSettings(
     val useCurrentLocation: Boolean = true,
     /** Whether the on-device Gemma model writes the daily meme (needs an installed model). */
     val gemmaEnabled: Boolean = true,
-    /** The activity to find good weather windows for; null hides the card. */
-    val activity: Activity? = Activity.CYCLING,
     /** Whether pages show upcoming public holidays, long weekends and the next season. */
     val comingUpEnabled: Boolean = true,
     /** The user's own dates (birthdays, presentations, days off), soonest first, counted down to on the first page. */

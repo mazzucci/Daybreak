@@ -6,7 +6,6 @@ import app.daybreak.data.LocationProvider
 import app.daybreak.data.SavedPlacesRepository
 import app.daybreak.data.SettingsRepository
 import app.daybreak.data.WeatherApi
-import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.WidgetSnapshot
 import app.daybreak.domain.widgetSnapshotOf
@@ -490,9 +489,6 @@ class WeatherViewModel(
 
     /** The phone switched between 12- and 24-hour time: summaries mention times, so rewrite them. */
     fun onClockFormatChanged() = renarrateAll()
-
-    /** Only changes the activity card, which is computed from the forecast the page already has: nothing to refetch or re-narrate. */
-    fun setActivity(activity: Activity?) = settingsRepo.update { it.copy(activity = activity) }
 
     /**
      * Adds [date], dropping one-off dates that are over. The dates' card is computed from settings; the holiday

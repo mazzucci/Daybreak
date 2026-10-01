@@ -62,17 +62,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
 import app.daybreak.domain.TempUnit
 import app.daybreak.narration.GemmaModelSource
@@ -116,7 +109,6 @@ fun SettingsScreen(
     onRemovePersonalDate: (PersonalDate) -> Unit = {},
     /** For your dates (listed while they're ahead); fixed in screenshot tests. */
     today: LocalDate = LocalDate.now(),
-    onActivityChange: (Activity?) -> Unit,
     onDownloadModel: (hfToken: String) -> Unit,
     onCancelDownload: () -> Unit,
     onImportModel: () -> Unit,
@@ -207,37 +199,6 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(12.dp))
             PersonalDatesCard(settings.personalDates, settings.comingUpEnabled, today, onAddPersonalDate, onRemovePersonalDate)
-
-            SectionTitle("Outdoor plans")
-            SettingsCard {
-                Text("Activity", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "Each place's page shows the best time in the next 24 hours for it, judged on rain, wind, temperature and daylight.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(12.dp))
-                // One choice out of four: a radio group to TalkBack, with a check that makes the pick readable
-                // without relying on the fill colour alone.
-                @OptIn(ExperimentalLayoutApi::class)
-                FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (Activity.entries + null).forEach { activity ->
-                        val selected = settings.activity == activity
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onActivityChange(activity) },
-                            modifier = Modifier.semantics { role = Role.RadioButton },
-                            label = { Text(activity?.label ?: "Off") },
-                            leadingIcon = if (selected) {
-                                { Icon(Icons.Default.Check, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) }
-                            } else {
-                                null
-                            },
-                        )
-                    }
-                }
-            }
 
             SectionTitle("Fun")
             SettingsCard {
