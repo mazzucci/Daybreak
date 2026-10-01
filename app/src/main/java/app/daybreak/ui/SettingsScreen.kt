@@ -106,6 +106,7 @@ fun SettingsScreen(
     onGemmaEnabledChange: (Boolean) -> Unit,
     onMemesEnabledChange: (Boolean) -> Unit,
     onSkyEnabledChange: (Boolean) -> Unit = {},
+    onHabitsOnHomeChange: (Boolean) -> Unit = {},
     onComingUpEnabledChange: (Boolean) -> Unit,
     onAddPersonalDate: (PersonalDate) -> Unit = {},
     onRemovePersonalDate: (PersonalDate) -> Unit = {},
@@ -148,6 +149,28 @@ fun SettingsScreen(
                             ) { Text(if (unit == TempUnit.F) "°F first" else "°C first") }
                         }
                     }
+                }
+            }
+
+            SectionTitle("Habits")
+            SettingsCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Habits on Home", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Today's habits under the weather, to log with a tap. Shown once you have a habit. " +
+                                "Your habits are kept on this phone, not backed up.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Switch(
+                        checked = settings.habitsOnHome,
+                        onCheckedChange = onHabitsOnHomeChange,
+                        modifier = Modifier.semantics { contentDescription = "Habits on Home" },
+                    )
                 }
             }
 

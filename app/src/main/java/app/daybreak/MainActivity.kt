@@ -28,6 +28,8 @@ import app.daybreak.data.NagerHolidayApi
 import app.daybreak.ui.WeatherApp
 import app.daybreak.ui.ClocksViewModel
 import app.daybreak.data.ClocksRepository
+import app.daybreak.data.HabitsRepository
+import app.daybreak.ui.HabitsViewModel
 import app.daybreak.domain.ClockFormat
 import android.text.format.DateFormat
 import app.daybreak.ui.WeatherTheme
@@ -39,12 +41,16 @@ class MainActivity : ComponentActivity() {
     private val clocksVm: ClocksViewModel by viewModels {
         viewModelFactory { initializer { ClocksViewModel(ClocksRepository(SharedPrefsStore(applicationContext))) } }
     }
+    // Habits are personal: kept in the private store, which isn't backed up.
+    private val habitsVm: HabitsViewModel by viewModels {
+        viewModelFactory { initializer { HabitsViewModel(HabitsRepository(SharedPrefsStore(applicationContext, PRIVATE_PREFS))) } }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge() // Android 15 enforces this at targetSdk 35; do the same on older versions.
         super.onCreate(savedInstanceState)
         syncClockFormat(recreateOnChange = false) // about to compose anyway
-        setContent { WeatherTheme { WeatherApp(vm, clocksVm) } }
+        setContent { WeatherTheme { WeatherApp(vm, clocksVm, habitsVm) } }
     }
 
     override fun onResume() {

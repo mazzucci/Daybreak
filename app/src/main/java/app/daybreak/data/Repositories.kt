@@ -2,7 +2,15 @@ package app.daybreak.data
 
 import app.daybreak.domain.Activity
 import app.daybreak.domain.AppSettings
+import app.daybreak.domain.Badge
 import app.daybreak.domain.Clock
+import app.daybreak.domain.HABIT_COUNT_MAX
+import app.daybreak.domain.HABIT_TITLE_MAX
+import app.daybreak.domain.Habit
+import app.daybreak.domain.HabitColor
+import app.daybreak.domain.HabitKind
+import app.daybreak.domain.HabitPeriod
+import app.daybreak.domain.HabitsData
 import app.daybreak.domain.PersonalDate
 import app.daybreak.domain.Place
 import app.daybreak.domain.countryCodeOf
@@ -113,6 +121,7 @@ class SettingsRepository(
         store.putString(KEY_MEMES, s.memesEnabled.toString())
         store.putString(KEY_COMING_UP, s.comingUpEnabled.toString())
         store.putString(KEY_SKY, s.skyEnabled.toString())
+        store.putString(KEY_HABITS_HOME, s.habitsOnHome.toString())
         store.putString(KEY_ACTIVITY, s.activity?.name ?: ACTIVITY_OFF)
         if (s.personalDates.isEmpty()) {
             privateStore.remove(KEY_DATES)
@@ -156,6 +165,7 @@ class SettingsRepository(
         memesEnabled = store.getString(KEY_MEMES)?.toBooleanStrictOrNull() ?: defaults.memesEnabled,
         comingUpEnabled = store.getString(KEY_COMING_UP)?.toBooleanStrictOrNull() ?: defaults.comingUpEnabled,
         skyEnabled = store.getString(KEY_SKY)?.toBooleanStrictOrNull() ?: defaults.skyEnabled,
+        habitsOnHome = store.getString(KEY_HABITS_HOME)?.toBooleanStrictOrNull() ?: defaults.habitsOnHome,
         personalDates = loadPersonalDates() ?: defaults.personalDates,
         activity = when (val v = store.getString(KEY_ACTIVITY)) {
             null -> defaults.activity
@@ -171,6 +181,7 @@ class SettingsRepository(
         const val KEY_MEMES = "memes_enabled"
         const val KEY_COMING_UP = "coming_up_enabled"
         const val KEY_SKY = "sky_enabled"
+        const val KEY_HABITS_HOME = "habits_on_home"
         const val KEY_ACTIVITY = "activity"
         const val KEY_DATES = "personal_dates"
         const val ACTIVITY_OFF = "OFF"
@@ -219,5 +230,109 @@ class ClocksRepository(private val store: KeyValueStore) {
 
     private companion object {
         const val KEY = "clocks"
+    }
+}
+
+/**
+ * Your habits and their logs, in display order, as JSON in the private store (excluded from backup, like your
+ * dates): what you're working on stays on this phone. Also keeps the points and badges of deleted habits, so
+ * deleting one never takes away what it earned.
+ */
+class HabitsRepository(private val store: KeyValueStore) {
+    private val _data = MutableStateFlow(load())
+    val data: StateFlow<HabitsData> = _data.asStateFlow()
+
+    /** Adds [habit] at the end. Returns false if its id is already taken. */
+    fun add(habit: Habit): Boolean {
+        if (_data.value.habits.any { it.id == habit.id }) return false
+        save(_data.value.copy(habits = _data.value.habits + habit))
+        return true
+    }
+
+    /** Replaces the habit with [habit]'s id, keeping its log and start day. */
+    fun update(habit: Habit) = edit { list ->
+        list.map { if (it.id == habit.id) habit.copy(created = it.created, log = it.log) else it }
+    }
+
+    /** Removes a habit, banking the [points] and [badges] it earned. */
+    fun remove(id: String, points: Int = 0, badges: Set<Badge> = emptySet()) {
+        val d = _data.value
+        if (d.habits.none { it.id == id }) return
+        save(HabitsData(d.habits.filterNot { it.id == id }, d.bankedPoints + points, d.bankedBadges + badges))
+    }
+
+    /** Moves the habit at [from] to index [to]; out-of-range indices are ignored. */
+    fun move(from: Int, to: Int) = edit { list ->
+        if (from !in list.indices || to !in list.indices || from == to) list
+        else list.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
+    /** Adds [delta] to [id]'s count on [date], never below zero or above [HABIT_COUNT_MAX] times ten. */
+    fun log(id: String, date: LocalDate, delta: Int) = edit { list ->
+        list.map { h ->
+            if (h.id != id) return@map h
+            val n = ((h.log[date] ?: 0) + delta).coerceIn(0, HABIT_COUNT_MAX * 10)
+            h.copy(log = if (n == 0) h.log - date else h.log + (date to n))
+        }
+    }
+
+    private fun edit(transform: (List<Habit>) -> List<Habit>) {
+        val d = _data.value
+        val list = transform(d.habits)
+        if (list != d.habits) save(d.copy(habits = list))
+    }
+
+    private fun save(d: HabitsData) {
+        _data.value = d
+        if (d == HabitsData()) {
+            store.remove(KEY)
+            return
+        }
+        val habits = JSONArray(
+            d.habits.map { h ->
+                JSONObject().put("id", h.id).put("title", h.title).put("color", h.color.name).put("kind", h.kind.name)
+                    .put("period", h.period.name).put("target", h.target).put("created", h.created.toString())
+                    .put("log", JSONObject().apply { h.log.toSortedMap().forEach { (date, n) -> put(date.toString(), n) } })
+            },
+        )
+        store.putString(
+            KEY,
+            JSONObject().put("habits", habits).put("bankedPoints", d.bankedPoints)
+                .put("bankedBadges", JSONArray(d.bankedBadges.map { it.name })).toString(),
+        )
+    }
+
+    /** A habit or log entry that doesn't parse is dropped rather than losing the rest. */
+    private fun load(): HabitsData {
+        val root = store.getString(KEY)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return HabitsData()
+        val array = root.optJSONArray("habits") ?: JSONArray()
+        val habits = (0 until array.length()).mapNotNull { i ->
+            runCatching {
+                val o = array.getJSONObject(i)
+                val kind = HabitKind.valueOf(o.getString("kind"))
+                val log = o.optJSONObject("log")
+                Habit(
+                    id = o.getString("id"),
+                    title = o.getString("title").take(HABIT_TITLE_MAX),
+                    // An unknown colour (from a later version) falls back rather than losing the habit.
+                    color = runCatching { HabitColor.valueOf(o.getString("color")) }.getOrDefault(HabitColor.BLUE),
+                    kind = kind,
+                    period = HabitPeriod.valueOf(o.getString("period")),
+                    target = o.getInt("target").coerceIn(if (kind == HabitKind.BUILD) 1 else 0, HABIT_COUNT_MAX),
+                    created = LocalDate.parse(o.getString("created")),
+                    log = log?.keys()?.asSequence()?.mapNotNull { k ->
+                        runCatching { LocalDate.parse(k) to log.getInt(k) }.getOrNull()?.takeIf { it.second > 0 }
+                    }?.toMap().orEmpty(),
+                )
+            }.getOrNull()
+        }.distinctBy { it.id }
+        val badges = root.optJSONArray("bankedBadges")?.let { a ->
+            (0 until a.length()).mapNotNull { runCatching { Badge.valueOf(a.getString(it)) }.getOrNull() }.toSet()
+        }.orEmpty()
+        return HabitsData(habits, root.optInt("bankedPoints", 0).coerceAtLeast(0), badges)
+    }
+
+    private companion object {
+        const val KEY = "habits"
     }
 }

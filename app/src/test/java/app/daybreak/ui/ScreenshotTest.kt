@@ -59,6 +59,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import app.daybreak.domain.Explanation
 import app.daybreak.narration.TemplateNarrator
+import app.daybreak.domain.Badge
+import app.daybreak.domain.Habit
+import app.daybreak.domain.HabitColor
+import app.daybreak.domain.HabitDraft
+import app.daybreak.domain.HabitKind
+import app.daybreak.domain.HabitPeriod
+import app.daybreak.domain.HabitsData
+import app.daybreak.domain.summarize
 import org.junit.Rule
 import org.junit.Test
 
@@ -172,16 +180,25 @@ class ScreenshotTest {
     }
 
     @Composable
-    private fun Home(state: WeatherUiState, now: java.time.LocalDateTime = forecast.current.time) {
+    private fun Home(
+        state: WeatherUiState,
+        now: java.time.LocalDateTime = forecast.current.time,
+        habits: HabitsData = HabitsData(),
+        celebration: Celebration? = null,
+    ) {
         HomeScreen(
             state, onOpenWeather = {}, onRefresh = {}, onRequestPermission = {}, onOpenSearch = {}, onOpenSettings = {},
             now = now, zone = java.time.ZoneId.of("America/Los_Angeles"),
+            habits = habits, celebration = celebration, weekFields = weekFields,
         )
     }
 
     // --- Home -----------------------------------------------------------------------------------
 
-    /** Everything on: greeting on the place's sky, the glance, what's coming up (with your dates), tonight's sky and the meme. */
+    /**
+     * Everything on: greeting on the place's sky, the glance, today's habits, what's coming up (with your dates),
+     * tonight's sky and the meme.
+     */
     @Test fun homeFull() = snap("home_full", tall = true) {
         val today = forecast.current.time.toLocalDate()
         Home(
@@ -191,6 +208,7 @@ class ScreenshotTest {
                     personalDates = listOf(PersonalDate(today.plusDays(1), name = "Board presentation")),
                 ),
             ),
+            habits = habitsData,
         )
     }
 
@@ -281,13 +299,125 @@ class ScreenshotTest {
             Spacer(Modifier.height(16.dp))
             DaybreakNavigationBar(Tab.Weather) {}
             Spacer(Modifier.height(16.dp))
+            DaybreakNavigationBar(Tab.Habits) {}
+            Spacer(Modifier.height(16.dp))
             DaybreakNavigationBar(Tab.Clocks) {}
         }
     }
 
-    @Test fun bottomBarDark() = snap("bottom_bar_dark", night = true) {
-        Column(Modifier.padding(vertical = 16.dp)) { DaybreakNavigationBar(Tab.Settings) {} }
+    /** Five labels on the narrowest phone at the largest font: they stop growing at 1.3x and stay on one line. */
+    @Test fun bottomBarLargeFont() = snap("bottom_bar_large_font", narrow = true, fontScale = 2f) {
+        Column(Modifier.padding(vertical = 16.dp)) {
+            DaybreakNavigationBar(Tab.Habits) {}
+            Spacer(Modifier.height(16.dp))
+            DaybreakNavigationBar(Tab.Settings) {}
+        }
     }
+
+    @Test fun bottomBarDark() = snap("bottom_bar_dark", night = true) {
+        Column(Modifier.padding(vertical = 16.dp)) {
+            DaybreakNavigationBar(Tab.Settings) {}
+            Spacer(Modifier.height(16.dp))
+            DaybreakNavigationBar(Tab.Habits) {}
+        }
+    }
+
+    // --- Habits ---------------------------------------------------------------------------------
+
+    /** Sunday-first weeks, as on a US phone. */
+    private val weekFields = java.time.temporal.WeekFields.of(Locale.US)
+    private val habitsToday = forecast.current.time.toLocalDate() // Monday, September 28
+
+    /** [pattern] gives the count [i] days ago, from [days] days back to today. */
+    private fun history(days: Int, pattern: (Int) -> Int): Map<java.time.LocalDate, Int> =
+        (0..days).associate { habitsToday.minusDays(it.toLong()) to pattern(it) }.filterValues { it > 0 }
+
+    /**
+     * Five habits: water half done today on a 12-day streak, exercise once this week, reading just done (a
+     * 7-day milestone), no takeout for 12 days, and coffee within its daily allowance. Points from a deleted
+     * habit put the level at 4.
+     */
+    private val habitsData = HabitsData(
+        habits = listOf(
+            Habit(
+                "water", "Drink water", HabitColor.BLUE, HabitKind.BUILD, HabitPeriod.DAY, 8, habitsToday.minusDays(83),
+                history(83) { i -> if (i == 0) 5 else if (i <= 12) 8 + i % 2 else if (i % 9 == 4) 0 else (i * 7) % 6 + 3 },
+            ),
+            Habit(
+                "exercise", "Exercise", HabitColor.GREEN, HabitKind.BUILD, HabitPeriod.WEEK, 3, habitsToday.minusDays(60),
+                history(60) { i -> if (i == 0) 1 else if (i in 1..6) 0 else if (i % 7 in setOf(1, 3, 5) && i / 7 != 4) 1 else 0 },
+            ),
+            Habit(
+                "read", "Read 20 pages", HabitColor.PURPLE, HabitKind.BUILD, HabitPeriod.DAY, 1, habitsToday.minusDays(20),
+                history(20) { i -> if (i <= 6 || i in 9..14) 1 else 0 },
+            ),
+            Habit(
+                "takeout", "No takeout", HabitColor.CORAL, HabitKind.AVOID, HabitPeriod.WEEK, 0, habitsToday.minusDays(70),
+                history(70) { i -> if (i == 12 || i == 30 || i == 31 || i == 55) 1 else 0 },
+            ),
+            Habit(
+                "coffee", "Coffee", HabitColor.AMBER, HabitKind.AVOID, HabitPeriod.DAY, 2, habitsToday.minusDays(40),
+                history(40) { i -> if (i == 0) 1 else if (i % 6 == 2) 3 else 2 - i % 3 % 2 },
+            ),
+        ),
+        bankedPoints = 120,
+        bankedBadges = setOf(Badge.WEEKS_4),
+    )
+
+    @Composable
+    private fun Habits(data: HabitsData, celebration: Celebration? = null, editing: Boolean = false) {
+        HabitsScreen(
+            data, celebration, onLog = {}, onUndo = {}, onAdd = {}, onUpdate = { _, _ -> }, onRemove = {}, onMove = { _, _ -> },
+            onCelebrationShown = {}, today = habitsToday, weekFields = weekFields, initiallyEditing = editing,
+        )
+    }
+
+    private val readCheer = Celebration("read", "7 days! +61", 1)
+
+    @Test fun habitsEmpty() = snap("habits_empty") { Habits(HabitsData()) }
+
+    @Test fun habitsList() = snap("habits", tall = true) { Habits(habitsData, readCheer) }
+
+    @Test fun habitsDark() = snap("habits_dark", night = true, tall = true) { Habits(habitsData, readCheer) }
+
+    @Test fun habitsLargeFont() = snap("habits_large_font", narrow = true, fontScale = 1.5f, tall = true) { Habits(habitsData) }
+
+    @Test fun habitsEdit() = snap("habits_edit") { Habits(habitsData, editing = true) }
+
+    /** The add/edit dialog over a dimmed tab, as it opens: new, and editing an avoid habit (dark, large font). */
+    @Composable
+    private fun EditorOver(initial: HabitDraft?) {
+        Box(Modifier.fillMaxSize()) {
+            Habits(habitsData)
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)), contentAlignment = Alignment.Center) {
+                HabitEditor(initial, onDismiss = {}, onSave = {}, modifier = Modifier.padding(horizontal = 24.dp))
+            }
+        }
+    }
+
+    @Test fun habitEditorNew() = snap("habit_editor_new") { EditorOver(null) }
+
+    @Test fun habitEditorEdit() = snap("habit_editor_edit_dark_large_font", night = true, narrow = true, fontScale = 1.5f) {
+        EditorOver(HabitDraft("No takeout", HabitColor.CORAL, HabitKind.AVOID, HabitPeriod.WEEK, 1))
+    }
+
+    /** Home's card on its own, in both themes, with a cheer after the goal was met. */
+    @Composable
+    private fun HomeCards(night: Boolean) {
+        val summary = summarize(habitsData, habitsToday, weekFields)
+        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
+            HabitsHomeCard(summary, if (night) null else Celebration("read", "Done for today · +11", 1), onLog = {}, onUndo = {})
+        }
+    }
+
+    @Test fun habitsHomeCard() = snap("habits_home_card") {
+        Column {
+            HomeCards(night = false)
+            WeatherTheme(darkTheme = true) { HomeCards(night = true) }
+        }
+    }
+
+    @Test fun habitsHomeCardLargeFont() = snap("habits_home_card_large_font", narrow = true, fontScale = 1.5f) { HomeCards(night = false) }
 
     // --- Weather page ---------------------------------------------------------------------------
 

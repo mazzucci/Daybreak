@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -44,7 +45,7 @@ import java.time.LocalDate
 import app.daybreak.domain.Forecast
 
 /** The bottom bar's sections. Home is where the app opens. */
-enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Clocks("Clocks"), Settings("Settings") }
+enum class Tab(val label: String) { Home("Home"), Weather("Weather"), Habits("Habits"), Clocks("Clocks"), Settings("Settings") }
 
 /** Full-screen tasks opened from a tab; the bottom bar hides while one is open. */
 private enum class Overlay { Search, Places, Day }
@@ -71,9 +72,11 @@ internal fun dayOverlay(state: WeatherUiState, key: String?, date: LocalDate?): 
 
 /** Wires the ViewModel to the stateless screens and owns navigation and system pickers/prompts. */
 @Composable
-fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
+fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null, habitsVm: HabitsViewModel? = null) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val clocks = clocksVm?.clocks?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val habits = habitsVm?.data?.collectAsStateWithLifecycle()?.value ?: app.daybreak.domain.HabitsData()
+    val celebration = habitsVm?.celebration?.collectAsStateWithLifecycle()?.value
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var overlay by rememberSaveable { mutableStateOf<Overlay?>(null) }
     // Set while Search is adding a clock rather than a page.
@@ -84,7 +87,7 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
     var dayPage by rememberSaveable { mutableStateOf<String?>(null) }
     var dayDate by rememberSaveable { mutableStateOf<String?>(null) }
     // White status-bar icons over Home's and Weather's sky (and the strip that replaces it when scrolled); the
-    // theme's own on Clocks, Settings and the overlays.
+    // theme's own on Habits, Clocks, Settings and the overlays.
     val view = LocalView.current
     val dark = MaterialTheme.isDark
     val onSky = (overlay == null && (tab == Tab.Home || tab == Tab.Weather)) || overlay == Overlay.Day
@@ -224,6 +227,11 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                             onRequestPermission = requestPermission,
                             onOpenSearch = openSearch,
                             onOpenSettings = { tab = Tab.Settings },
+                            habits = habits,
+                            celebration = celebration,
+                            onLogHabit = { habitsVm?.log(it) },
+                            onUndoHabit = { habitsVm?.undo(it) },
+                            onCelebrationShown = { habitsVm?.celebrationShown(it) },
                         )
                         Tab.Weather -> WeatherPagerScreen(
                             state = state,
@@ -238,6 +246,17 @@ fun WeatherApp(vm: WeatherViewModel, clocksVm: ClocksViewModel? = null) {
                                 dayDate = date.toString()
                                 overlay = Overlay.Day
                             },
+                        )
+                        Tab.Habits -> HabitsScreen(
+                            data = habits,
+                            celebration = celebration,
+                            onLog = { habitsVm?.log(it) },
+                            onUndo = { habitsVm?.undo(it) },
+                            onAdd = { habitsVm?.add(it) },
+                            onUpdate = { id, draft -> habitsVm?.update(id, draft) },
+                            onRemove = { habitsVm?.remove(it) },
+                            onMove = { from, to -> habitsVm?.move(from, to) },
+                            onCelebrationShown = { habitsVm?.celebrationShown(it) },
                         )
                         Tab.Clocks -> ClocksScreen(
                             clocks = clocks,
@@ -270,6 +289,7 @@ private fun SettingsTab(
             onGemmaEnabledChange = vm::setGemmaEnabled,
             onMemesEnabledChange = vm::setMemesEnabled,
             onSkyEnabledChange = vm::setSkyEnabled,
+            onHabitsOnHomeChange = vm::setHabitsOnHome,
             onComingUpEnabledChange = vm::setComingUpEnabled,
             onAddPersonalDate = vm::addPersonalDate,
             onRemovePersonalDate = vm::removePersonalDate,
@@ -282,36 +302,49 @@ private fun SettingsTab(
         )
 }
 
-/** The bar's label style, growing with the font size setting only up to 1.3x, so four labels always fit. */
+/**
+ * The bar's label style: growing with the font size setting only up to 1.3x, and no bigger than lets the longest
+ * label fit [itemWidth] on one line, so five labels fit even on the narrowest phones.
+ */
 @Composable
-private fun cappedLabel(): androidx.compose.ui.text.TextStyle {
+private fun cappedLabel(itemWidth: androidx.compose.ui.unit.Dp): androidx.compose.ui.text.TextStyle {
     val style = MaterialTheme.typography.labelMedium
-    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
-    if (scale <= 1.3f) return style
-    val f = 1.3f / scale
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val capped = if (density.fontScale <= 1.3f) 1f else 1.3f / density.fontScale
+    val widest = Tab.entries.maxOf { measurer.measure(it.label, style, maxLines = 1, softWrap = false).size.width }
+    val fit = with(density) { itemWidth.toPx() } / widest
+    val f = minOf(capped, fit)
+    if (f >= 1f) return style
     return style.copy(fontSize = style.fontSize * f, lineHeight = if (style.lineHeight.isSpecified) style.lineHeight * f else style.lineHeight)
 }
 
-/** Home · Weather · Clocks · Settings, labels always shown, flat on the card colour like the cards themselves. */
+/** Home · Weather · Habits · Clocks · Settings, labels always shown, flat on the card colour like the cards themselves. */
 @Composable
 fun DaybreakNavigationBar(selected: Tab, onSelect: (Tab) -> Unit) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
-        Tab.entries.forEach { t ->
-            val on = t == selected
-            NavigationBarItem(
-                selected = on,
-                onClick = { onSelect(t) },
-                // One line always; at the largest font sizes the labels stop growing at 1.3x rather than breaking.
-                label = { Text(t.label, maxLines = 1, softWrap = false, style = cappedLabel()) },
-                icon = {
-                    when (t) {
-                        Tab.Home -> Icon(if (on) Icons.Filled.Home else Icons.Outlined.Home, contentDescription = null)
-                        Tab.Weather -> WeatherTabIcon()
-                        Tab.Clocks -> ClocksTabIcon(on)
-                        Tab.Settings -> Icon(if (on) Icons.Filled.Settings else Icons.Outlined.Settings, contentDescription = null)
-                    }
-                },
-            )
+    BoxWithConstraints {
+        // The bar spaces its items 8dp apart and pads each label 4dp a side; 4dp more so rounding never clips one.
+        val itemWidth = (maxWidth - 8.dp * (Tab.entries.size - 1)) / Tab.entries.size - 12.dp
+        val label = cappedLabel(itemWidth)
+        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
+            Tab.entries.forEach { t ->
+                val on = t == selected
+                NavigationBarItem(
+                    selected = on,
+                    onClick = { onSelect(t) },
+                    // One line always: at the largest font sizes the labels stop growing rather than breaking.
+                    label = { Text(t.label, maxLines = 1, softWrap = false, style = label) },
+                    icon = {
+                        when (t) {
+                            Tab.Home -> Icon(if (on) Icons.Filled.Home else Icons.Outlined.Home, contentDescription = null)
+                            Tab.Weather -> WeatherTabIcon()
+                            Tab.Habits -> HabitsTabIcon(on)
+                            Tab.Clocks -> ClocksTabIcon(on)
+                            Tab.Settings -> Icon(if (on) Icons.Filled.Settings else Icons.Outlined.Settings, contentDescription = null)
+                        }
+                    },
+                )
+            }
         }
     }
 }
